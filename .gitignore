@@ -1,0 +1,53 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
+venv/
+env/
+ENV/
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# Credentials and sensitive data
+.env
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.truststore
+
+# Spotify API cache
+.cache
+.cache-*
+
+# Project specific cache
+~/.spotify-tools/
+.spotify-tools/
+
+# Data files
+data/*.json
+data/*.csv
+data/*.xlsx
+data/*.db
+
+# Deployment files
+deploy/
+
+# Logs
+logs/
+*.log
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store

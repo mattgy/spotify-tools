@@ -18,32 +18,8 @@ import json
 import shutil
 import importlib.util
 
-# Check if required packages are installed
-required_packages = ['colorama', 'requests', 'tqdm']
-missing_packages = []
-
-# Skip duplicate setup if we're being called from spotify_run.py
-if not os.environ.get("SPOTIFY_TOOLS_INITIALIZED"):
-    for package in required_packages:
-        if importlib.util.find_spec(package) is None:
-            missing_packages.append(package)
-
-    if missing_packages:
-        print(f"Missing required packages: {', '.join(missing_packages)}")
-        print("Installing missing packages...")
-        
-        # Get the directory of this script
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        
-        # Run the install dependencies script
-        install_script = os.path.join(script_dir, "install_dependencies.py")
-        try:
-            subprocess.run([sys.executable, install_script], check=True)
-            print("Dependencies installed. Restarting script...")
-            os.execv(sys.executable, [sys.executable] + sys.argv)
-        except subprocess.CalledProcessError as e:
-            print(f"Error installing dependencies: {e}")
-            sys.exit(1)
+# Simple import check - let imports fail naturally if packages are missing
+# This avoids the infinite loop issue
 
 # Now import the required packages
 import colorama
@@ -455,11 +431,9 @@ def main():
     # Check cache age on startup
     check_cache_age()
     
-    # Set up virtual environment
-    setup_virtual_environment()
-    
-    # Check and update dependencies automatically
-    check_and_update_dependencies()
+    # Set up virtual environment (skip if already initialized)
+    if not os.environ.get("SPOTIFY_TOOLS_INITIALIZED"):
+        setup_virtual_environment()
     
     # Set up config directory
     setup_config_directory()
@@ -472,17 +446,18 @@ def main():
         print_header("Matt Y's Spotify Tools")
         print(f"{Fore.WHITE}1. Follow all artists in your created playlists")
         print(f"{Fore.WHITE}2. Add all songs from your created playlists to Liked Songs")
-        print(f"{Fore.WHITE}3. Find artists to follow that you probably like")
+        print(f"{Fore.WHITE}3. Advanced music discovery (MusicBrainz + Last.fm)")
         print(f"{Fore.WHITE}4. Find upcoming concerts for your artists")
-        print(f"{Fore.WHITE}5. View music dashboard & statistics")
+        print(f"{Fore.WHITE}5. Enhanced analytics & music insights")
         print(f"{Fore.WHITE}6. Convert local playlists to Spotify playlists")
         print(f"{Fore.WHITE}7. Remove followed artists that you probably don't like")
-        print(f"{Fore.WHITE}8. Manage caches")
-        print(f"{Fore.WHITE}9. Manage API credentials")
-        print(f"{Fore.WHITE}10. Reset environment (reinstall dependencies)")
-        print(f"{Fore.WHITE}11. Exit")
+        print(f"{Fore.WHITE}8. Backup & export your music library")
+        print(f"{Fore.WHITE}9. Manage caches")
+        print(f"{Fore.WHITE}10. Manage API credentials")
+        print(f"{Fore.WHITE}11. Reset environment (reinstall dependencies)")
+        print(f"{Fore.WHITE}12. Exit")
         
-        choice = input(f"\n{Fore.CYAN}Enter your choice (1-11): ")
+        choice = input(f"\n{Fore.CYAN}Enter your choice (1-12): ")
         
         if choice == "1":
             # Run the follow artists script

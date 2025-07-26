@@ -1,18 +1,44 @@
 # Matt Y's Spotify Tools
 
-A collection of utilities for managing your Spotify account, finding similar artists, discovering concerts, and analyzing your listening habits.
-
-> **Note:** This project was created entirely with Amazon Q CLI, an AI assistant for developers.
+A comprehensive collection of utilities for managing your Spotify account, discovering new music, and analyzing your listening habits with advanced features and integrations.
 
 ## Features
 
 - **Follow Artists**: Follow all artists from your playlists
-- **Like Songs**: Add all songs from your playlists to your Liked Songs
-- **Find Similar Artists**: Discover and follow artists similar to those you already follow
+- **Like Songs**: Add all songs from your playlists to your Liked Songs  
+- **Advanced Music Discovery**: Enhanced recommendation engine using MusicBrainz and Last.fm APIs
 - **Find Concerts**: Find upcoming concerts for artists you follow
-- **Listening Statistics**: Analyze your listening habits and music preferences
-- **Music Dashboard**: Interactive web dashboard to visualize your music taste
+- **Enhanced Analytics**: Comprehensive music taste analysis and listening pattern insights
 - **Playlist Converter**: Convert local playlist files to Spotify playlists
+- **Artist Cleanup**: Remove followed artists you probably don't like
+- **Backup & Export**: Complete library backup for migration and archival
+
+## New Features
+
+### 🎵 Advanced Music Discovery
+- **Multi-source recommendations** combining Spotify, Last.fm, and MusicBrainz data
+- **Enhanced metadata** with artist origins, relationships, and detailed tags
+- **Intelligent scoring** based on your listening patterns and preferences
+- **Genre and geographic diversity analysis**
+
+### 📊 Enhanced Analytics  
+- **Comprehensive music taste profiling** with audio feature analysis
+- **Listening pattern tracking** over different time periods
+- **Music personality classification** (energy levels, mood preferences, etc.)
+- **Geographic and temporal diversity insights**
+- **Visual charts and reports** with exportable data
+
+### 💾 Backup & Migration Tools
+- **Complete library backup** including playlists, followed artists, and liked songs
+- **Portable data formats** (JSON, CSV) for cross-platform compatibility  
+- **Metadata preservation** with ISRC codes and Spotify URLs
+- **Human-readable reports** with detailed statistics
+
+### ⚙️ Configuration Management
+- **Flexible configuration system** with environment variable support
+- **Configurable rate limiting** and batch processing
+- **Advanced caching** with automatic cleanup and management
+- **Comprehensive test suite** for reliability
 
 ## Setup
 
@@ -20,8 +46,8 @@ A collection of utilities for managing your Spotify account, finding similar art
 
 - Python 3.6 or higher
 - Spotify Developer Account
-- Last.fm API Key (for similar artists feature)
-- Songkick API Key (for concert feature)
+- Last.fm API Key (optional, for enhanced recommendations)
+- MusicBrainz integration (automatic, no API key required)
 
 ### Installation
 
@@ -41,8 +67,8 @@ A collection of utilities for managing your Spotify account, finding similar art
 
 ### API Keys
 
-- **Last.fm API Key**: Get one from [Last.fm API](https://www.last.fm/api/account/create)
-- **Songkick API Key**: Request one from [Songkick API](https://www.songkick.com/api_key_requests/new)
+- **Last.fm API Key**: Get one from [Last.fm API](https://www.last.fm/api/account/create) (optional)
+- **MusicBrainz**: No API key required - automatic integration
 
 ## Usage
 
@@ -52,66 +78,92 @@ Run the main script and select an option from the menu:
 ./spotify_run.py
 ```
 
+### Menu Options
+
+1. **Follow Artists** - Follow all artists from your created playlists
+2. **Like Songs** - Add all songs from your created playlists to Liked Songs
+3. **Advanced Music Discovery** - Enhanced recommendations using multiple data sources
+4. **Find Concerts** - Find upcoming concerts for artists you follow
+5. **Enhanced Analytics** - Comprehensive music insights and visualizations
+6. **Convert Playlists** - Convert local playlist files to Spotify playlists
+7. **Artist Cleanup** - Remove followed artists you probably don't like
+8. **Backup & Export** - Create complete library backups
+9. **Manage Caches** - Clear and manage cached data
+10. **Manage Credentials** - Set up and update API credentials
+11. **Reset Environment** - Reinstall dependencies
+
 ### Credential Management
 
-The main script includes credential management:
+The application includes intelligent credential management:
 
 1. **Manage API Credentials**: Choose option 10 from the main menu to save or update your API credentials
-2. **Reset Environment**: Choose option 11 to reinstall dependencies
+2. **Environment Variables**: Credentials can be set via environment variables
+3. **Secure Storage**: Credentials are stored in `~/.spotify-tools/` and automatically loaded
 
-Credentials are stored in `~/.spotify-tools/` and automatically loaded when you run the scripts.
+### Testing
 
-## Music Dashboard
+Run the comprehensive test suite:
 
-The music dashboard provides visualizations of your listening habits:
+```
+python3 run_tests.py
+```
 
-1. **View Dashboard & Statistics**: Choose option 5 from the main menu to generate statistics and view the dashboard
-2. **Deploy to AWS**: Choose option 6 to prepare the dashboard for AWS S3/CloudFront deployment
+## Enhanced Analytics Dashboard
 
-### AWS Deployment
+The analytics system provides detailed insights into your music taste:
 
-To deploy the dashboard to AWS:
+1. **Music Personality Analysis**: Understand your preferences for energy, mood, and style
+2. **Genre Distribution**: See your most listened-to genres with visual charts
+3. **Geographic Diversity**: Discover artists from different countries and regions
+4. **Temporal Analysis**: Track how your taste evolves over time
+5. **Audio Feature Profiling**: Detailed analysis of danceability, acousticness, valence, etc.
 
-1. Create an S3 bucket (e.g., 'my-spotify-dashboard')
-2. Enable static website hosting on the bucket
-3. Upload the contents of the deploy directory to your S3 bucket:
-   ```
-   aws s3 sync deploy/ s3://my-spotify-dashboard --acl public-read
-   ```
-4. (Optional) Set up CloudFront for faster delivery:
-   - Create a CloudFront distribution pointing to your S3 bucket
-   - Use the CloudFront domain to access your dashboard
+## Advanced Configuration
+
+### Environment Variables
+
+```bash
+export SPOTIFY_TOOLS_CACHE_DAYS=7
+export SPOTIFY_TOOLS_API_DELAY=0.1
+export SPOTIFY_TOOLS_BATCH_SIZE=50
+export SPOTIFY_TOOLS_PROGRESS_BAR=true
+```
+
+### Configuration File
+
+Create `~/.spotify-tools/config.json` for advanced settings:
+
+```json
+{
+  "cache_expiration_days": 7,
+  "api_delay_seconds": 0.1,
+  "batch_size_artists": 50,
+  "confidence_threshold": 0.8,
+  "similar_artist_limit": 20
+}
+```
 
 ## Individual Scripts
 
-You can also run each script individually:
+You can also run each script independently:
 
 - `spotify_follow_artists.py`: Follow all artists from your playlists
 - `spotify_like_songs.py`: Add all songs from your playlists to your Liked Songs
-- `spotify_similar_artists.py`: Find and follow similar artists
+- `spotify_similar_artists.py`: Find and follow similar artists with enhanced discovery
 - `spotify_find_concerts.py`: Find upcoming concerts
-- `spotify_stats.py`: Generate listening statistics
-- `spotify_dashboard.py`: Launch the music dashboard
+- `spotify_analytics.py`: Generate comprehensive analytics and insights
+- `spotify_backup.py`: Create complete library backups
 - `spotify_playlist_converter.py`: Convert local playlists to Spotify playlists
 - `spotify_cleanup_artists.py`: Remove followed artists that you probably don't like
 
 ## Troubleshooting
 
 - **Authentication Issues**: Make sure your redirect URI in the Spotify Developer Dashboard matches exactly: `http://127.0.0.1:8888/callback`
-- **API Rate Limits**: The scripts include delays to avoid hitting rate limits, but you may need to wait if you encounter limit errors
+- **API Rate Limits**: The scripts include intelligent delays to avoid hitting rate limits, but you may need to wait if you encounter limit errors
 - **Missing Dependencies**: Use the "Reset environment" option in the main menu if you encounter module import errors
 - **Credential Problems**: If you're having authentication issues, try using option 10 to re-enter your credentials
 - **Cache Issues**: If you're getting stale data, use option 9 to manage and clear caches
 
-## Created with Amazon Q CLI
+## Features
 
-This project was developed entirely using Amazon Q CLI, an AI assistant for developers. Amazon Q CLI helped with:
-
-- Writing and structuring the Python code
-- Implementing the Spotify API integration
-- Creating the user interface and menu system
-- Designing the dashboard visualization
-- Troubleshooting and debugging issues
-- Optimizing the code for performance and reliability
-
-Amazon Q CLI provided guidance on best practices, helped implement complex features, and ensured the code was well-documented and maintainable.
+This project provides a comprehensive set of tools for managing and analyzing your Spotify music library, with robust error handling, caching, and user-friendly interfaces.

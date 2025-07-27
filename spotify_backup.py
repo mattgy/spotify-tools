@@ -47,21 +47,13 @@ class SpotifyBackup:
         
     def _setup_spotify_client(self):
         """Set up authenticated Spotify client."""
+        from spotify_utils import create_spotify_client
+        
         try:
-            client_id, client_secret, redirect_uri = get_spotify_credentials()
-            
-            auth_manager = SpotifyOAuth(
-                client_id=client_id,
-                client_secret=client_secret,
-                redirect_uri=redirect_uri,
-                scope=" ".join(SPOTIFY_SCOPES),
-                cache_path=os.path.join(os.path.expanduser("~"), ".spotify-tools", "backup_token_cache")
-            )
-            
-            return spotipy.Spotify(auth_manager=auth_manager)
+            return create_spotify_client(SPOTIFY_SCOPES, "backup")
         except Exception as e:
-            print(f"{Fore.RED}Error setting up Spotify client: {e}")
-            sys.exit(1)
+            print(f"{Fore.RED}Authentication error: {e}")
+            return None
     
     def create_full_backup(self) -> str:
         """Create a complete backup of user's Spotify library."""
@@ -115,6 +107,16 @@ class SpotifyBackup:
         
         # Create CSV exports for portability
         self._create_csv_exports(backup_data, backup_path)
+        
+        # Create cross-platform export formats
+        print(f"{Fore.BLUE}Creating Apple Music export format...")
+        self._create_apple_music_export(backup_data, backup_path)
+        
+        print(f"{Fore.BLUE}Creating YouTube Music export format...")
+        self._create_youtube_music_export(backup_data, backup_path)
+        
+        print(f"{Fore.BLUE}Creating M3U playlist files...")
+        self._create_universal_m3u_export(backup_data, backup_path)
         
         # Create human-readable report
         self._create_backup_report(backup_data, backup_path)
@@ -386,6 +388,129 @@ class SpotifyBackup:
                     track['added_at'],
                     track.get('isrc', '')
                 ])
+    
+    def _create_apple_music_export(self, backup_data: dict, backup_path: str):
+        """Create Apple Music compatible export format."""
+        apple_dir = os.path.join(backup_path, "apple_music_format")
+        os.makedirs(apple_dir, exist_ok=True)
+        
+        # Create Apple Music Library XML-style structure (simplified)
+        for playlist in backup_data['playlists']:
+            playlist_file = os.path.join(apple_dir, f"{playlist['name']}.txt")
+            
+            with open(playlist_file, 'w', encoding='utf-8') as f:
+                f.write(f"# {playlist['name']}\n")
+                f.write(f"# Description: {playlist['description']}\n")
+                f.write(f"# Tracks: {len(playlist['tracks'])}\n\n")
+                
+                for track in playlist['tracks']:
+                    # Apple Music format: Artist - Song
+                    artists = ', '.join(track['artists'])
+                    f.write(f"{artists} - {track['name']}\n")
+        
+        # Create a consolidated library file
+        library_file = os.path.join(apple_dir, "spotify_library_for_apple_music.txt")
+        with open(library_file, 'w', encoding='utf-8') as f:
+            f.write("# Spotify Library Export for Apple Music\n")
+            f.write("# Format: Artist - Song (Album)\n\n")
+            
+            # Add liked songs first
+            if backup_data.get('liked_songs'):
+                f.write("# === LIKED SONGS ===\n")
+                for track in backup_data['liked_songs']:
+                    artists = ', '.join(track['artists'])
+                    f.write(f"{artists} - {track['name']} ({track['album']})\n")
+                f.write("\n")
+            
+            # Add playlists
+            for playlist in backup_data['playlists']:
+                f.write(f"# === {playlist['name'].upper()} ===\n")
+                for track in playlist['tracks']:
+                    artists = ', '.join(track['artists'])
+                    f.write(f"{artists} - {track['name']} ({track['album']})\n")
+                f.write("\n")
+    
+    def _create_youtube_music_export(self, backup_data: dict, backup_path: str):
+        """Create YouTube Music compatible export format."""
+        youtube_dir = os.path.join(backup_path, "youtube_music_format")
+        os.makedirs(youtube_dir, exist_ok=True)
+        
+        # Create YouTube Music CSV format
+        youtube_csv = os.path.join(youtube_dir, "youtube_music_import.csv")
+        
+        with open(youtube_csv, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f)
+            # YouTube Music CSV headers
+            writer.writerow(['Title', 'Artist', 'Album', 'Playlist'])
+            
+            # Add liked songs to "Liked" playlist
+            if backup_data.get('liked_songs'):
+                for track in backup_data['liked_songs']:
+                    writer.writerow([
+                        track['name'],
+                        ', '.join(track['artists']),
+                        track['album'],
+                        'Liked Songs'
+                    ])
+            
+            # Add playlist tracks
+            for playlist in backup_data['playlists']:
+                for track in playlist['tracks']:
+                    writer.writerow([
+                        track['name'],
+                        ', '.join(track['artists']),
+                        track['album'],
+                        playlist['name']
+                    ])
+        
+        # Create individual playlist files
+        for playlist in backup_data['playlists']:
+            playlist_file = os.path.join(youtube_dir, f"{playlist['name']}_youtube.csv")
+            
+            with open(playlist_file, 'w', newline='', encoding='utf-8') as f:
+                writer = csv.writer(f)
+                writer.writerow(['Title', 'Artist', 'Album'])
+                
+                for track in playlist['tracks']:
+                    writer.writerow([
+                        track['name'],
+                        ', '.join(track['artists']),
+                        track['album']
+                    ])
+    
+    def _create_universal_m3u_export(self, backup_data: dict, backup_path: str):
+        """Create M3U playlist files for maximum compatibility."""
+        m3u_dir = os.path.join(backup_path, "m3u_playlists")
+        os.makedirs(m3u_dir, exist_ok=True)
+        
+        # Create M3U files for each playlist
+        for playlist in backup_data['playlists']:
+            playlist_file = os.path.join(m3u_dir, f"{playlist['name']}.m3u")
+            
+            with open(playlist_file, 'w', encoding='utf-8') as f:
+                f.write("#EXTM3U\n")
+                f.write(f"#PLAYLIST:{playlist['name']}\n")
+                
+                for track in playlist['tracks']:
+                    duration_sec = track['duration_ms'] // 1000
+                    artists = ', '.join(track['artists'])
+                    f.write(f"#EXTINF:{duration_sec},{artists} - {track['name']}\n")
+                    # Note: No actual file paths since these are Spotify tracks
+                    f.write(f"# Spotify URI: {track.get('uri', 'N/A')}\n")
+        
+        # Create a master M3U with all liked songs
+        if backup_data.get('liked_songs'):
+            liked_file = os.path.join(m3u_dir, "Liked_Songs.m3u")
+            
+            with open(liked_file, 'w', encoding='utf-8') as f:
+                f.write("#EXTM3U\n")
+                f.write("#PLAYLIST:Liked Songs\n")
+                
+                for track in backup_data['liked_songs']:
+                    duration_sec = track['duration_ms'] // 1000
+                    artists = ', '.join(track['artists'])
+                    f.write(f"#EXTINF:{duration_sec},{artists} - {track['name']}\n")
+                    f.write(f"# Spotify URI: {track.get('uri', 'N/A')}\n")
     
     def _create_backup_report(self, backup_data: dict, backup_path: str):
         """Create a human-readable backup report."""

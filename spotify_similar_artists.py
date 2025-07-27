@@ -43,7 +43,8 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, script_dir)
 
 # Import custom modules
-from credentials_manager import get_spotify_credentials, get_lastfm_api_key
+from spotify_utils import create_spotify_client, print_success, print_error, print_info
+from credentials_manager import get_lastfm_api_key
 from cache_utils import save_to_cache, load_from_cache
 from tqdm_utils import create_progress_bar, update_progress_bar, close_progress_bar
 
@@ -57,63 +58,19 @@ SPOTIFY_SCOPES = [
 # Cache expiration (in seconds)
 CACHE_EXPIRATION = 7 * 24 * 60 * 60  # 7 days
 
-def print_header(text):
-    """Print a formatted header."""
-    print(f"\n{Fore.CYAN}{Style.BRIGHT}" + "="*50)
-    print(f"{Fore.CYAN}{Style.BRIGHT}{text}")
-    print(f"{Fore.CYAN}{Style.BRIGHT}" + "="*50)
-
-def print_success(text):
-    """Print a success message."""
-    print(f"{Fore.GREEN}{text}")
-
-def print_error(text):
-    """Print an error message."""
-    print(f"{Fore.RED}{text}")
-
-def print_warning(text):
-    """Print a warning message."""
-    print(f"{Fore.YELLOW}{text}")
-
-def print_info(text):
-    """Print an info message."""
-    print(f"{Fore.BLUE}{text}")
+# Import print functions from spotify_utils
+from spotify_utils import print_header, print_warning, print_success, print_error, print_info
 
 def setup_spotify_client():
     """Set up and return an authenticated Spotify client."""
     try:
-        # Get credentials from credentials manager
-        client_id, client_secret, redirect_uri = get_spotify_credentials()
-        
-        # Set up authentication with a specific cache path
-        cache_path = os.path.join(os.path.expanduser("~"), ".spotify-tools", "spotify_token_cache")
-        
-        # Create directory if it doesn't exist
-        os.makedirs(os.path.dirname(cache_path), exist_ok=True)
-        
-        auth_manager = SpotifyOAuth(
-            client_id=client_id,
-            client_secret=client_secret,
-            redirect_uri=redirect_uri,
-            scope=" ".join(SPOTIFY_SCOPES),
-            open_browser=False,  # Don't open browser repeatedly
-            cache_path=cache_path  # Use a specific cache path
-        )
-        
-        # Create Spotify client
-        sp = spotipy.Spotify(auth_manager=auth_manager)
-        
-        # Test the connection
-        sp.current_user()
-        
-        return sp
-    
+        return create_spotify_client(SPOTIFY_SCOPES, "similar_artists")
     except Exception as e:
         print_error(f"Error setting up Spotify client: {e}")
         print_info("\nTo set up a Spotify Developer account and create an app:")
         print("1. Go to https://developer.spotify.com/dashboard/")
         print("2. Log in and create a new app")
-        print("3. Set the redirect URI to http://localhost:8888/callback")
+        print("3. Set the redirect URI to http://127.0.0.1:8888/callback")
         print("4. Copy the Client ID and Client Secret")
         sys.exit(1)
 

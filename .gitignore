@@ -15,6 +15,8 @@ build/
 
 # Credentials and sensitive data
 .env
+credentials.json
+config.json
 *.pem
 *.key
 *.crt
@@ -32,14 +34,19 @@ build/
 ~/.spotify-tools/
 .spotify-tools/
 
-# Data files
-data/*.json
-data/*.csv
-data/*.xlsx
-data/*.db
+# Data files and output
+data/
+analytics_output/
+*.json
+*.csv
+*.xlsx
+*.db
+output/
+exports/
 
 # Deployment files
 deploy/
+dashboard/
 
 # Logs
 logs/
@@ -51,3 +58,27 @@ logs/
 *.swp
 *.swo
 .DS_Store
+
+# AI context files (should not be in public repos)
+CLAUDE.md
+GEMINI.md
+ABOUT.md
+AmazonQ.md
+CONTRIBUTING.md
+*.ai.md
+
+# Temporary files
+*.tmp
+*.temp
+temp/
+tmp/
+
+# MacOS specific
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows specific
+Thumbs.db
+ehthumbs.db
+Desktop.ini

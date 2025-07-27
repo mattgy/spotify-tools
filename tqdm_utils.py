@@ -23,10 +23,14 @@ def create_progress_bar(total, desc=None, unit=None):
     Returns:
         A tqdm progress bar instance
     """
+    # Ensure unit is a string to avoid TypeError
+    if unit is None:
+        unit = "item"
+    
     return tqdm(
         total=total,
         desc=desc,
-        unit=unit,
+        unit=str(unit),
         bar_format='{l_bar}{bar:30}{r_bar}{bar:-30b}',
         ncols=100
     )

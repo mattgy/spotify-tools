@@ -27,6 +27,16 @@ sys.path.insert(0, script_dir)
 from credentials_manager import get_spotify_credentials
 from cache_utils import save_to_cache, load_from_cache
 
+# Import colorama for colored output
+import colorama
+from colorama import Fore, Style
+
+# Initialize colorama
+colorama.init(autoreset=True)
+
+# Import print functions from spotify_utils
+from spotify_utils import print_warning, print_info, print_success, print_error, print_header
+
 # Spotify API scopes needed for this script
 SCOPES = [
     "user-library-read",
@@ -39,61 +49,12 @@ CACHE_EXPIRATION = 24 * 60 * 60  # 24 hours
 
 def setup_spotify_client():
     """Set up and return an authenticated Spotify client."""
+    from spotify_utils import create_spotify_client
+    
     try:
-        # Get credentials from credentials manager
-        client_id, client_secret, redirect_uri = get_spotify_credentials()
-        
-        # Set up authentication with a specific cache path
-        cache_path = os.path.join(os.path.expanduser("~"), ".spotify-tools", "spotify_token_cache")
-        
-        # Create directory if it doesn't exist
-        os.makedirs(os.path.dirname(cache_path), exist_ok=True)
-        
-        auth_manager = SpotifyOAuth(
-            client_id=client_id,
-            client_secret=client_secret,
-            redirect_uri=redirect_uri,
-            scope=" ".join(SCOPES),
-            open_browser=False,  # Don't open browser repeatedly
-            cache_path=cache_path  # Use a specific cache path
-        )
-        
-        # Create Spotify client
-        sp = spotipy.Spotify(auth_manager=auth_manager)
-        
-        # Test the connection
-        sp.current_user()
-        
-        return sp
+        return create_spotify_client(SCOPES, "follow_artists")
     except Exception as e:
-        print(f"Error setting up Spotify client: {e}")
-        sys.exit(1)
-            scope=" ".join(SCOPES),
-            open_browser=False  # Don't open browser repeatedly
-        )
-        
-        # Create Spotify client
-        sp = spotipy.Spotify(auth_manager=auth_manager)
-        
-        # Test the connection
-        sp.current_user()
-        
-        return sp
-    except Exception as e:
-        print(f"Error setting up Spotify client: {e}")
-        sys.exit(1)
-            scope=" ".join(SCOPES)
-        )
-        
-        # Create Spotify client
-        sp = spotipy.Spotify(auth_manager=auth_manager)
-        
-        # Test the connection
-        sp.current_user()
-        
-        return sp
-    except Exception as e:
-        print(f"Error setting up Spotify client: {e}")
+        print_error(f"Failed to set up Spotify client: {e}")
         sys.exit(1)
 
 def get_user_playlists(sp):
@@ -276,6 +237,31 @@ def follow_artists(sp, artists, followed_artists):
     
     print(f"Found {len(new_artists)} new artists to follow")
     
+    # Check for low-follower artists
+    low_follower_threshold = 10
+    low_follower_artists = [a for a in new_artists if a['followers']['total'] <= low_follower_threshold]
+    
+    if low_follower_artists:
+        print_warning(f"\nFound {len(low_follower_artists)} artists with {low_follower_threshold} or fewer followers:")
+        for i, artist in enumerate(low_follower_artists[:10], 1):
+            followers = artist['followers']['total']
+            print(f"  {i}. {artist['name']} ({followers} followers)")
+        
+        if len(low_follower_artists) > 10:
+            print(f"  ... and {len(low_follower_artists) - 10} more")
+        
+        # Ask if user wants to follow low-follower artists
+        follow_low = input(f"\nDo you want to follow artists with {low_follower_threshold} or fewer followers? (y/n): ").strip().lower()
+        
+        if follow_low != 'y':
+            # Remove low-follower artists from the list
+            new_artists = [a for a in new_artists if a['followers']['total'] > low_follower_threshold]
+            print_info(f"Excluding {len(low_follower_artists)} low-follower artists. {len(new_artists)} artists remaining.")
+            
+            if not new_artists:
+                print_warning("No artists left to follow after excluding low-follower artists.")
+                return
+    
     # Ask for confirmation
     confirm = input(f"Do you want to follow these {len(new_artists)} artists? (y/n): ")
     
@@ -307,30 +293,6 @@ def follow_artists(sp, artists, followed_artists):
             print("Continuing with next batch...")
     
     print(f"Successfully followed {len(new_artists)} new artists!")
-    
-    # Invalidate the followed artists cache
-    cache_key = "followed_artists"
-    save_to_cache(None, cache_key, expire=True)
-    
-    # Follow artists in batches (Spotify API allows up to 50 at a time)
-    batch_size = 50
-    followed_count = 0
-    
-    for i in range(0, len(new_artists), batch_size):
-        batch = new_artists[i:i+batch_size]
-        artist_ids = [a['id'] for a in batch]
-        
-        try:
-            sp.user_follow_artists(artist_ids)
-            followed_count += len(batch)
-            print(f"Followed {followed_count}/{len(new_artists)} artists")
-            
-            # Add a small delay to avoid hitting rate limits
-            time.sleep(0.5)
-        except Exception as e:
-            print(f"Error following artists: {e}")
-    
-    print(f"Successfully followed {followed_count} new artists!")
     
     # Clear the followed artists cache since it's now outdated
     save_to_cache(list(followed_artists) + [a['id'] for a in new_artists], "followed_artists")

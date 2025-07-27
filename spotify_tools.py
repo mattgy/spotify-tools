@@ -35,11 +35,14 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 FOLLOW_ARTISTS_SCRIPT = os.path.join(SCRIPT_DIR, "spotify_follow_artists.py")
 LIKE_SONGS_SCRIPT = os.path.join(SCRIPT_DIR, "spotify_like_songs.py")
 SIMILAR_ARTISTS_SCRIPT = os.path.join(SCRIPT_DIR, "spotify_similar_artists.py")
-FIND_CONCERTS_SCRIPT = os.path.join(SCRIPT_DIR, "spotify_find_concerts.py")
-DASHBOARD_SCRIPT = os.path.join(SCRIPT_DIR, "spotify_dashboard.py")
+ANALYTICS_SCRIPT = os.path.join(SCRIPT_DIR, "spotify_analytics.py")
 PLAYLIST_CONVERTER_SCRIPT = os.path.join(SCRIPT_DIR, "spotify_playlist_converter.py")
 CLEANUP_ARTISTS_SCRIPT = os.path.join(SCRIPT_DIR, "spotify_cleanup_artists.py")
-STATS_SCRIPT = os.path.join(SCRIPT_DIR, "spotify_stats.py")
+BACKUP_SCRIPT = os.path.join(SCRIPT_DIR, "spotify_backup.py")
+CHRISTMAS_CLEANUP_SCRIPT = os.path.join(SCRIPT_DIR, "spotify_remove_christmas.py")
+PLAYLIST_MANAGER_SCRIPT = os.path.join(SCRIPT_DIR, "spotify_playlist_manager.py")
+REMOVE_DUPLICATES_SCRIPT = os.path.join(SCRIPT_DIR, "spotify_remove_duplicates.py")
+IDENTIFY_SKIPPED_SCRIPT = os.path.join(SCRIPT_DIR, "spotify_identify_skipped.py")
 INSTALL_DEPENDENCIES_SCRIPT = os.path.join(SCRIPT_DIR, "install_dependencies.py")
 
 # Define config directory
@@ -50,27 +53,8 @@ CACHE_DIR = os.path.join(CONFIG_DIR, "cache")
 # Default cache age in days
 DEFAULT_MAX_CACHE_AGE = 7
 
-def print_header(text):
-    """Print a formatted header."""
-    print(f"\n{Fore.CYAN}{Style.BRIGHT}" + "="*50)
-    print(f"{Fore.CYAN}{Style.BRIGHT}{text}")
-    print(f"{Fore.CYAN}{Style.BRIGHT}" + "="*50)
-
-def print_success(text):
-    """Print a success message."""
-    print(f"{Fore.GREEN}{text}")
-
-def print_error(text):
-    """Print an error message."""
-    print(f"{Fore.RED}{text}")
-
-def print_warning(text):
-    """Print a warning message."""
-    print(f"{Fore.YELLOW}{text}")
-
-def print_info(text):
-    """Print an info message."""
-    print(f"{Fore.BLUE}{text}")
+# Import print functions from spotify_utils
+from spotify_utils import print_header, print_success, print_error, print_warning, print_info
 
 def run_script(script_path, args=None):
     """Run a Python script with optional arguments."""
@@ -223,17 +207,43 @@ def reset_environment():
         print_warning("Reset cancelled.")
         return
     
-    # Use the system Python, not the virtual environment Python
-    system_python = "/opt/homebrew/bin/python3"  # Path on macOS with Homebrew
-    
-    print_info("To reset the environment, please run this command after exiting:")
-    print_info(f"{system_python} {os.path.join(SCRIPT_DIR, 'reset.py')}")
-    print_info("Then restart the application with: ./spotify_run.py")
-    
-    # Ask if they want to exit now
-    exit_confirm = input("Exit now to run the reset command? (y/n): ").strip().lower()
-    if exit_confirm == "y":
-        sys.exit(0)
+    try:
+        print_info("Resetting virtual environment...")
+        
+        # Run the reset script directly
+        reset_script = os.path.join(SCRIPT_DIR, "reset.py")
+        if os.path.exists(reset_script):
+            # Find system Python
+            import shutil
+            system_python = shutil.which("python3")
+            if not system_python:
+                system_python = shutil.which("python")
+            
+            if system_python:
+                print_info(f"Running reset using {system_python}...")
+                result = subprocess.run([system_python, reset_script], 
+                                      capture_output=True, text=True, timeout=300)
+                
+                if result.returncode == 0:
+                    print_success("Environment reset successfully!")
+                    print_info("Please restart the application: ./spotify_run.py")
+                    input("Press Enter to exit...")
+                    sys.exit(0)
+                else:
+                    print_error(f"Reset failed: {result.stderr}")
+                    print_info("You can manually run: python3 reset.py")
+            else:
+                print_error("Could not find system Python.")
+                print_info("Please manually run: python3 reset.py")
+        else:
+            print_error("Reset script not found.")
+            print_info("Please reinstall dependencies manually.")
+            
+    except subprocess.TimeoutExpired:
+        print_error("Reset timed out. Please run manually: python3 reset.py")
+    except Exception as e:
+        print_error(f"Error during reset: {e}")
+        print_info("Please manually run: python3 reset.py")
 
 def manage_caches():
     """Manage cache files."""
@@ -444,55 +454,36 @@ def main():
     # Display menu
     while True:
         print_header("Matt Y's Spotify Tools")
-        print(f"{Fore.WHITE}1. Follow all artists in your created playlists")
+        
+        # Playlist Management
+        print(f"{Fore.YELLOW}{Style.BRIGHT}PLAYLIST MANAGEMENT:")
+        print(f"{Fore.WHITE}1. Convert local playlists to Spotify playlists")
         print(f"{Fore.WHITE}2. Add all songs from your created playlists to Liked Songs")
-        print(f"{Fore.WHITE}3. Advanced music discovery (MusicBrainz + Last.fm)")
-        print(f"{Fore.WHITE}4. Find upcoming concerts for your artists")
-        print(f"{Fore.WHITE}5. Enhanced analytics & music insights")
-        print(f"{Fore.WHITE}6. Convert local playlists to Spotify playlists")
-        print(f"{Fore.WHITE}7. Remove followed artists that you probably don't like")
-        print(f"{Fore.WHITE}8. Backup & export your music library")
-        print(f"{Fore.WHITE}9. Manage caches")
-        print(f"{Fore.WHITE}10. Manage API credentials")
-        print(f"{Fore.WHITE}11. Reset environment (reinstall dependencies)")
-        print(f"{Fore.WHITE}12. Exit")
+        print(f"{Fore.WHITE}3. Remove Christmas songs from Liked Songs")
+        print(f"{Fore.WHITE}4. Remove duplicate songs from Liked Songs")
+        print(f"{Fore.WHITE}5. Identify frequently skipped songs in your library")
         
-        choice = input(f"\n{Fore.CYAN}Enter your choice (1-12): ")
+        # Artist Management
+        print(f"\n{Fore.YELLOW}{Style.BRIGHT}ARTIST MANAGEMENT:")
+        print(f"{Fore.WHITE}6. Follow all artists in your created playlists")
+        print(f"{Fore.WHITE}7. Find Artists to Follow That You Probably Like")
+        print(f"{Fore.WHITE}8. Remove followed artists that you probably don't like")
+        
+        # Analytics & Insights
+        print(f"\n{Fore.YELLOW}{Style.BRIGHT}ANALYTICS & INSIGHTS:")
+        print(f"{Fore.WHITE}9. Enhanced analytics & music insights")
+        print(f"{Fore.WHITE}10. Backup & export your music library")
+        
+        # System Management
+        print(f"\n{Fore.YELLOW}{Style.BRIGHT}SYSTEM MANAGEMENT:")
+        print(f"{Fore.WHITE}11. Manage caches")
+        print(f"{Fore.WHITE}12. Manage API credentials")
+        print(f"{Fore.WHITE}13. Reset environment (reinstall dependencies)")
+        print(f"{Fore.WHITE}14. Exit")
+        
+        choice = input(f"\n{Fore.CYAN}Enter your choice (1-14): ")
         
         if choice == "1":
-            # Run the follow artists script
-            print_info("\nRunning follow artists functionality...")
-            run_script(FOLLOW_ARTISTS_SCRIPT)
-            
-        elif choice == "2":
-            # Run the like songs script
-            print_info("\nRunning add songs to liked songs functionality...")
-        if choice == "1":
-            # Run the follow artists script
-            print_info("\nRunning follow artists functionality...")
-            run_script(FOLLOW_ARTISTS_SCRIPT)
-            
-        elif choice == "2":
-            # Run the like songs script
-            print_info("\nRunning like songs functionality...")
-            run_script(LIKE_SONGS_SCRIPT)
-            
-        elif choice == "3":
-            # Run the similar artists script
-            print_info("\nRunning find similar artists functionality...")
-            run_script(SIMILAR_ARTISTS_SCRIPT)
-            
-        elif choice == "4":
-            # Run the find concerts script
-            print_info("\nRunning find concerts functionality...")
-            run_script(FIND_CONCERTS_SCRIPT)
-            
-        elif choice == "5":
-            # Run the dashboard script (which will run stats if needed)
-            print_info("\nLaunching music dashboard & statistics...")
-            run_script(DASHBOARD_SCRIPT)
-            
-        elif choice == "6":
             # Run the playlist converter script
             print_info("\nConverting local playlists to Spotify playlists...")
             directory = input("Enter directory to search for playlists (press Enter for current directory): ")
@@ -506,24 +497,64 @@ def main():
                 
             run_script(PLAYLIST_CONVERTER_SCRIPT, args)
             
+        elif choice == "2":
+            # Run the like songs script
+            print_info("\nRunning like songs functionality...")
+            run_script(LIKE_SONGS_SCRIPT)
+            
+        elif choice == "3":
+            # Run the Christmas cleanup script
+            print_info("\nRemoving Christmas songs from Liked Songs...")
+            run_script(CHRISTMAS_CLEANUP_SCRIPT)
+            
+        elif choice == "4":
+            # Run the duplicate removal script
+            print_info("\nRemoving duplicate songs from Liked Songs...")
+            run_script(REMOVE_DUPLICATES_SCRIPT)
+            
+        elif choice == "5":
+            # Run the skipped songs identifier script
+            print_info("\nIdentifying frequently skipped songs...")
+            run_script(IDENTIFY_SKIPPED_SCRIPT)
+            
+        elif choice == "6":
+            # Run the follow artists script
+            print_info("\nRunning follow artists functionality...")
+            run_script(FOLLOW_ARTISTS_SCRIPT)
+            
         elif choice == "7":
-            # Run the artist cleanup script
-            print_info("\nRunning artist cleanup functionality...")
-            run_script(CLEANUP_ARTISTS_SCRIPT)
+            # Run the similar artists script
+            print_info("\nFinding artists to follow that you probably like...")
+            run_script(SIMILAR_ARTISTS_SCRIPT)
             
         elif choice == "8":
+            # Run the artist cleanup script
+            print_info("\nRemoving followed artists that you probably don't like...")
+            run_script(CLEANUP_ARTISTS_SCRIPT)
+            
+        elif choice == "9":
+            # Run the enhanced analytics script
+            print_info("\nLaunching enhanced analytics & insights...")
+            run_script(ANALYTICS_SCRIPT)
+            
+        elif choice == "10":
+            # Run the backup script
+            print_info("\nRunning backup & export functionality...")
+            run_script(BACKUP_SCRIPT)
+            
+        elif choice == "11":
             # Manage caches
             manage_caches()
             
-        elif choice == "9":
+        elif choice == "12":
             # Manage API credentials
             manage_api_credentials()
             
-        elif choice == "10":
+        elif choice == "13":
             # Reset environment
             reset_environment()
             
-        elif choice == "11":
+        elif choice == "14":
             print_success("Exiting...")
             break
         

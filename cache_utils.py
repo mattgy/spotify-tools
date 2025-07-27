@@ -17,21 +17,8 @@ colorama.init(autoreset=True)
 # Define cache directory
 CACHE_DIR = os.path.join(str(Path.home()), ".spotify-tools", "cache")
 
-def print_success(text):
-    """Print a success message."""
-    print(f"{Fore.GREEN}{text}")
-
-def print_error(text):
-    """Print an error message."""
-    print(f"{Fore.RED}{text}")
-
-def print_warning(text):
-    """Print a warning message."""
-    print(f"{Fore.YELLOW}{text}")
-
-def print_info(text):
-    """Print an info message."""
-    print(f"{Fore.BLUE}{text}")
+# Import print functions from spotify_utils
+from spotify_utils import print_success, print_error, print_warning, print_info
 
 def save_to_cache(data, cache_key, force_expire=False):
     """Save data to cache."""

@@ -31,6 +31,7 @@ from cache_utils import save_to_cache, load_from_cache
 from config import config, get_cache_expiration
 from musicbrainz_integration import mb_client
 from tqdm_utils import create_progress_bar, update_progress_bar, close_progress_bar
+from spotify_utils import safe_spotify_call
 
 # Spotify API scopes needed
 SPOTIFY_SCOPES = [
@@ -54,20 +55,12 @@ class SpotifyAnalytics:
     def _setup_spotify_client(self):
         """Set up authenticated Spotify client."""
         try:
-            client_id, client_secret, redirect_uri = get_spotify_credentials()
-            
-            auth_manager = SpotifyOAuth(
-                client_id=client_id,
-                client_secret=client_secret,
-                redirect_uri=redirect_uri,
-                scope=" ".join(SPOTIFY_SCOPES),
-                cache_path=os.path.join(os.path.expanduser("~"), ".spotify-tools", "analytics_token_cache")
-            )
-            
-            return spotipy.Spotify(auth_manager=auth_manager)
+            from spotify_utils import create_spotify_client
+            return create_spotify_client(SPOTIFY_SCOPES, "analytics")
         except Exception as e:
             print(f"{Fore.RED}Error setting up Spotify client: {e}")
             sys.exit(1)
+    
     
     def generate_comprehensive_report(self) -> str:
         """Generate a comprehensive analytics report."""
@@ -76,19 +69,50 @@ class SpotifyAnalytics:
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         report_file = os.path.join(self.output_dir, f"spotify_analytics_{timestamp}.json")
         
-        # Collect all data
+        # Collect all data with rate limiting
         analytics_data = {
             'generated_at': timestamp,
             'user_profile': self._get_user_profile(),
-            'listening_patterns': self._analyze_listening_patterns(),
-            'music_taste_evolution': self._analyze_taste_evolution(),
-            'genre_analysis': self._analyze_genres(),
-            'artist_diversity': self._analyze_artist_diversity(),
-            'playlist_insights': self._analyze_playlists(),
-            'discovery_recommendations': self._get_discovery_insights(),
-            'music_timeline': self._analyze_music_timeline(),
-            'audio_features_analysis': self._analyze_audio_features()
         }
+        
+        # Add rate limiting delay
+        time.sleep(0.5)
+        
+        # Get listening patterns once and reuse
+        try:
+            print("🎵 Analyzing listening patterns...")
+            listening_patterns = self._analyze_listening_patterns()
+            analytics_data['listening_patterns'] = listening_patterns
+        except Exception as e:
+            print(f"{Fore.YELLOW}⚠️  Rate limiting encountered. Adding longer delay...")
+            time.sleep(2)
+            listening_patterns = self._analyze_listening_patterns()
+            analytics_data['listening_patterns'] = listening_patterns
+        
+        # Add rate limiting delay
+        time.sleep(0.5)
+        
+        # Pass patterns to avoid duplicate API calls
+        analytics_data['music_taste_evolution'] = self._analyze_taste_evolution(listening_patterns)
+        
+        # Add rate limiting delays between each analysis
+        time.sleep(0.5)
+        analytics_data['genre_analysis'] = self._analyze_genres()
+        
+        time.sleep(0.5)
+        analytics_data['artist_diversity'] = self._analyze_artist_diversity()
+        
+        time.sleep(0.5)
+        analytics_data['playlist_insights'] = self._analyze_playlists()
+        
+        time.sleep(0.5)
+        analytics_data['discovery_recommendations'] = self._get_discovery_insights()
+        
+        time.sleep(0.5)
+        analytics_data['music_timeline'] = self._analyze_music_timeline()
+        
+        time.sleep(0.5)
+        analytics_data['audio_features_analysis'] = self._analyze_audio_features()
         
         # Save comprehensive data
         with open(report_file, 'w', encoding='utf-8') as f:
@@ -123,15 +147,28 @@ class SpotifyAnalytics:
     
     def _analyze_listening_patterns(self) -> dict:
         """Analyze user's listening patterns across time ranges."""
-        print("🎵 Analyzing listening patterns...")
         
         patterns = {}
         time_ranges = ['short_term', 'medium_term', 'long_term']
         
-        for time_range in time_ranges:
-            # Get top artists and tracks for this time range
-            top_artists = self.sp.current_user_top_artists(limit=50, time_range=time_range)
-            top_tracks = self.sp.current_user_top_tracks(limit=50, time_range=time_range)
+        for i, time_range in enumerate(time_ranges):
+            print(f"  • Analyzing {time_range} listening patterns...")
+            
+            # Get top artists and tracks for this time range with safe API calls
+            @safe_spotify_call
+            def get_top_artists(time_range):
+                return self.sp.current_user_top_artists(limit=50, time_range=time_range)
+            
+            @safe_spotify_call
+            def get_top_tracks(time_range):
+                return self.sp.current_user_top_tracks(limit=50, time_range=time_range)
+            
+            top_artists = get_top_artists(time_range)
+            
+            # Add delay between API calls
+            time.sleep(0.3)
+            
+            top_tracks = get_top_tracks(time_range)
             
             patterns[time_range] = {
                 'top_artists': [
@@ -154,14 +191,20 @@ class SpotifyAnalytics:
                     for track in top_tracks['items']
                 ]
             }
+            
+            # Add delay between time ranges
+            if i < len(time_ranges) - 1:
+                time.sleep(0.5)
         
         return patterns
     
-    def _analyze_taste_evolution(self) -> dict:
+    def _analyze_taste_evolution(self, patterns=None) -> dict:
         """Analyze how user's taste has evolved over time."""
         print("📈 Analyzing taste evolution...")
         
-        patterns = self._analyze_listening_patterns()
+        # Use provided patterns or get them (avoid duplicate API calls)
+        if patterns is None:
+            patterns = self._analyze_listening_patterns()
         
         evolution = {
             'genre_evolution': self._track_genre_changes(patterns),
@@ -283,13 +326,25 @@ class SpotifyAnalytics:
         followed_artists = []
         results = self.sp.current_user_followed_artists(limit=50)
         
+        max_retries = 3
+        retry_count = 0
+        
         while True:
-            followed_artists.extend(results['artists']['items'])
-            if results['artists']['next']:
-                results = self.sp.next(results['artists'])
-                time.sleep(0.1)
-            else:
-                break
+            try:
+                followed_artists.extend(results['artists']['items'])
+                if results['artists']['next']:
+                    results = self.sp.next(results['artists'])
+                    time.sleep(0.5)  # Increased delay to avoid timeouts
+                    retry_count = 0  # Reset on success
+                else:
+                    break
+            except Exception as e:
+                retry_count += 1
+                if retry_count >= max_retries:
+                    print(f"⚠️  Warning: Failed to fetch all followed artists after {max_retries} retries. Using partial data.")
+                    break
+                print(f"⚠️  Retry {retry_count}/{max_retries} due to error: {str(e)[:100]}...")
+                time.sleep(2 * retry_count)  # Exponential backoff
         
         # Enrich with MusicBrainz data for geographic analysis
         countries = []

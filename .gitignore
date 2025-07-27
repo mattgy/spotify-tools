@@ -13,10 +13,11 @@ dist/
 build/
 *.egg-info/
 
-# Credentials and sensitive data
+# Credentials and sensitive data (NEVER commit these)
 .env
 credentials.json
-config.json
+~/.spotify-tools/
+.spotify-tools/
 *.pem
 *.key
 *.crt
@@ -30,36 +31,38 @@ config.json
 .cache
 .cache-*
 
-# Project specific cache
-~/.spotify-tools/
-.spotify-tools/
-
-# Data files and output
-data/
+# User data and output (exclude user-generated content)
 analytics_output/
-*.json
-*.csv
-*.xlsx
-*.db
-output/
+user_data/
+backups/
 exports/
-
-# Deployment files
-deploy/
-dashboard/
+output/
 
 # Logs
-logs/
 *.log
+
+# User-generated data files (but allow examples)
+/data/
+*_backup.json
+*_export.csv
+*_analysis.xlsx
+*.db
 
 # IDE files
 .idea/
 .vscode/
 *.swp
 *.swo
-.DS_Store
 
-# AI context files (should not be in public repos)
+# OS specific files
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# AI context files (exclude other AI references, but keep CLAUDE.md)
 GEMINI.md
 ABOUT.md
 AmazonQ.md
@@ -71,13 +74,3 @@ CONTRIBUTING.md
 *.temp
 temp/
 tmp/
-
-# MacOS specific
-.DS_Store
-.AppleDouble
-.LSOverride
-
-# Windows specific
-Thumbs.db
-ehthumbs.db
-Desktop.ini

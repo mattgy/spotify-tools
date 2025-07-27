@@ -669,19 +669,31 @@ class SpotifyAnalytics:
             except Exception as e:
                 error_str = str(e).lower()
                 if '403' in error_str or 'forbidden' in error_str:
-                    print("⚠️ Audio features not accessible - missing scope or permissions")
+                    print_warning("⚠️ Audio features not accessible - this requires Spotify Premium or specific API permissions")
+                    print_info("Audio features analysis will be skipped. Other analytics will continue.")
+                    break  # Stop trying other batches since this is a permission issue
+                elif 'rate limit' in error_str or '429' in error_str:
+                    print_warning("⚠️ Rate limited by Spotify API. Waiting before retry...")
+                    time.sleep(5)  # Wait 5 seconds and try this batch again
+                    continue
                 else:
-                    print(f"⚠️ Error fetching audio features: {e}")
-                # Continue with other batches
+                    print_warning(f"⚠️ Error fetching audio features batch {i//100 + 1}: {e}")
+                # Continue with other batches for non-permission errors
                 continue
             
             update_progress_bar(progress_bar, 1)
-            time.sleep(0.1)
+            time.sleep(0.3)  # Increased delay to avoid rate limits
         
         close_progress_bar(progress_bar)
         
         if not all_features:
-            return {}
+            print_info("No audio features available - continuing with other analytics")
+            return {
+                'tracks_analyzed': 0,
+                'error': 'Audio features not accessible (may require Spotify Premium)',
+                'audio_feature_averages': {},
+                'music_personality': {}
+            }
         
         # Calculate averages
         feature_keys = ['danceability', 'energy', 'speechiness', 'acousticness', 
@@ -1035,14 +1047,19 @@ def main():
                 
         elif choice == "3":
             audio_data = analytics._analyze_audio_features()
-            if audio_data:
+            if audio_data and audio_data.get('tracks_analyzed', 0) > 0:
                 print(f"\n{Fore.YELLOW}🎵 Audio Features Analysis:")
                 print(f"Tracks Analyzed: {audio_data['tracks_analyzed']}")
                 print("\nYour Music Profile:")
                 for trait, desc in audio_data.get('music_personality', {}).items():
                     print(f"  • {trait.replace('_', ' ').title()}: {desc}")
             else:
-                print(f"{Fore.RED}No audio features data available")
+                print(f"\n{Fore.YELLOW}🎵 Audio Features Analysis:")
+                if audio_data and 'error' in audio_data:
+                    print_warning(audio_data['error'])
+                else:
+                    print_warning("No audio features data available")
+                print_info("This feature requires Spotify Premium or may be limited by API permissions.")
                 
         elif choice == "4":
             print(f"{Fore.GREEN}Goodbye!")

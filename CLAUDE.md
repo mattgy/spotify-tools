@@ -37,6 +37,9 @@ All scripts can be run independently:
 - **Always run your test suite after making any significant changes.**
 - When making changes, look for opportunities to improve testing e.g. add unit tests, expand the test suite
 
+## Development Workflow
+- Ask whether I want to commit to Git/GitHub after each set of major changes, and automatically look for any sensitive information before committing.
+
 ## Architecture
 
 [... rest of the file remains unchanged ...]

@@ -1075,8 +1075,7 @@ def main():
         logger.setLevel(logging.DEBUG)
         logger.debug("Debug logging enabled")
     
-    # Use the provided threshold
-    confidence_threshold = args.threshold
+    # Set minimum score
     min_score = args.min_score
     
     # Resolve directory path
@@ -1172,7 +1171,8 @@ def main():
         print(f"  • <{manual_threshold} = Skip")
         
         print("="*60)
-    elif args.batch:
+    else:
+        # For batch mode or when no interactive selection, use command line threshold
         confidence_threshold = args.threshold
     
     # Batch mode information

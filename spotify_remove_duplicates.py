@@ -148,7 +148,17 @@ def find_similar_duplicates(tracks, similarity_threshold=None):
     for track in tracks:
         # Create normalized key for efficient grouping
         title = normalize_string(track['name'])
-        artists = normalize_string(' '.join([artist['name'] for artist in track['artists']]))
+        
+        # Handle case where artists might be strings instead of objects
+        if isinstance(track['artists'], list) and track['artists'] and isinstance(track['artists'][0], dict):
+            # Normal case: list of artist objects
+            artists = normalize_string(' '.join([artist['name'] for artist in track['artists']]))
+        elif isinstance(track['artists'], list):
+            # Case: list of artist names (strings)
+            artists = normalize_string(' '.join(track['artists']))
+        else:
+            # Fallback: single artist or corrupted data
+            artists = normalize_string(str(track['artists']))
         
         # Create multiple keys to catch variations
         key1 = f"{artists}_{title}"

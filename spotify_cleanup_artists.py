@@ -274,7 +274,17 @@ def identify_inactive_artists(followed_artists, top_artists, recently_played):
                 follower_score = 0
             
             # Weight popularity more heavily, use followers as secondary factor
-            relevance_score = (popularity * 0.7) + (follower_score * 0.3)
+            # Add protection for well-known artists that might have lower follower counts
+            base_score = (popularity * 0.7) + (follower_score * 0.3)
+            
+            # Apply conservative adjustment for potentially well-known artists
+            # Don't suggest removal of artists with high popularity even if followers are low
+            if popularity >= 50:  # Popular artists should be protected
+                relevance_score = max(base_score, 50)  # Minimum score of 50 for popular artists
+            elif popularity >= 30 and followers < 1000:  # Possible discrepancy between popularity and followers
+                relevance_score = max(base_score, 35)  # Be more conservative
+            else:
+                relevance_score = base_score
             
             # Create artist record with simplified scoring
             artist_record = {

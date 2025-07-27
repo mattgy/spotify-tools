@@ -195,12 +195,13 @@ class SpotifyAnalytics:
             patterns[time_range] = {
                 'top_artists': [
                     {
-                        'name': artist['name'],
-                        'popularity': artist.get('popularity', 0),
-                        'genres': artist.get('genres', []),
-                        'followers': artist['followers']['total']
+                        'name': artist['name'] if isinstance(artist, dict) else str(artist),
+                        'popularity': artist.get('popularity', 0) if isinstance(artist, dict) else 0,
+                        'genres': artist.get('genres', []) if isinstance(artist, dict) else [],
+                        'followers': artist['followers']['total'] if isinstance(artist, dict) and 'followers' in artist else 0
                     }
                     for artist in top_artists['items']
+                    if artist  # Skip None/empty artists
                 ],
                 'top_tracks': [
                     {
@@ -336,9 +337,14 @@ class SpotifyAnalytics:
         progress_bar = create_progress_bar(len(followed_artists), "Analyzing artist genres", "artist")
         
         for artist in followed_artists:
-            for genre in artist.get('genres', []):
-                all_genres.append(genre)
-                genre_artist_map[genre].append(artist['name'])
+            # Handle case where artist might be a string instead of dict
+            if isinstance(artist, dict):
+                for genre in artist.get('genres', []):
+                    all_genres.append(genre)
+                    genre_artist_map[genre].append(artist.get('name', 'Unknown'))
+            elif isinstance(artist, str):
+                # Skip strings as they don't have genre data
+                print_warning(f"Found artist data as string: {artist}")
             update_progress_bar(progress_bar, 1)
         
         close_progress_bar(progress_bar)
@@ -481,7 +487,10 @@ class SpotifyAnalytics:
             # Analyze top genres for discovery potential
             all_genres = []
             for artist in followed_artists[:20]:  # Sample to avoid long processing
-                all_genres.extend(artist.get('genres', []))
+                # Handle case where artist might be a string instead of dict
+                if isinstance(artist, dict):
+                    all_genres.extend(artist.get('genres', []))
+                # Skip strings as they don't have genre data
             
             from collections import Counter
             genre_counts = Counter(all_genres)

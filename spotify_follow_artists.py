@@ -99,7 +99,16 @@ def get_followed_artists(sp):
 def follow_artists(sp, artists, followed_artists):
     """Follow artists that the user isn't already following."""
     # Create set of followed artist IDs for efficient lookup
-    followed_ids = {artist['id'] for artist in followed_artists}
+    # Handle case where followed_artists might contain strings instead of dicts
+    followed_ids = set()
+    for artist in followed_artists:
+        if isinstance(artist, dict) and 'id' in artist:
+            followed_ids.add(artist['id'])
+        elif isinstance(artist, str):
+            followed_ids.add(artist)  # Assume it's an artist ID
+        else:
+            print_warning(f"Invalid artist data: {type(artist)}")
+            continue
     
     # Filter out artists already being followed
     new_artists = [a for a in artists if a['id'] not in followed_ids]

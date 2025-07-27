@@ -488,7 +488,16 @@ def main():
     similar_artists_list.sort(key=lambda x: x["match"], reverse=True)
     
     # Get already followed artists
-    followed_artist_names = {artist["name"].lower() for artist in followed_artists}
+    # Handle case where followed_artists might contain strings instead of dicts
+    followed_artist_names = set()
+    for artist in followed_artists:
+        if isinstance(artist, dict) and "name" in artist:
+            followed_artist_names.add(artist["name"].lower())
+        elif isinstance(artist, str):
+            followed_artist_names.add(artist.lower())  # Assume it's an artist name
+        else:
+            print_warning(f"Invalid artist data: {type(artist)}")
+            continue
     
     # Filter out already followed artists
     new_similar_artists = [

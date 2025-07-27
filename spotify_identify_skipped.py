@@ -150,7 +150,7 @@ def analyze_listening_patterns(recently_played):
                 next_track_time = datetime.fromisoformat(next_track['played_at'].replace('Z', '+00:00'))
                 
                 if (next_track_time > played_at and 
-                    next_track['id'] != track_id):
+                    next_track['track']['id'] != track_id):
                     next_different_track = next_track
                     next_time = next_track_time
                     break

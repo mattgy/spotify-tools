@@ -34,7 +34,6 @@ from pathlib import Path
 colorama.init(autoreset=True)
 
 # Define constants
-CACHE_EXPIRATION = 60 * 60 * 24 * 7  # 7 days in seconds
 CONFIG_DIR = os.path.join(str(Path.home()), ".spotify-tools")
 CREDENTIALS_FILE = os.path.join(CONFIG_DIR, "credentials.json")
 
@@ -55,8 +54,8 @@ SPOTIFY_SCOPES = [
     "user-top-read"  # Add this scope to access user's top artists
 ]
 
-# Cache expiration (in seconds)
-CACHE_EXPIRATION = 7 * 24 * 60 * 60  # 7 days
+# Import cache expiration from constants
+from constants import CACHE_EXPIRATION
 
 # Import print functions from spotify_utils
 from spotify_utils import print_header, print_warning, print_success, print_error, print_info
@@ -77,14 +76,13 @@ def setup_spotify_client():
 def get_followed_artists(sp):
     """Get all artists the user follows on Spotify."""
     from spotify_utils import fetch_followed_artists
-    from constants import CACHE_EXPIRATION
     return fetch_followed_artists(sp, show_progress=True, cache_key="followed_artists", cache_expiration=CACHE_EXPIRATION['long'])
 
 def get_similar_artists(artist_name, artist_id, lastfm_api_key):
     """Get similar artists from Last.fm API with enhanced scoring."""
     # Try to load from cache
     cache_key = f"similar_artists_{artist_id}"
-    cached_data = load_from_cache(cache_key, CACHE_EXPIRATION)
+    cached_data = load_from_cache(cache_key, CACHE_EXPIRATION['long'])
     
     if cached_data:
         return cached_data

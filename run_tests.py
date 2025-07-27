@@ -11,9 +11,24 @@ import sys
 import os
 import importlib
 import traceback
+import subprocess
 
 # Add the current directory to the Python path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+def install_dependencies():
+    """Install required dependencies for testing."""
+    print("Installing dependencies for testing...")
+    try:
+        subprocess.run([sys.executable, "install_dependencies.py"], check=True, capture_output=True)
+        print("✅ Dependencies installed successfully")
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"❌ Failed to install dependencies: {e}")
+        return False
+    except FileNotFoundError:
+        print("⚠️ install_dependencies.py not found, skipping dependency installation")
+        return False
 
 def test_all_imports():
     """Test that all main modules can be imported."""
@@ -26,12 +41,14 @@ def test_all_imports():
         'spotify_backup',
         'spotify_cleanup_artists',
         'spotify_remove_christmas',
-        'spotify_stats',
+        'spotify_remove_duplicates',
+        'spotify_identify_skipped',
+        'spotify_playlist_manager',
+        'spotify_playlist_converter',
         'cache_utils',
         'credentials_manager',
-        'config',
-        'musicbrainz_integration',
-        'music_discovery',
+        'constants',
+        'spotify_utils',
         'tqdm_utils'
     ]
     
@@ -71,7 +88,10 @@ def test_menu_script_functions():
         ('spotify_backup', ['main']),
         ('spotify_cleanup_artists', ['main']),
         ('spotify_remove_christmas', ['main']),
-        ('spotify_stats', ['main'])
+        ('spotify_remove_duplicates', ['main']),
+        ('spotify_identify_skipped', ['main']),
+        ('spotify_playlist_manager', ['main']),
+        ('spotify_playlist_converter', ['main'])
     ]
     
     print("\nTesting script functions...")
@@ -108,7 +128,21 @@ def run_unit_tests():
     # Discover and run tests
     loader = unittest.TestLoader()
     start_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'tests')
-    suite = loader.discover(start_dir, pattern='test_*.py')
+    
+    # Prioritize comprehensive menu test
+    suite = unittest.TestSuite()
+    
+    # Add comprehensive menu test first
+    try:
+        comprehensive_test = loader.loadTestsFromName('test_comprehensive_menu', start_dir)
+        suite.addTest(comprehensive_test)
+        print("✅ Loaded comprehensive menu tests")
+    except Exception as e:
+        print(f"⚠️ Could not load comprehensive menu tests: {e}")
+    
+    # Add other tests
+    other_tests = loader.discover(start_dir, pattern='test_*.py')
+    suite.addTest(other_tests)
     
     # Run tests with verbose output
     runner = unittest.TextTestRunner(verbosity=2, stream=sys.stdout)
@@ -120,6 +154,11 @@ def main():
     """Run all tests."""
     print("🧪 Matt Y's Spotify Tools - Comprehensive Test Suite")
     print("=" * 60)
+    
+    # Try to install dependencies first
+    print("Checking dependencies...")
+    if not install_dependencies():
+        print("⚠️ Some dependencies may be missing. Tests will continue but may fail.")
     
     all_tests_passed = True
     
@@ -141,8 +180,12 @@ def main():
         print("🎉 ALL TESTS PASSED!")
         print("All menu options should work correctly.")
     else:
-        print("⚠️  SOME TESTS FAILED!")
+        print("⚠️ SOME TESTS FAILED!")
         print("Check the output above for details.")
+        print("\n💡 Common issues:")
+        print("   - Missing dependencies: Run 'python3 install_dependencies.py'")
+        print("   - Virtual environment: Use './spotify_run.py' instead of direct execution")
+        print("   - API credentials: Set up credentials via menu option 12")
     
     print("=" * 60)
     

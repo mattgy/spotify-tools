@@ -212,7 +212,8 @@ When adding new features:
 The following tasks remain to be completed. Remove completed items from this list:
 
 ### High Priority
-- Build comprehensive tests for all menu items
+- Fix option 7 progress bar showing wrong total
+- Fix backup option to only backup user-created playlists
 
 ### Medium Priority
 - Automate environment reset command execution

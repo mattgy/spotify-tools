@@ -147,7 +147,7 @@ class SpotifyBackup:
                     'public': playlist.get('public', False),
                     'collaborative': playlist.get('collaborative', False),
                     'owner': playlist['owner']['id'],
-                    'follower_count': playlist['followers']['total'],
+                    'follower_count': playlist.get('followers', {}).get('total', 0),
                     'track_count': playlist['tracks']['total'],
                     'created_at': datetime.datetime.now().isoformat(),
                     'tracks': []

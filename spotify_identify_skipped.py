@@ -46,7 +46,7 @@ SCOPES = SPOTIFY_SCOPES['read_only']
 # Skip detection thresholds
 MINIMUM_PLAY_TIME = 30000  # 30 seconds in milliseconds
 SKIP_THRESHOLD = 0.3  # Consider skipped if played less than 30% of track
-MINIMUM_OCCURRENCES = 3  # Need at least 3 plays to consider skip rate
+MINIMUM_OCCURRENCES = 2  # Need at least 2 plays to consider skip rate (reduced for more data)
 
 def setup_spotify_client():
     """Set up and return an authenticated Spotify client."""
@@ -66,102 +66,48 @@ def setup_spotify_client():
         print_error(f"Failed to set up Spotify client: {e}")
         return None
 
-def get_recently_played_tracks(sp, limit=50):
-    """Get recently played tracks from Spotify."""
-    cache_key = "recently_played_tracks"
-    cached_data = load_from_cache(cache_key, CACHE_EXPIRATION['short'])
+def get_recently_played_tracks(sp, limit=200):
+    """Get recently played tracks from Spotify with enhanced data collection."""
+    from spotify_utils import fetch_recently_played
     
-    if cached_data:
-        print_info("Using cached recently played data...")
-        return cached_data
-    
+    # Try to get more listening data by making multiple calls
     print_info("Fetching recently played tracks...")
-    all_tracks = []
     
-    try:
-        # Get recently played tracks
-        results = sp.current_user_recently_played(limit=limit)
-        
-        while results and results['items']:
-            for item in results['items']:
-                if item['track'] and item['track']['id']:
-                    track_data = {
-                        'id': item['track']['id'],
-                        'name': item['track']['name'],
-                        'artists': [artist['name'] for artist in item['track']['artists']],
-                        'album': item['track']['album']['name'],
-                        'duration_ms': item['track']['duration_ms'],
-                        'popularity': item['track']['popularity'],
-                        'uri': item['track']['uri'],
-                        'played_at': item['played_at']
-                    }
-                    all_tracks.append(track_data)
-            
-            # Try to get more tracks if available
-            if results.get('next') and len(all_tracks) < 1000:  # Limit to 1000 tracks
-                try:
-                    results = sp.next(results)
-                    time.sleep(0.1)  # Rate limiting
-                except:
-                    break
-            else:
-                break
-        
-        # Cache the results
-        save_to_cache(all_tracks, cache_key)
+    # Use the reusable function which handles multiple calls for more data
+    all_tracks = fetch_recently_played(sp, limit=limit, show_progress=True, cache_key="recently_played_extended")
+    
+    if all_tracks:
         print_success(f"Found {len(all_tracks)} recently played tracks")
-        
-        return all_tracks
+    else:
+        print_warning("No recently played tracks found")
     
-    except Exception as e:
-        print_error(f"Error fetching recently played tracks: {e}")
-        return []
+    return all_tracks
 
 def get_liked_songs(sp):
     """Get all liked songs from the user's library."""
-    cache_key = "liked_songs_for_skip_analysis"
-    cached_data = load_from_cache(cache_key, CACHE_EXPIRATION['personal'])
+    from spotify_utils import fetch_user_saved_tracks
     
-    if cached_data:
-        print_info("Using cached liked songs data...")
-        return cached_data
+    # Fetch saved tracks using the reusable function
+    saved_tracks = fetch_user_saved_tracks(sp, show_progress=True, cache_key="liked_songs_for_skip_analysis")
     
-    print_info("Fetching liked songs...")
+    # Convert to dictionary format for easier lookup
     liked_songs = {}
+    for item in saved_tracks:
+        if item['track'] and item['track']['id']:
+            track_id = item['track']['id']
+            liked_songs[track_id] = {
+                'id': track_id,
+                'name': item['track']['name'],
+                'artists': [artist['name'] for artist in item['track']['artists']],
+                'album': item['track']['album']['name'],
+                'duration_ms': item['track']['duration_ms'],
+                'popularity': item['track']['popularity'],
+                'uri': item['track']['uri'],
+                'added_at': item['added_at']
+            }
     
-    try:
-        results = sp.current_user_saved_tracks(limit=50)
-        
-        while results:
-            for item in results['items']:
-                if item['track'] and item['track']['id']:
-                    track_id = item['track']['id']
-                    liked_songs[track_id] = {
-                        'id': track_id,
-                        'name': item['track']['name'],
-                        'artists': [artist['name'] for artist in item['track']['artists']],
-                        'album': item['track']['album']['name'],
-                        'duration_ms': item['track']['duration_ms'],
-                        'popularity': item['track']['popularity'],
-                        'uri': item['track']['uri'],
-                        'added_at': item['added_at']
-                    }
-            
-            if results['next']:
-                results = sp.next(results)
-                time.sleep(0.1)  # Rate limiting
-            else:
-                break
-        
-        # Cache the results
-        save_to_cache(liked_songs, cache_key)
-        print_success(f"Found {len(liked_songs)} liked songs")
-        
-        return liked_songs
-    
-    except Exception as e:
-        print_error(f"Error fetching liked songs: {e}")
-        return {}
+    print_success(f"Found {len(liked_songs)} liked songs")
+    return liked_songs
 
 def analyze_listening_patterns(recently_played):
     """Analyze listening patterns to identify potentially skipped songs."""
@@ -238,6 +184,13 @@ def analyze_listening_patterns(recently_played):
                 'play_sessions': play_sessions
             }
     
+    # Check if we have enough data for analysis
+    if len(skip_analysis) < 5:  # Need at least 5 songs with sufficient plays for meaningful analysis
+        print_warning(f"Only {len(skip_analysis)} songs have enough plays for analysis (need at least 5).")
+        print_info("Try using the app more to generate more listening data, or check back later.")
+        return None
+    
+    print_success(f"Analyzed {len(skip_analysis)} songs with sufficient play data")
     return skip_analysis
 
 def identify_problematic_songs(skip_analysis, liked_songs):

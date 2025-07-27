@@ -59,177 +59,50 @@ def setup_spotify_client():
 
 def get_user_playlists(sp):
     """Get all playlists created by the current user."""
-    # Try to load from cache
-    cache_key = "user_playlists"
-    cached_data = load_from_cache(cache_key, CACHE_EXPIRATION)
+    from spotify_utils import fetch_user_playlists
     
-    if cached_data:
-        print("Using cached playlist data")
-        return cached_data
+    # Fetch all playlists
+    all_playlists = fetch_user_playlists(sp, show_progress=True, cache_key="user_playlists")
     
-    print("Fetching your playlists...")
-    
-    # Get current user ID
+    # Filter for playlists created by the user
     user_id = sp.current_user()['id']
+    user_playlists = [p for p in all_playlists if p['owner']['id'] == user_id]
     
-    # Get all playlists
-    playlists = []
-    offset = 0
-    limit = 50  # Maximum allowed by Spotify API
-    
-    while True:
-        results = sp.current_user_playlists(limit=limit, offset=offset)
-        
-        if not results['items']:
-            break
-        
-        # Filter for playlists created by the user
-        user_playlists = [p for p in results['items'] if p['owner']['id'] == user_id]
-        playlists.extend(user_playlists)
-        
-        if len(results['items']) < limit:
-            break
-        
-        offset += limit
-    
-    print(f"Found {len(playlists)} playlists that you've created")
-    
-    # Save to cache
-    save_to_cache(playlists, cache_key)
-    
-    return playlists
+    print(f"Found {len(user_playlists)} playlists that you've created")
+    return user_playlists
 
 def get_artists_from_playlists(sp, playlists):
     """Extract all unique artists from the given playlists."""
-    # Try to load from cache
+    from spotify_utils import extract_artists_from_playlists
+    
+    # Try to load from cache first
     cache_key = "playlist_artists"
     cached_data = load_from_cache(cache_key, CACHE_EXPIRATION)
     
     if cached_data:
-        print("Using cached artist data")
+        print("Using cached track data")
         return cached_data
     
-    print("Extracting artists from your playlists...")
-    
-    # Dictionary to store artist info by ID
-    artists = {}
-    
-    # Dictionary to track which playlists each artist appears in
-    artist_playlists = defaultdict(list)
-    
-    # Set up progress tracking
-    total_playlists = len(playlists)
-    
-    # Import tqdm for progress bar
-    try:
-        from tqdm import tqdm
-        playlists_iter = tqdm(playlists, desc="Processing playlists", unit="playlist")
-    except ImportError:
-        print(f"Processing {total_playlists} playlists...")
-        playlists_iter = playlists
-    
-    # Process each playlist
-    for i, playlist in enumerate(playlists_iter):
-        playlist_id = playlist['id']
-        playlist_name = playlist['name']
-        
-        # Get all tracks in the playlist
-        tracks = []
-        offset = 0
-        limit = 100  # Maximum allowed by Spotify API
-        
-        while True:
-            results = sp.playlist_items(
-                playlist_id,
-                fields='items(track(artists)),total',
-                limit=limit,
-                offset=offset
-            )
-            
-            tracks.extend(results['items'])
-            
-            if len(results['items']) < limit:
-                break
-            
-            offset += limit
-            
-            # Add a small delay to avoid hitting rate limits
-            time.sleep(0.1)
-        
-        # Extract artists from tracks
-        for item in tracks:
-            if not item['track'] or not item['track']['artists']:
-                continue
-            
-            for artist in item['track']['artists']:
-                artist_id = artist['id']
-                artist_name = artist['name']
-                
-                # Store artist info
-                artists[artist_id] = {
-                    'id': artist_id,
-                    'name': artist_name
-                }
-                
-                # Track which playlist this artist appears in
-                if playlist_name not in artist_playlists[artist_id]:
-                    artist_playlists[artist_id].append(playlist_name)
-    
-    # Add playlist information to each artist
-    for artist_id, playlists in artist_playlists.items():
-        if artist_id in artists:
-            artists[artist_id]['playlists'] = playlists
-    
-    # Convert to list
-    artist_list = list(artists.values())
-    
-    print(f"Found {len(artist_list)} unique artists across all playlists")
+    # Extract artists using the reusable function
+    artists = extract_artists_from_playlists(playlists, sp, show_progress=True)
     
     # Save to cache
-    save_to_cache(artist_list, cache_key)
+    save_to_cache(artists, cache_key)
     
-    return artist_list
+    return artists
 
 def get_followed_artists(sp):
     """Get a list of artists the user is already following."""
-    # Try to load from cache
-    cache_key = "followed_artists"
-    cached_data = load_from_cache(cache_key, CACHE_EXPIRATION)
-    
-    if cached_data:
-        print("Using cached followed artists data")
-        return cached_data
-    
-    print("Fetching artists you already follow...")
-    
-    followed_artists = set()
-    after = None
-    
-    while True:
-        results = sp.current_user_followed_artists(limit=50, after=after)
-        
-        for artist in results['artists']['items']:
-            followed_artists.add(artist['id'])
-        
-        if not results['artists']['next']:
-            break
-        
-        after = results['artists']['cursors']['after']
-        
-        # Add a small delay to avoid hitting rate limits
-        time.sleep(0.1)
-    
-    print(f"You are currently following {len(followed_artists)} artists")
-    
-    # Save to cache
-    save_to_cache(list(followed_artists), cache_key)
-    
-    return followed_artists
+    from spotify_utils import fetch_followed_artists
+    return fetch_followed_artists(sp, show_progress=True, cache_key="followed_artists")
 
 def follow_artists(sp, artists, followed_artists):
     """Follow artists that the user isn't already following."""
+    # Create set of followed artist IDs for efficient lookup
+    followed_ids = {artist['id'] for artist in followed_artists}
+    
     # Filter out artists already being followed
-    new_artists = [a for a in artists if a['id'] not in followed_artists]
+    new_artists = [a for a in artists if a['id'] not in followed_ids]
     
     if not new_artists:
         print("You are already following all artists from your playlists!")
@@ -237,9 +110,48 @@ def follow_artists(sp, artists, followed_artists):
     
     print(f"Found {len(new_artists)} new artists to follow")
     
-    # Check for low-follower artists
+    # Check for low-follower artists (safely handle missing follower data)
     low_follower_threshold = 10
-    low_follower_artists = [a for a in new_artists if a['followers']['total'] <= low_follower_threshold]
+    low_follower_artists = []
+    
+    # Filter artists that have follower data
+    artists_with_followers = [a for a in new_artists if 'followers' in a and a['followers']]
+    
+    if artists_with_followers:
+        low_follower_artists = [a for a in artists_with_followers if a['followers']['total'] <= low_follower_threshold]
+    
+    # If no artists have follower data, we'll skip the low-follower check
+    if not artists_with_followers and len(new_artists) > 100:
+        print_info(f"\nNote: Follower data not available for playlist artists. Recommend reviewing the {len(new_artists)} artists manually.")
+        # Ask if user wants to fetch detailed artist info for follower checking
+        fetch_details = input("Fetch detailed artist info to check follower counts? (This may take a while) (y/n): ").strip().lower()
+        
+        if fetch_details == 'y':
+            from tqdm_utils import create_progress_bar, update_progress_bar, close_progress_bar
+            print_info("Fetching detailed artist information...")
+            progress_bar = create_progress_bar(total=min(50, len(new_artists)), desc="Checking artist details", unit="artist")
+            
+            # Sample first 50 artists to check for low followers
+            sample_artists = new_artists[:50]
+            
+            for i, artist in enumerate(sample_artists):
+                try:
+                    # Fetch full artist details
+                    full_artist = sp.artist(artist['id'])
+                    if full_artist and 'followers' in full_artist and full_artist['followers']['total'] <= low_follower_threshold:
+                        # Update artist with follower info
+                        artist['followers'] = full_artist['followers']
+                        low_follower_artists.append(artist)
+                    
+                    update_progress_bar(progress_bar, 1)
+                    time.sleep(0.1)  # Rate limiting
+                    
+                except Exception as e:
+                    print_warning(f"Error fetching details for {artist.get('name', 'Unknown')}: {e}")
+                    update_progress_bar(progress_bar, 1)
+                    continue
+            
+            close_progress_bar(progress_bar)
     
     if low_follower_artists:
         print_warning(f"\nFound {len(low_follower_artists)} artists with {low_follower_threshold} or fewer followers:")

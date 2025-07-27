@@ -62,50 +62,29 @@ def setup_spotify_client():
 
 def get_liked_songs(sp):
     """Get all liked songs from the user's library."""
-    cache_key = "all_liked_songs"
-    cached_data = load_from_cache(cache_key, CACHE_EXPIRATION['personal'])
+    from spotify_utils import fetch_user_saved_tracks
     
-    if cached_data:
-        print_info("Using cached liked songs data...")
-        return cached_data
+    # Fetch saved tracks using the reusable function with progress bar
+    saved_tracks_data = fetch_user_saved_tracks(sp, show_progress=True, cache_key="all_liked_songs", cache_expiration=CACHE_EXPIRATION['personal'])
     
-    print_info("Fetching all liked songs...")
+    # Convert to our expected format
     liked_songs = []
+    for item in saved_tracks_data:
+        if item['track'] and item['track']['id']:
+            track = {
+                'id': item['track']['id'],
+                'name': item['track']['name'],
+                'artists': [artist['name'] for artist in item['track']['artists']],
+                'album': item['track']['album']['name'],
+                'duration_ms': item['track']['duration_ms'],
+                'popularity': item['track']['popularity'],
+                'uri': item['track']['uri'],
+                'added_at': item['added_at']
+            }
+            liked_songs.append(track)
     
-    try:
-        # Fetch all liked songs
-        results = sp.current_user_saved_tracks(limit=50)
-        
-        while results:
-            for item in results['items']:
-                if item['track'] and item['track']['id']:
-                    track = {
-                        'id': item['track']['id'],
-                        'name': item['track']['name'],
-                        'artists': [artist['name'] for artist in item['track']['artists']],
-                        'album': item['track']['album']['name'],
-                        'duration_ms': item['track']['duration_ms'],
-                        'popularity': item['track']['popularity'],
-                        'uri': item['track']['uri'],
-                        'added_at': item['added_at']
-                    }
-                    liked_songs.append(track)
-            
-            if results['next']:
-                results = sp.next(results)
-                time.sleep(0.1)  # Rate limiting
-            else:
-                break
-        
-        # Cache the results
-        save_to_cache(liked_songs, cache_key)
-        print_success(f"Found {len(liked_songs)} liked songs")
-        
-        return liked_songs
-    
-    except Exception as e:
-        print_error(f"Error fetching liked songs: {e}")
-        return []
+    print_success(f"Found {len(liked_songs)} liked songs")
+    return liked_songs
 
 def find_exact_duplicates(tracks):
     """Find tracks with exactly the same ID."""

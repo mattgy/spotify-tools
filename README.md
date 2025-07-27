@@ -2,6 +2,28 @@
 
 A comprehensive collection of Python utilities for managing your Spotify account, discovering music, and analyzing listening habits. Features a menu-driven interface with advanced automation, analytics, and music discovery capabilities.
 
+## 🚀 How to Run
+
+**Simple 3-step setup:**
+
+1. **Clone and enter the directory**:
+   ```bash
+   git clone https://github.com/mattgy/spotify-tools.git
+   cd spotify-tools
+   ```
+
+2. **Run the program** (auto-installs everything):
+   ```bash
+   ./spotify_run.py
+   ```
+
+3. **Set up Spotify credentials** (one-time):
+   - Create a free Spotify app at [developer.spotify.com](https://developer.spotify.com/dashboard/)
+   - Set redirect URI to: `http://127.0.0.1:8888/callback`
+   - Use menu option 12 to enter your Client ID and Client Secret
+
+**That's it!** The program handles Python virtual environment setup, dependency installation, and provides a user-friendly menu.
+
 ## 🎵 Core Features
 
 ### Playlist Management
@@ -28,30 +50,11 @@ A comprehensive collection of Python utilities for managing your Spotify account
 - **Multiple Export Formats**: JSON, CSV, Apple Music, and YouTube Music compatible formats
 - **Metadata Preservation**: Include ISRC codes, Spotify URLs, and detailed track information
 
-## 🚀 Quick Start
+## 📋 Requirements
 
-### Prerequisites
-- Python 3.6 or higher
-- Spotify Developer Account ([Setup Guide](https://developer.spotify.com/dashboard/))
-- Last.fm API Key (optional, for enhanced recommendations)
-
-### Installation
-
-1. **Clone the repository**:
-   ```bash
-   git clone <repository-url>
-   cd spotify-tools
-   ```
-
-2. **Run the main script** (handles environment setup automatically):
-   ```bash
-   ./spotify_run.py
-   ```
-
-3. **Set up Spotify API credentials**:
-   - Create a Spotify app at [developer.spotify.com](https://developer.spotify.com/dashboard/)
-   - Set redirect URI to: `http://127.0.0.1:8888/callback`
-   - Use menu option 11 to enter your Client ID and Client Secret
+- **Python 3.6+** (auto-detected and managed)
+- **Spotify Developer Account** (free at [developer.spotify.com](https://developer.spotify.com/dashboard/))
+- **Last.fm API Key** (optional, for enhanced recommendations)
 
 ## 📱 Menu Overview
 

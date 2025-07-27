@@ -31,7 +31,7 @@ from cache_utils import save_to_cache, load_from_cache
 from config import config, get_cache_expiration
 from musicbrainz_integration import mb_client
 from tqdm_utils import create_progress_bar, update_progress_bar, close_progress_bar
-from spotify_utils import safe_spotify_call
+from spotify_utils import create_spotify_client
 
 # Spotify API scopes needed
 SPOTIFY_SCOPES = [
@@ -79,34 +79,46 @@ class SpotifyAnalytics:
         time.sleep(0.5)
         
         # Get listening patterns once and reuse
-        try:
-            print("🎵 Analyzing listening patterns...")
-            listening_patterns = self._analyze_listening_patterns()
-            analytics_data['listening_patterns'] = listening_patterns
-        except Exception as e:
-            print(f"{Fore.YELLOW}⚠️  Rate limiting encountered. Adding longer delay...")
-            time.sleep(2)
-            listening_patterns = self._analyze_listening_patterns()
-            analytics_data['listening_patterns'] = listening_patterns
+        print("🎵 Analyzing listening patterns...")
+        listening_patterns = self._analyze_listening_patterns()
+        analytics_data['listening_patterns'] = listening_patterns
         
-        # Add rate limiting delay
-        time.sleep(0.5)
+        # Analysis steps with progress tracking
+        analysis_steps = [
+            ("📈 Analyzing taste evolution...", "_analyze_taste_evolution", [listening_patterns]),
+            ("🎭 Analyzing genres...", "_analyze_genres", []),
+            ("🎨 Analyzing artist diversity...", "_analyze_artist_diversity", []),
+            ("📋 Analyzing playlists...", "_analyze_playlists", []),
+            ("🔍 Getting discovery insights...", "_get_discovery_insights", [])
+        ]
         
-        # Pass patterns to avoid duplicate API calls
-        analytics_data['music_taste_evolution'] = self._analyze_taste_evolution(listening_patterns)
+        progress_bar = create_progress_bar(len(analysis_steps), "Running analytics", "analysis")
         
-        # Add rate limiting delays between each analysis
-        time.sleep(0.5)
-        analytics_data['genre_analysis'] = self._analyze_genres()
+        for i, (desc, method_name, args) in enumerate(analysis_steps):
+            print(desc)
+            
+            method = getattr(self, method_name)
+            if args:
+                result = method(*args)
+            else:
+                result = method()
+            
+            # Store result using appropriate key
+            if method_name == "_analyze_taste_evolution":
+                analytics_data['music_taste_evolution'] = result
+            elif method_name == "_analyze_genres":
+                analytics_data['genre_analysis'] = result
+            elif method_name == "_analyze_artist_diversity":
+                analytics_data['artist_diversity'] = result
+            elif method_name == "_analyze_playlists":
+                analytics_data['playlist_insights'] = result
+            elif method_name == "_get_discovery_insights":
+                analytics_data['discovery_recommendations'] = result
+            
+            update_progress_bar(progress_bar, 1)
+            time.sleep(0.5)  # Rate limiting delay
         
-        time.sleep(0.5)
-        analytics_data['artist_diversity'] = self._analyze_artist_diversity()
-        
-        time.sleep(0.5)
-        analytics_data['playlist_insights'] = self._analyze_playlists()
-        
-        time.sleep(0.5)
-        analytics_data['discovery_recommendations'] = self._get_discovery_insights()
+        close_progress_bar(progress_bar)
         
         time.sleep(0.5)
         analytics_data['music_timeline'] = self._analyze_music_timeline()
@@ -151,24 +163,34 @@ class SpotifyAnalytics:
         patterns = {}
         time_ranges = ['short_term', 'medium_term', 'long_term']
         
+        progress_bar = create_progress_bar(len(time_ranges), "Analyzing time periods", "period")
+        
         for i, time_range in enumerate(time_ranges):
             print(f"  • Analyzing {time_range} listening patterns...")
             
-            # Get top artists and tracks for this time range with safe API calls
-            @safe_spotify_call
-            def get_top_artists(time_range):
-                return self.sp.current_user_top_artists(limit=50, time_range=time_range)
+            # Get top artists and tracks for this time range with error handling
+            try:
+                top_artists = self.sp.current_user_top_artists(limit=50, time_range=time_range)
+            except Exception as e:
+                if "rate" in str(e).lower():
+                    print(f"  ⚠️ Rate limited for artists. Waiting 3 seconds...")
+                    time.sleep(3.0)
+                    top_artists = self.sp.current_user_top_artists(limit=50, time_range=time_range)
+                else:
+                    raise e
             
-            @safe_spotify_call
-            def get_top_tracks(time_range):
-                return self.sp.current_user_top_tracks(limit=50, time_range=time_range)
+            # Add delay between API calls to avoid rate limiting
+            time.sleep(1.0)
             
-            top_artists = get_top_artists(time_range)
-            
-            # Add delay between API calls
-            time.sleep(0.3)
-            
-            top_tracks = get_top_tracks(time_range)
+            try:
+                top_tracks = self.sp.current_user_top_tracks(limit=50, time_range=time_range)
+            except Exception as e:
+                if "rate" in str(e).lower():
+                    print(f"  ⚠️ Rate limited for tracks. Waiting 3 seconds...")
+                    time.sleep(3.0)
+                    top_tracks = self.sp.current_user_top_tracks(limit=50, time_range=time_range)
+                else:
+                    raise e
             
             patterns[time_range] = {
                 'top_artists': [
@@ -192,10 +214,13 @@ class SpotifyAnalytics:
                 ]
             }
             
-            # Add delay between time ranges
+            update_progress_bar(progress_bar, 1)
+            
+            # Add delay between time ranges to avoid rate limiting
             if i < len(time_ranges) - 1:
-                time.sleep(0.5)
+                time.sleep(1.0)
         
+        close_progress_bar(progress_bar)
         return patterns
     
     def _analyze_taste_evolution(self, patterns=None) -> dict:

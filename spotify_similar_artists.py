@@ -76,53 +76,9 @@ def setup_spotify_client():
 
 def get_followed_artists(sp):
     """Get all artists the user follows on Spotify."""
-    # Try to load from cache
-    cache_key = "followed_artists"
-    cached_data = load_from_cache(cache_key, CACHE_EXPIRATION)
-    
-    if cached_data:
-        print_success(f"Found {len(cached_data)} artists that you follow (from cache)")
-        return cached_data
-    
-    artists = []
-    after = None
-    limit = 50
-    
-    print_info("Fetching artists you follow on Spotify...")
-    
-    # First, get the total count
-    results = sp.current_user_followed_artists(limit=1)
-    total_artists = results['artists']['total']
-    
-    # Create progress bar
-    progress_bar = create_progress_bar(total=total_artists, desc="Fetching artists", unit="artist")
-    
-    while True:
-        results = sp.current_user_followed_artists(limit=limit, after=after)
-        batch_size = len(results['artists']['items'])
-        
-        artists.extend(results['artists']['items'])
-        
-        # Update progress bar
-        update_progress_bar(progress_bar, batch_size)
-        
-        # Check if there are more artists to fetch
-        if results['artists']['next']:
-            after = results['artists']['cursors']['after']
-            # Add a small delay to avoid hitting rate limits
-            time.sleep(0.1)
-        else:
-            break
-    
-    # Close progress bar
-    close_progress_bar(progress_bar)
-    
-    print_success(f"Found {len(artists)} artists that you follow")
-    
-    # Save to cache
-    save_to_cache(artists, cache_key)
-    
-    return artists
+    from spotify_utils import fetch_followed_artists
+    from constants import CACHE_EXPIRATION
+    return fetch_followed_artists(sp, show_progress=True, cache_key="followed_artists", cache_expiration=CACHE_EXPIRATION['long'])
 
 def get_similar_artists(artist_name, artist_id, lastfm_api_key):
     """Get similar artists from Last.fm API with enhanced scoring."""

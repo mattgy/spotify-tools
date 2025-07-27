@@ -51,46 +51,17 @@ def setup_spotify_client():
 
 def get_user_playlists(sp):
     """Get all playlists created by the current user."""
-    # Try to load from cache
-    cache_key = f"user_playlists_{sp.current_user()['id']}"
-    cached_data = load_from_cache(cache_key, CACHE_EXPIRATION)
+    from spotify_utils import fetch_user_playlists
     
-    if cached_data:
-        print("Using cached playlist data")
-        return cached_data
+    # Fetch all playlists with progress bar
+    all_playlists = fetch_user_playlists(sp, show_progress=True, cache_key=f"user_playlists_{sp.current_user()['id']}")
     
-    print("Fetching your playlists...")
+    # Filter to only include playlists created by the user
+    user_id = sp.current_user()['id']
+    user_playlists = [p for p in all_playlists if p['owner']['id'] == user_id]
     
-    # Get all user's playlists
-    playlists = []
-    offset = 0
-    limit = 50  # Maximum allowed by Spotify API
-    
-    while True:
-        results = sp.current_user_playlists(limit=limit, offset=offset)
-        
-        if not results['items']:
-            break
-        
-        # Filter to only include playlists created by the user
-        user_id = sp.current_user()['id']
-        user_playlists = [p for p in results['items'] if p['owner']['id'] == user_id]
-        playlists.extend(user_playlists)
-        
-        if len(results['items']) < limit:
-            break
-        
-        offset += limit
-        
-        # Add a small delay to avoid hitting rate limits
-        time.sleep(0.1)
-    
-    print(f"Found {len(playlists)} playlists that you've created")
-    
-    # Save to cache
-    save_to_cache(playlists, cache_key)
-    
-    return playlists
+    print(f"Found {len(user_playlists)} playlists that you've created")
+    return user_playlists
 
 def get_tracks_from_playlists(sp, playlists):
     """Extract all unique tracks from the given playlists."""
@@ -180,39 +151,15 @@ def get_tracks_from_playlists(sp, playlists):
 
 def get_saved_tracks(sp):
     """Get all tracks the user has already saved (liked)."""
-    # Try to load from cache
-    cache_key = "saved_tracks"
-    cached_data = load_from_cache(cache_key, CACHE_EXPIRATION)
+    from spotify_utils import fetch_user_saved_tracks
     
-    if cached_data:
-        print("Using cached saved tracks data")
-        return cached_data
+    # Fetch saved tracks with progress bar
+    saved_tracks_data = fetch_user_saved_tracks(sp, show_progress=True, cache_key="saved_tracks")
     
-    print("Fetching your saved tracks...")
-    
-    saved_tracks = set()
-    offset = 0
-    limit = 50  # Maximum allowed by Spotify API
-    
-    while True:
-        results = sp.current_user_saved_tracks(limit=limit, offset=offset)
-        
-        for item in results['items']:
-            saved_tracks.add(item['track']['id'])
-        
-        if len(results['items']) < limit:
-            break
-        
-        offset += limit
-        
-        # Add a small delay to avoid hitting rate limits
-        time.sleep(0.1)
+    # Convert to set of track IDs for efficient lookup
+    saved_tracks = {item['track']['id'] for item in saved_tracks_data if item['track']}
     
     print(f"You have {len(saved_tracks)} saved tracks")
-    
-    # Save to cache
-    save_to_cache(list(saved_tracks), cache_key)
-    
     return saved_tracks
 
 def like_tracks(sp, tracks, saved_tracks):

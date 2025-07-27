@@ -541,12 +541,26 @@ class SpotifyAnalytics:
         if not track_ids:
             return {}
         
-        # Get audio features in batches
+        # Get audio features in batches with error handling
         all_features = []
         for i in range(0, len(track_ids), 100):
             batch = track_ids[i:i+100]
-            features = self.sp.audio_features(batch)
-            all_features.extend([f for f in features if f is not None])
+            try:
+                features = self.sp.audio_features(batch)
+                if features is not None:
+                    # Filter out None values in the features list
+                    valid_features = [f for f in features if f is not None]
+                    all_features.extend(valid_features)
+                else:
+                    print("⚠️ Audio features unavailable (may require additional permissions)")
+            except Exception as e:
+                error_str = str(e).lower()
+                if '403' in error_str or 'forbidden' in error_str:
+                    print("⚠️ Audio features not accessible - missing scope or permissions")
+                else:
+                    print(f"⚠️ Error fetching audio features: {e}")
+                # Continue with other batches
+                continue
             time.sleep(0.1)
         
         if not all_features:

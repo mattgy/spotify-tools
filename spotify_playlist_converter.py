@@ -54,7 +54,6 @@ logger = logging.getLogger(__name__)
 CONFIDENCE_THRESHOLD = 80  # Minimum confidence score for automatic matching
 SCOPE = "playlist-read-private playlist-modify-private playlist-modify-public"
 SUPPORTED_EXTENSIONS = ['.m3u', '.m3u8', '.pls']
-CACHE_EXPIRATION = 30 * 24 * 60 * 60  # 30 days in seconds
 
 def authenticate_spotify():
     """Authenticate with Spotify API."""

@@ -95,7 +95,7 @@ class SpotifyAnalytics:
         progress_bar = create_progress_bar(len(analysis_steps), "Running analytics", "analysis")
         
         for i, (desc, method_name, args) in enumerate(analysis_steps):
-            print(desc)
+            # Only print the description once, not in both the loop and the method
             
             method = getattr(self, method_name)
             if args:
@@ -225,8 +225,6 @@ class SpotifyAnalytics:
     
     def _analyze_taste_evolution(self, patterns=None) -> dict:
         """Analyze how user's taste has evolved over time."""
-        print("📈 Analyzing taste evolution...")
-        
         # Use provided patterns or get them (avoid duplicate API calls)
         if patterns is None:
             patterns = self._analyze_listening_patterns()
@@ -310,28 +308,40 @@ class SpotifyAnalytics:
     
     def _analyze_genres(self) -> dict:
         """Comprehensive genre analysis."""
-        print("🎭 Analyzing genres...")
+        from spotify_utils import fetch_followed_artists
+        from constants import CACHE_EXPIRATION
         
-        # Get all followed artists
-        followed_artists = []
-        results = self.sp.current_user_followed_artists(limit=50)
+        # Get all followed artists using cached data - use consistent cache key
+        followed_artists = fetch_followed_artists(
+            self.sp,
+            show_progress=True,  # Show progress for transparency
+            cache_key="followed_artists",
+            cache_expiration=CACHE_EXPIRATION['long']
+        )
         
-        while True:
-            followed_artists.extend(results['artists']['items'])
-            if results['artists']['next']:
-                results = self.sp.next(results['artists'])
-                time.sleep(0.1)
-            else:
-                break
+        if not followed_artists:
+            return {
+                'total_unique_genres': 0,
+                'top_genres': {},
+                'genre_diversity_score': 0,
+                'genre_artist_mapping': {},
+                'rare_genres': []
+            }
         
-        # Analyze genres
+        # Analyze genres with progress indication
+        print("  Processing genre data...")
         all_genres = []
         genre_artist_map = defaultdict(list)
+        
+        progress_bar = create_progress_bar(len(followed_artists), "Analyzing artist genres", "artist")
         
         for artist in followed_artists:
             for genre in artist.get('genres', []):
                 all_genres.append(genre)
                 genre_artist_map[genre].append(artist['name'])
+            update_progress_bar(progress_bar, 1)
+        
+        close_progress_bar(progress_bar)
         
         genre_counts = Counter(all_genres)
         
@@ -345,31 +355,16 @@ class SpotifyAnalytics:
     
     def _analyze_artist_diversity(self) -> dict:
         """Analyze diversity in artist selection."""
-        print("🌍 Analyzing artist diversity...")
+        from spotify_utils import fetch_followed_artists
+        from constants import CACHE_EXPIRATION
         
-        # Get followed artists with enhanced metadata
-        followed_artists = []
-        results = self.sp.current_user_followed_artists(limit=50)
-        
-        max_retries = 3
-        retry_count = 0
-        
-        while True:
-            try:
-                followed_artists.extend(results['artists']['items'])
-                if results['artists']['next']:
-                    results = self.sp.next(results['artists'])
-                    time.sleep(0.5)  # Increased delay to avoid timeouts
-                    retry_count = 0  # Reset on success
-                else:
-                    break
-            except Exception as e:
-                retry_count += 1
-                if retry_count >= max_retries:
-                    print(f"⚠️  Warning: Failed to fetch all followed artists after {max_retries} retries. Using partial data.")
-                    break
-                print(f"⚠️  Retry {retry_count}/{max_retries} due to error: {str(e)[:100]}...")
-                time.sleep(2 * retry_count)  # Exponential backoff
+        # Get followed artists using cached data - use consistent cache key
+        followed_artists = fetch_followed_artists(
+            self.sp,
+            show_progress=True,  # Show progress for transparency
+            cache_key="followed_artists",
+            cache_expiration=CACHE_EXPIRATION['long']
+        )
         
         # Enrich with MusicBrainz data for geographic analysis
         countries = []
@@ -424,22 +419,20 @@ class SpotifyAnalytics:
     
     def _analyze_playlists(self) -> dict:
         """Analyze user's playlist creation and management patterns."""
-        print("📋 Analyzing playlists...")
+        from spotify_utils import fetch_user_playlists
+        from constants import CACHE_EXPIRATION
         
-        playlists = []
-        results = self.sp.current_user_playlists(limit=50)
-        
-        while True:
-            playlists.extend(results['items'])
-            if results['next']:
-                results = self.sp.next(results)
-                time.sleep(0.1)
-            else:
-                break
+        # Get user playlists using cached data - use consistent cache key
+        all_playlists = fetch_user_playlists(
+            self.sp,
+            show_progress=True,  # Show progress for transparency
+            cache_key="user_playlists",
+            cache_expiration=CACHE_EXPIRATION['long']
+        )
         
         # Filter user's own playlists
         user_id = self.sp.current_user()['id']
-        own_playlists = [p for p in playlists if p['owner']['id'] == user_id]
+        own_playlists = [p for p in all_playlists if p['owner']['id'] == user_id]
         
         # Analyze playlist characteristics
         playlist_analysis = {
@@ -462,8 +455,6 @@ class SpotifyAnalytics:
     
     def _get_discovery_insights(self) -> dict:
         """Get music discovery insights and recommendations."""
-        print("🔍 Generating discovery insights...")
-        
         # This would integrate with the music discovery engine
         # For now, return basic insights
         return {
@@ -478,35 +469,36 @@ class SpotifyAnalytics:
     
     def _analyze_music_timeline(self) -> dict:
         """Analyze the timeline of user's music preferences."""
+        from spotify_utils import fetch_liked_songs
+        from constants import CACHE_EXPIRATION
+        
         print("📅 Analyzing music timeline...")
         
-        # Get liked songs with added dates
-        liked_songs = []
-        results = self.sp.current_user_saved_tracks(limit=50)
+        # Get liked songs using cached data - use consistent cache key
+        all_liked_songs = fetch_liked_songs(
+            self.sp,
+            show_progress=True,  # Show progress for transparency
+            cache_key="liked_songs",
+            cache_expiration=CACHE_EXPIRATION['long']
+        )
         
-        # Limit to avoid long processing
-        total_processed = 0
+        # Limit to avoid long processing and convert to simplified format
         max_songs = 500
+        liked_songs = []
         
-        while results and total_processed < max_songs:
-            for item in results['items']:
-                if item['added_at']:
-                    liked_songs.append({
-                        'name': item['track']['name'],
-                        'artists': [artist['name'] for artist in item['track']['artists']],
-                        'added_at': item['added_at'],
-                        'popularity': item['track'].get('popularity', 0)
-                    })
-                    total_processed += 1
-                    
-                if total_processed >= max_songs:
-                    break
-            
-            if results['next'] and total_processed < max_songs:
-                results = self.sp.next(results)
-                time.sleep(0.1)
-            else:
-                break
+        progress_bar = create_progress_bar(min(len(all_liked_songs), max_songs), "Processing timeline data", "song")
+        
+        for i, item in enumerate(all_liked_songs[:max_songs]):
+            if item['added_at']:
+                liked_songs.append({
+                    'name': item['track']['name'],
+                    'artists': [artist['name'] for artist in item['track']['artists']],
+                    'added_at': item['added_at'],
+                    'popularity': item['track'].get('popularity', 0)
+                })
+            update_progress_bar(progress_bar, 1)
+        
+        close_progress_bar(progress_bar)
         
         # Analyze by month/year
         timeline_analysis = {
@@ -560,14 +552,23 @@ class SpotifyAnalytics:
         print("🎵 Analyzing audio features...")
         
         # Get top tracks and analyze their audio features
-        top_tracks = self.sp.current_user_top_tracks(limit=50, time_range='medium_term')
-        track_ids = [track['id'] for track in top_tracks['items']]
+        try:
+            top_tracks = self.sp.current_user_top_tracks(limit=50, time_range='medium_term')
+            track_ids = [track['id'] for track in top_tracks['items']]
+        except Exception as e:
+            print(f"⚠️ Could not fetch top tracks: {e}")
+            return {}
         
         if not track_ids:
             return {}
         
+        print("  Fetching audio features...")
+        
         # Get audio features in batches with error handling
         all_features = []
+        num_batches = (len(track_ids) + 99) // 100
+        progress_bar = create_progress_bar(num_batches, "Analyzing audio features", "batch")
+        
         for i in range(0, len(track_ids), 100):
             batch = track_ids[i:i+100]
             try:
@@ -586,7 +587,11 @@ class SpotifyAnalytics:
                     print(f"⚠️ Error fetching audio features: {e}")
                 # Continue with other batches
                 continue
+            
+            update_progress_bar(progress_bar, 1)
             time.sleep(0.1)
+        
+        close_progress_bar(progress_bar)
         
         if not all_features:
             return {}

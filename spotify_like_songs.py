@@ -410,10 +410,75 @@ def manual_follow_selection(sp, artists):
         except Exception as e:
             print(f"Error following artists: {e}")
 
+def is_christmas_song(track):
+    """Check if a track is Christmas-related based on title, artist, or album."""
+    # Christmas-related keywords and phrases
+    christmas_keywords = [
+        'christmas', 'xmas', 'holiday', 'santa', 'reindeer', 'jingle', 'bells',
+        'winter wonderland', 'silent night', 'deck the halls', 'joy to the world',
+        'white christmas', 'let it snow', 'sleigh', 'mistletoe', 'holly', 'noel',
+        'rudolph', 'frosty', 'snowman', 'feliz navidad', 'merry', 'yuletide',
+        'advent', 'nativity', 'bethlehem', 'peace on earth', 'goodwill', 'sleigh ride',
+        'winter song', 'holiday song', 'christmas song', 'xmas song', 'carol'
+    ]
+    
+    # Combine all text to search
+    search_text = f"{track['name']} {' '.join(track['artists'])} {track['album']}".lower()
+    
+    # Check for Christmas keywords
+    for keyword in christmas_keywords:
+        if keyword in search_text:
+            return True
+    
+    return False
+
+def filter_christmas_songs(tracks, exclude_christmas=False):
+    """Filter out Christmas songs if requested."""
+    if not exclude_christmas:
+        return tracks
+    
+    print("Filtering out Christmas songs...")
+    
+    # Count original tracks
+    original_count = len(tracks)
+    
+    # Filter out Christmas songs
+    filtered_tracks = {}
+    christmas_count = 0
+    
+    for track_id, track_info in tracks.items():
+        if is_christmas_song(track_info):
+            christmas_count += 1
+        else:
+            filtered_tracks[track_id] = track_info
+    
+    print(f"Filtered out {christmas_count} Christmas songs from {original_count} total tracks")
+    print(f"Remaining: {len(filtered_tracks)} tracks")
+    
+    return filtered_tracks
+
 def main():
     """Main function to run the script."""
     print("Spotify Like Songs")
     print("=================")
+    
+    # Ask user about Christmas filtering
+    print("\nOptions:")
+    print("1. Add all songs from playlists (including Christmas songs)")
+    print("2. Add all songs except Christmas songs")
+    
+    while True:
+        choice = input("\nEnter your choice (1-2): ").strip()
+        if choice in ['1', '2']:
+            break
+        print("Please enter 1 or 2")
+    
+    exclude_christmas = (choice == '2')
+    
+    if exclude_christmas:
+        print("🎄 Christmas song filtering enabled - Christmas songs will be excluded")
+    else:
+        print("🎄 Christmas song filtering disabled - all songs will be included")
     
     # Set up Spotify client
     sp = setup_spotify_client()
@@ -423,6 +488,9 @@ def main():
     
     # Get tracks from playlists
     tracks = get_tracks_from_playlists(sp, playlists)
+    
+    # Filter Christmas songs if requested
+    tracks = filter_christmas_songs(tracks, exclude_christmas)
     
     # Get saved tracks
     saved_tracks = get_saved_tracks(sp)

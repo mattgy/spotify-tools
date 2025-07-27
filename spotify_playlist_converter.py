@@ -805,12 +805,12 @@ def process_playlist_file(sp, file_path, user_id, confidence_threshold, min_scor
             match = search_track_on_spotify(sp, track['artist'], track['title'], track['album'])
             
             if match:
-            # Show the original line from the playlist file
-            print(f"\nOriginal entry: {original_line}")
-            print(f"Extracted as: {track['artist']} - {track['title']}")
-            if track['album']:
-                print(f"Album: {track['album']}")
-            print(f"Match: {', '.join(match['artists'])} - {match['name']} (from album: {match['album']}) (Score: {match['score']:.1f})")
+                # Show the original line from the playlist file
+                print(f"\nOriginal entry: {original_line}")
+                print(f"Extracted as: {track['artist']} - {track['title']}")
+                if track['album']:
+                    print(f"Album: {track['album']}")
+                print(f"Match: {', '.join(match['artists'])} - {match['name']} (from album: {match['album']}) (Score: {match['score']:.1f})")
             
             # Batch mode logic
             if batch_mode and match['score'] >= auto_threshold:
@@ -922,7 +922,6 @@ def process_playlist_file(sp, file_path, user_id, confidence_threshold, min_scor
                         manual_confirm = input("Accept this match? (y/n): ").lower()
                         if manual_confirm == 'y':
                             spotify_tracks.append(manual_match)
-                            continue
                 
                 # If we get here, either the search failed or the user rejected the match
                 skipped_tracks.append(track)

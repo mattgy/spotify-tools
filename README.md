@@ -28,7 +28,7 @@ A comprehensive collection of Python utilities for managing your Spotify account
 
 ### Playlist Management
 - **Convert Local Playlists**: Transform M3U, M3U8, and PLS files into Spotify playlists with advanced fuzzy matching
-- **Add Songs to Liked Songs**: Automatically like all songs from your created playlists
+- **Add Songs to Liked Songs**: Automatically like all songs from your created playlists (with optional Christmas filtering)
 - **Remove Christmas Songs**: Intelligent detection and removal of holiday music from your library
 - **Remove Duplicate Songs**: Find and remove duplicate tracks from your Liked Songs with smart matching
 - **Identify Frequently Skipped Songs**: Analyze listening patterns to identify songs you consistently skip
@@ -46,9 +46,10 @@ A comprehensive collection of Python utilities for managing your Spotify account
 - **Music Personality Profiling**: Audio feature analysis to understand your preferences
 
 ### Backup & Migration
-- **Complete Library Backup**: Export playlists, followed artists, and liked songs
-- **Multiple Export Formats**: JSON, CSV, Apple Music, and YouTube Music compatible formats
+- **Complete Library Backup**: Export only your created playlists, followed artists, and liked songs
+- **Multiple Export Formats**: JSON, CSV, Apple Music, and YouTube Music compatible formats  
 - **Metadata Preservation**: Include ISRC codes, Spotify URLs, and detailed track information
+- **Smart Filtering**: Only backs up user-created content, not collaborative or followed playlists
 
 ## 📋 Requirements
 
@@ -61,7 +62,7 @@ A comprehensive collection of Python utilities for managing your Spotify account
 ```
 PLAYLIST MANAGEMENT:
 1. Convert local playlists to Spotify playlists
-2. Add all songs from your created playlists to Liked Songs
+2. Add all songs from your created playlists to Liked Songs (with Christmas filtering)
 3. Remove Christmas songs from Liked Songs
 4. Remove duplicate songs from Liked Songs
 5. Identify frequently skipped songs in your library
@@ -72,13 +73,13 @@ ARTIST MANAGEMENT:
 8. Remove followed artists that you probably don't like
 
 ANALYTICS & INSIGHTS:
-9. Enhanced analytics & music insights
-10. Backup & export your music library
+9. Enhanced analytics & music insights (with comprehensive progress tracking)
+10. Backup & export your music library (user-created content only)
 
 SYSTEM MANAGEMENT:
-11. Manage caches
+11. Manage caches (with deprecated cache cleanup)
 12. Manage API credentials
-13. Reset environment (reinstall dependencies)
+13. Reset environment (automated with real-time feedback)
 14. Exit
 ```
 
@@ -204,13 +205,22 @@ Multiple export formats for different use cases:
 
 ## 🌟 Recent Updates
 
-- Added duplicate song detection and removal
-- Implemented skip pattern analysis
+### Major Enhancements
+- **Caching System Overhaul**: Standardized cache keys across all scripts for better performance and data consistency
+- **Analytics Improvements**: Fixed progress bars, eliminated duplicate messages, enhanced rate limiting in music analytics
+- **Backup System Redesign**: Modified to only backup user-created content with progress bars and cached data usage
+- **Christmas Filtering**: Added optional Christmas song filtering to playlist liking functionality
+- **Environment Reset Automation**: Enhanced reset with real-time output and improved error handling
+- **Cache Management**: Added cleanup for deprecated cache files and better cache organization
+- **Comprehensive Testing**: Full test suite covering imports, syntax validation, and core functionality
+
+### Performance & Stability
 - Enhanced fuzzy matching for playlist conversion
 - Added auto-follow functionality based on liked songs
 - Improved security with comprehensive auditing
 - Centralized configuration management
 - Enhanced error handling and user feedback
+- Better rate limiting across all API operations
 
 ## 📝 Development
 
@@ -218,9 +228,23 @@ This project uses a modular architecture with:
 
 - **Centralized utilities**: Shared functions in `spotify_utils.py`
 - **Configuration management**: Settings in `constants.py`
-- **Caching system**: Intelligent API response caching
+- **Caching system**: Intelligent API response caching with consistent naming
 - **Error handling**: Comprehensive error recovery
-- **Testing framework**: Unit and integration tests
+- **Testing framework**: Unit and integration tests (`python3 run_tests.py`)
+- **Documentation**: Comprehensive guides in `CLAUDE.md` for development
+
+### Running Tests
+```bash
+source venv/bin/activate
+python3 run_tests.py
+```
+
+### Architecture Highlights
+- Consistent cache key naming across all scripts
+- Progress bars for all long-running operations  
+- Rate limiting with exponential backoff
+- User-created content filtering in backup operations
+- Comprehensive error messages and user feedback
 
 ## 🤝 Contributing
 

@@ -32,7 +32,9 @@ All scripts can be run independently:
 - `python3 spotify_playlist_manager.py`
 
 ### Testing
-No formal test suite exists. The project relies on manual testing through the interactive menu system.
+- Comprehensive test suite: `python3 run_tests.py`
+- Tests cover imports, syntax, functions, and core functionality
+- Run tests in virtual environment for full coverage
 
 ## Architecture
 
@@ -54,7 +56,10 @@ No formal test suite exists. The project relies on manual testing through the in
    - Scripts can be run independently or through the main menu
 
 4. **Testing Framework**
-   - `tests/test_menu_integration.py`: Menu integration tests
+   - `tests/test_comprehensive_menu.py`: Comprehensive menu functionality tests
+   - `tests/test_menu_integration.py`: Menu integration tests  
+   - `tests/test_cache_utils.py`: Cache utility tests
+   - `tests/test_credentials_manager.py`: Credential management tests
    - `run_tests.py`: Test runner script
 
 ### Configuration Management
@@ -199,29 +204,32 @@ When adding new features:
 
 ## Recent Architecture Changes
 
-- Centralized all authentication in spotify_utils.py
-- Moved configuration to constants.py
-- Removed duplicate print functions across files
-- Enhanced security with comprehensive auditing
-- Improved fuzzy matching efficiency for playlist conversion
-- Added comprehensive testing framework
-- Enhanced error handling and user feedback throughout
+- **Caching System Improvements**: Standardized cache keys across all scripts to use consistent naming (followed_artists, user_playlists, liked_songs) instead of script-specific variations
+- **Analytics Enhancements**: Fixed progress bars, eliminated duplicate messages, and improved rate limiting in option 9 analytics
+- **Backup System Overhaul**: Modified backup to only backup user-created content, added progress bars, and implemented cached data usage  
+- **Christmas Filtering**: Added Christmas song filtering option to playlist liking (option 2)
+- **Environment Reset Automation**: Enhanced reset functionality with real-time output and better error handling
+- **Cache Management**: Added deprecated cache cleanup functionality to remove outdated cache files
+- **Testing Framework**: Comprehensive test suite covering imports, syntax validation, function existence, and core functionality
+- **Documentation Updates**: Enhanced both README.md and CLAUDE.md with current architecture and usage patterns
 
 ## Remaining Development Tasks
 
-The following tasks remain to be completed. Remove completed items from this list:
-
-### High Priority
-- Fix option 7 progress bar showing wrong total
-- Fix backup option to only backup user-created playlists
+The following tasks remain to be completed:
 
 ### Medium Priority
-- Automate environment reset command execution
-- Add Christmas playlist filtering option to option 2
 - Improve rate limit error messages (remove 'None' retry time)
 - Add geographic heat maps of artist origins to analytics
 - Expand last.fm, musicbrainz integration and add new APIs
-- Add progress indication to option 9 analytics long operations
 
-### Low Priority
+### Low Priority  
 - Simplify main menu cache management (190 lines)
+
+### Recently Completed
+- ✅ Fix option 7 progress bar showing wrong total
+- ✅ Fix backup option to only backup user-created playlists  
+- ✅ Add Christmas playlist filtering option to option 2
+- ✅ Automate environment reset command execution
+- ✅ Add progress indication to option 9 analytics long operations
+- ✅ Standardize caching system across all scripts
+- ✅ Add comprehensive testing framework

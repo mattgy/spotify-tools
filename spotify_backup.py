@@ -127,118 +127,61 @@ class SpotifyBackup:
         return backup_path
     
     def _backup_playlists(self) -> list:
-        """Backup all user playlists."""
+        """Backup user-created playlists using cached data and progress bars."""
+        from spotify_utils import fetch_user_playlists, fetch_playlist_tracks
+        from constants import CACHE_EXPIRATION
+        
+        # Get all user playlists using cached data
+        all_playlists = fetch_user_playlists(
+            self.sp, 
+            show_progress=True, 
+            cache_key="user_playlists_backup",
+            cache_expiration=CACHE_EXPIRATION['medium']
+        )
+        
+        # Filter to only user-created playlists
+        user_id = self.sp.current_user()['id']
+        user_playlists = [p for p in all_playlists if p['owner']['id'] == user_id]
+        
+        print(f"  Found {len(user_playlists)} user-created playlists to backup")
+        
+        if not user_playlists:
+            return []
+        
         playlists = []
+        progress_bar = create_progress_bar(len(user_playlists), "Backing up playlists", "playlist")
         
-        # Get all user playlists
-        results = self.sp.current_user_playlists(limit=50)
-        
-        while True:
-            for playlist in results['items']:
-                if playlist is None:
+        for i, playlist in enumerate(user_playlists):
+            playlist_data = {
+                'id': playlist['id'],
+                'name': playlist['name'],
+                'description': playlist.get('description', ''),
+                'public': playlist.get('public', False),
+                'collaborative': playlist.get('collaborative', False),
+                'owner': playlist['owner']['id'],
+                'follower_count': playlist.get('followers', {}).get('total', 0),
+                'track_count': playlist['tracks']['total'],
+                'created_at': datetime.datetime.now().isoformat(),
+                'tracks': []
+            }
+            
+            # Get all tracks in playlist using cached data
+            tracks_data = fetch_playlist_tracks(
+                self.sp,
+                playlist['id'],
+                show_progress=False,  # Don't show individual progress for each playlist
+                cache_key=f"playlist_tracks_{playlist['id']}_backup",
+                cache_expiration=CACHE_EXPIRATION['medium']
+            )
+            
+            # Convert to backup format
+            for item in tracks_data:
+                if item is None or item['track'] is None:
                     continue
                 
-                print(f"  📋 {playlist['name']}")
-                
-                playlist_data = {
-                    'id': playlist['id'],
-                    'name': playlist['name'],
-                    'description': playlist.get('description', ''),
-                    'public': playlist.get('public', False),
-                    'collaborative': playlist.get('collaborative', False),
-                    'owner': playlist['owner']['id'],
-                    'follower_count': playlist.get('followers', {}).get('total', 0),
-                    'track_count': playlist['tracks']['total'],
-                    'created_at': datetime.datetime.now().isoformat(),
-                    'tracks': []
-                }
-                
-                # Get all tracks in playlist
-                track_results = self.sp.playlist_items(playlist['id'], limit=100)
-                
-                while True:
-                    for item in track_results['items']:
-                        if item is None or item['track'] is None:
-                            continue
-                        
-                        track = item['track']
-                        if track['type'] != 'track':
-                            continue
-                        
-                        track_data = {
-                            'name': track['name'],
-                            'artists': [artist['name'] for artist in track['artists']],
-                            'artist_ids': [artist['id'] for artist in track['artists']],
-                            'album': track['album']['name'],
-                            'album_id': track['album']['id'],
-                            'track_id': track['id'],
-                            'duration_ms': track['duration_ms'],
-                            'popularity': track.get('popularity', 0),
-                            'explicit': track.get('explicit', False),
-                            'added_at': item.get('added_at'),
-                            'isrc': track.get('external_ids', {}).get('isrc'),
-                            'spotify_url': track['external_urls'].get('spotify')
-                        }
-                        
-                        playlist_data['tracks'].append(track_data)
-                    
-                    if track_results['next']:
-                        track_results = self.sp.next(track_results)
-                        time.sleep(0.1)  # Rate limiting
-                    else:
-                        break
-                
-                playlists.append(playlist_data)
-            
-            if results['next']:
-                results = self.sp.next(results)
-                time.sleep(0.1)
-            else:
-                break
-        
-        return playlists
-    
-    def _backup_followed_artists(self) -> list:
-        """Backup all followed artists."""
-        artists = []
-        
-        # Get followed artists
-        results = self.sp.current_user_followed_artists(limit=50)
-        
-        while True:
-            for artist in results['artists']['items']:
-                artist_data = {
-                    'id': artist['id'],
-                    'name': artist['name'],
-                    'genres': artist.get('genres', []),
-                    'popularity': artist.get('popularity', 0),
-                    'follower_count': artist['followers']['total'],
-                    'spotify_url': artist['external_urls'].get('spotify'),
-                    'images': [img['url'] for img in artist.get('images', [])],
-                    'backed_up_at': datetime.datetime.now().isoformat()
-                }
-                artists.append(artist_data)
-                
-                print(f"  👥 {artist['name']}")
-            
-            if results['artists']['next']:
-                results = self.sp.next(results['artists'])
-                time.sleep(0.1)
-            else:
-                break
-        
-        return artists
-    
-    def _backup_liked_songs(self) -> list:
-        """Backup all liked songs."""
-        tracks = []
-        
-        # Get liked songs
-        results = self.sp.current_user_saved_tracks(limit=50)
-        
-        while True:
-            for item in results['items']:
                 track = item['track']
+                if track['type'] != 'track':
+                    continue
                 
                 track_data = {
                     'name': track['name'],
@@ -255,17 +198,95 @@ class SpotifyBackup:
                     'spotify_url': track['external_urls'].get('spotify')
                 }
                 
-                tracks.append(track_data)
-                
-                if len(tracks) % 100 == 0:
-                    print(f"  ❤️ {len(tracks)} liked songs backed up...")
+                playlist_data['tracks'].append(track_data)
             
-            if results['next']:
-                results = self.sp.next(results)
-                time.sleep(0.1)
-            else:
-                break
+            playlists.append(playlist_data)
+            update_progress_bar(progress_bar, 1)
         
+        close_progress_bar(progress_bar)
+        return playlists
+    
+    def _backup_followed_artists(self) -> list:
+        """Backup all followed artists using cached data and progress bars."""
+        from spotify_utils import fetch_followed_artists
+        from constants import CACHE_EXPIRATION
+        
+        # Get all followed artists using cached data
+        followed_artists = fetch_followed_artists(
+            self.sp,
+            show_progress=True,
+            cache_key="followed_artists_backup",
+            cache_expiration=CACHE_EXPIRATION['medium']
+        )
+        
+        print(f"  Found {len(followed_artists)} followed artists to backup")
+        
+        if not followed_artists:
+            return []
+        
+        artists = []
+        progress_bar = create_progress_bar(len(followed_artists), "Backing up followed artists", "artist")
+        
+        for artist in followed_artists:
+            artist_data = {
+                'id': artist['id'],
+                'name': artist['name'],
+                'genres': artist.get('genres', []),
+                'popularity': artist.get('popularity', 0),
+                'follower_count': artist['followers']['total'],
+                'spotify_url': artist['external_urls'].get('spotify'),
+                'images': [img['url'] for img in artist.get('images', [])],
+                'backed_up_at': datetime.datetime.now().isoformat()
+            }
+            artists.append(artist_data)
+            update_progress_bar(progress_bar, 1)
+        
+        close_progress_bar(progress_bar)
+        return artists
+    
+    def _backup_liked_songs(self) -> list:
+        """Backup all liked songs using cached data and progress bars."""
+        from spotify_utils import fetch_liked_songs
+        from constants import CACHE_EXPIRATION
+        
+        # Get all liked songs using cached data
+        liked_songs = fetch_liked_songs(
+            self.sp,
+            show_progress=True,
+            cache_key="liked_songs_backup",
+            cache_expiration=CACHE_EXPIRATION['medium']
+        )
+        
+        print(f"  Found {len(liked_songs)} liked songs to backup")
+        
+        if not liked_songs:
+            return []
+        
+        tracks = []
+        progress_bar = create_progress_bar(len(liked_songs), "Backing up liked songs", "song")
+        
+        for item in liked_songs:
+            track = item['track']
+            
+            track_data = {
+                'name': track['name'],
+                'artists': [artist['name'] for artist in track['artists']],
+                'artist_ids': [artist['id'] for artist in track['artists']],
+                'album': track['album']['name'],
+                'album_id': track['album']['id'],
+                'track_id': track['id'],
+                'duration_ms': track['duration_ms'],
+                'popularity': track.get('popularity', 0),
+                'explicit': track.get('explicit', False),
+                'added_at': item.get('added_at'),
+                'isrc': track.get('external_ids', {}).get('isrc'),
+                'spotify_url': track['external_urls'].get('spotify')
+            }
+            
+            tracks.append(track_data)
+            update_progress_bar(progress_bar, 1)
+        
+        close_progress_bar(progress_bar)
         return tracks
     
     def _backup_top_artists(self) -> dict:

@@ -201,48 +201,92 @@ def reset_environment():
     """Reset the environment by reinstalling dependencies."""
     print_header("Resetting Environment")
     
+    # Show current environment status
+    venv_dir = os.path.join(SCRIPT_DIR, "venv")
+    if os.path.exists(venv_dir):
+        print_info(f"Current virtual environment: {venv_dir}")
+        venv_size = sum(os.path.getsize(os.path.join(dirpath, filename))
+                       for dirpath, dirnames, filenames in os.walk(venv_dir)
+                       for filename in filenames) / (1024 * 1024)  # MB
+        print_info(f"Virtual environment size: {venv_size:.1f} MB")
+    else:
+        print_warning("No virtual environment found.")
+    
     # Confirm with user
-    confirm = input("This will reinstall all dependencies. Continue? (y/n): ").strip().lower()
+    confirm = input("This will remove and recreate the virtual environment. Continue? (y/n): ").strip().lower()
     if confirm != "y":
         print_warning("Reset cancelled.")
         return
     
     try:
-        print_info("Resetting virtual environment...")
+        print_info("Starting environment reset...")
         
-        # Run the reset script directly
+        # Find system Python
+        import shutil
+        system_python = shutil.which("python3")
+        if not system_python:
+            system_python = shutil.which("python")
+        
+        if not system_python:
+            print_error("Could not find system Python.")
+            print_info("Please ensure Python 3 is installed and in your PATH.")
+            return
+        
+        print_info(f"Using system Python: {system_python}")
+        
+        # Check if reset script exists
         reset_script = os.path.join(SCRIPT_DIR, "reset.py")
-        if os.path.exists(reset_script):
-            # Find system Python
-            import shutil
-            system_python = shutil.which("python3")
-            if not system_python:
-                system_python = shutil.which("python")
-            
-            if system_python:
-                print_info(f"Running reset using {system_python}...")
-                result = subprocess.run([system_python, reset_script], 
-                                      capture_output=True, text=True, timeout=300)
-                
-                if result.returncode == 0:
-                    print_success("Environment reset successfully!")
-                    print_info("Please restart the application: ./spotify_run.py")
-                    input("Press Enter to exit...")
-                    sys.exit(0)
-                else:
-                    print_error(f"Reset failed: {result.stderr}")
-                    print_info("You can manually run: python3 reset.py")
-            else:
-                print_error("Could not find system Python.")
-                print_info("Please manually run: python3 reset.py")
-        else:
+        if not os.path.exists(reset_script):
             print_error("Reset script not found.")
-            print_info("Please reinstall dependencies manually.")
+            print_info("Please reinstall dependencies manually with: python3 install_dependencies.py")
+            return
+        
+        print_info("Running reset script...")
+        print_info("This may take a few minutes...")
+        
+        # Run reset with real-time output
+        process = subprocess.Popen(
+            [system_python, reset_script],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            universal_newlines=True,
+            cwd=SCRIPT_DIR
+        )
+        
+        # Show output in real-time
+        output_lines = []
+        while True:
+            output = process.stdout.readline()
+            if output == '' and process.poll() is not None:
+                break
+            if output:
+                line = output.strip()
+                print(f"  {line}")
+                output_lines.append(line)
+        
+        return_code = process.poll()
+        
+        if return_code == 0:
+            print_success("Environment reset successfully!")
+            print_info("Virtual environment has been recreated with fresh dependencies.")
+            print_info("Please restart the application: ./spotify_run.py")
+            input("Press Enter to exit...")
+            sys.exit(0)
+        else:
+            print_error("Reset failed.")
+            print_error("Last few lines of output:")
+            for line in output_lines[-5:]:
+                print(f"  {line}")
+            print_info("You can manually run: python3 reset.py")
             
     except subprocess.TimeoutExpired:
-        print_error("Reset timed out. Please run manually: python3 reset.py")
+        print_error("Reset timed out after 5 minutes.")
+        print_info("This might indicate a network issue. Please try again or run manually: python3 reset.py")
+    except FileNotFoundError:
+        print_error("Reset script not found or Python not accessible.")
+        print_info("Please manually run: python3 reset.py")
     except Exception as e:
-        print_error(f"Error during reset: {e}")
+        print_error(f"Unexpected error during reset: {e}")
         print_info("Please manually run: python3 reset.py")
 
 def manage_caches():
@@ -251,7 +295,7 @@ def manage_caches():
     
     # Import cache utilities
     sys.path.insert(0, SCRIPT_DIR)
-    from cache_utils import list_caches, clear_cache, get_cache_info
+    from cache_utils import list_caches, clear_cache, get_cache_info, clean_deprecated_caches
     
     # Get cache info
     info = get_cache_info()
@@ -300,9 +344,10 @@ def manage_caches():
     print("\nOptions:")
     print("1. Clear all caches")
     print("2. Clear caches by type")
-    print("3. Back to main menu")
+    print("3. Clean up deprecated cache files")
+    print("4. Back to main menu")
     
-    choice = input("\nEnter your choice (1-3): ")
+    choice = input("\nEnter your choice (1-4): ")
     
     if choice == "1":
         # Clear all caches
@@ -336,6 +381,10 @@ def manage_caches():
                 print_error("Invalid input. Please enter a number.")
         else:
             print_warning("No caches to clear.")
+    elif choice == "3":
+        # Clean up deprecated cache files
+        print_info("Cleaning up deprecated cache files...")
+        clean_deprecated_caches()
 
 def check_cache_age():
     """Check cache age and ask to clear old caches."""
@@ -560,6 +609,15 @@ def main():
         
         else:
             print_error("Invalid choice. Please try again.")
+
+# Aliases for backward compatibility with tests
+def setup_credentials():
+    """Alias for manage_api_credentials."""
+    return manage_api_credentials()
+
+def clear_caches():
+    """Alias for manage_caches."""
+    return manage_caches()
 
 if __name__ == "__main__":
     main()

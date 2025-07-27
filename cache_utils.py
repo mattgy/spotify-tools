@@ -145,6 +145,62 @@ def clear_cache(cache_name=None):
         print_success(f"Cleared {cleared} cache files")
         return cleared > 0
 
+def clean_deprecated_caches():
+    """Clean up cache files that use deprecated naming conventions."""
+    caches = list_caches()
+    
+    # Define deprecated cache patterns that should be cleaned up
+    deprecated_patterns = [
+        # Old user-specific cache keys - now we use generic keys
+        'user_playlists_',  # Should be just 'user_playlists'
+        'saved_tracks',     # Should be 'liked_songs'
+        'playlist_tracks',  # Should be 'playlist_tracks_<id>' for specific playlists
+        'followed_artists_genres',
+        'followed_artists_diversity',
+        'followed_artists_backup',
+        'followed_artists_for_autofollow',
+        'user_playlists_analytics',
+        'user_playlists_backup', 
+        'liked_songs_timeline',
+        'liked_songs_backup',
+        'liked_songs_for_skip_analysis',
+        'all_liked_songs',
+        'all_user_playlists',
+        'recently_played_extended',
+        'top_artists',
+        'recently_played',
+        'comprehensive_listening_profile'
+    ]
+    
+    cleaned_count = 0
+    total_size_cleaned = 0
+    
+    for cache in caches:
+        cache_name = cache['name']
+        should_clean = False
+        
+        # Check if this cache matches any deprecated pattern
+        for pattern in deprecated_patterns:
+            if cache_name == pattern or cache_name.startswith(pattern):
+                should_clean = True
+                break
+        
+        if should_clean:
+            try:
+                os.remove(cache['path'])
+                cleaned_count += 1
+                total_size_cleaned += cache['size']
+                print_info(f"Removed deprecated cache: {cache_name}")
+            except Exception as e:
+                print_warning(f"Error removing cache {cache_name}: {e}")
+    
+    if cleaned_count > 0:
+        print_success(f"Cleaned up {cleaned_count} deprecated cache files ({total_size_cleaned / 1024:.1f} KB)")
+        return True
+    else:
+        print_info("No deprecated cache files found")
+        return False
+
 def get_cache_info():
     """Get information about all caches."""
     caches = list_caches()

@@ -1012,25 +1012,27 @@ def main():
         playlist_files = playlist_files[:args.max_playlists]
         logger.info(f"Limited to {len(playlist_files)} playlists")
     
-    # Interactive threshold selection (only if not in command line batch mode and threshold not explicitly set)
-    if not args.batch and args.threshold == CONFIDENCE_THRESHOLD:
+    # Interactive threshold selection (only if not in command line batch mode)
+    if not args.batch:
         print("\n" + "="*60)
         print("CONFIDENCE THRESHOLD SELECTION")
         print("="*60)
-        print("Choose your auto-acceptance threshold for track matching:")
+        print("The playlist converter uses fuzzy matching to find your songs on Spotify.")
+        print("You can choose how confident a match needs to be before auto-accepting it.")
         print()
         print("📊 Confidence Score Meanings:")
         print("  95-100: Almost certainly correct (perfect matches)")
-        print("  85-94:  Very high confidence (recommended for batch)")
-        print("  80-84:  High confidence (default threshold)")
+        print("  85-94:  Very high confidence (recommended for batch mode)")
+        print("  80-84:  High confidence (default threshold)")  
         print("  70-79:  Good confidence (may miss some close matches)")
         print("  60-69:  Medium confidence (more conservative)")
         print("  50-59:  Low confidence (very conservative)")
         print()
         print("🎯 Recommendations:")
-        print("  • 85+ = Safe for automatic processing")
+        print("  • 85+ = Safe for automatic processing (minimal manual review)")
         print("  • 80+ = Good balance of accuracy and automation")
         print("  • 70+ = Conservative but may require more manual review")
+        print("  • Lower = More manual confirmation required")
         print()
         
         while True:

@@ -31,7 +31,7 @@ from cache_utils import save_to_cache, load_from_cache
 from config import config, get_cache_expiration
 from musicbrainz_integration import mb_client
 from tqdm_utils import create_progress_bar, update_progress_bar, close_progress_bar
-from spotify_utils import create_spotify_client
+from spotify_utils import create_spotify_client, print_warning, print_success, print_error, print_info, print_header
 
 # Spotify API scopes needed
 SPOTIFY_SCOPES = [
@@ -343,8 +343,8 @@ class SpotifyAnalytics:
                     all_genres.append(genre)
                     genre_artist_map[genre].append(artist.get('name', 'Unknown'))
             elif isinstance(artist, str):
-                # Skip strings as they don't have genre data
-                print_warning(f"Found artist data as string: {artist}")
+                # Skip strings as they don't have genre data - this can happen with corrupted cache
+                pass
             update_progress_bar(progress_bar, 1)
         
         close_progress_bar(progress_bar)
@@ -463,6 +463,8 @@ class SpotifyAnalytics:
         """Get music discovery insights and recommendations."""
         from music_discovery_engine import MusicDiscoveryEngine
         from lastfm_integration import lastfm_client
+        from spotify_utils import fetch_followed_artists
+        from constants import CACHE_EXPIRATION
         
         try:
             # Quick profile analysis for discovery insights
@@ -567,13 +569,20 @@ class SpotifyAnalytics:
         progress_bar = create_progress_bar(min(len(all_liked_songs), max_songs), "Processing timeline data", "song")
         
         for i, item in enumerate(all_liked_songs[:max_songs]):
-            if item['added_at']:
-                liked_songs.append({
-                    'name': item['track']['name'],
-                    'artists': [artist['name'] for artist in item['track']['artists']],
-                    'added_at': item['added_at'],
-                    'popularity': item['track'].get('popularity', 0)
-                })
+            # Add defensive programming to handle corrupted or malformed data
+            if item and isinstance(item, dict) and 'added_at' in item and item['added_at']:
+                track_data = item.get('track')
+                if track_data and isinstance(track_data, dict):
+                    try:
+                        liked_songs.append({
+                            'name': track_data.get('name', 'Unknown Track'),
+                            'artists': [artist.get('name', 'Unknown Artist') for artist in track_data.get('artists', []) if isinstance(artist, dict)],
+                            'added_at': item['added_at'],
+                            'popularity': track_data.get('popularity', 0)
+                        })
+                    except (KeyError, TypeError) as e:
+                        # Skip corrupted track data
+                        print_warning(f"Skipping corrupted track data: {e}")
             update_progress_bar(progress_bar, 1)
         
         close_progress_bar(progress_bar)

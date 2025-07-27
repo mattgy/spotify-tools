@@ -20,13 +20,31 @@ CACHE_DIR = os.path.join(str(Path.home()), ".spotify-tools", "cache")
 # Import print functions from spotify_utils
 from spotify_utils import print_success, print_error, print_warning, print_info
 
+def sanitize_cache_key(cache_key):
+    """Sanitize cache key to be safe for filesystem."""
+    import re
+    # Replace problematic characters with underscores
+    sanitized = re.sub(r'[<>:"/\\|?*]', '_', cache_key)
+    # Replace multiple underscores with single underscore
+    sanitized = re.sub(r'_+', '_', sanitized)
+    # Limit length to prevent filesystem issues
+    if len(sanitized) > 200:
+        # Keep first 100 and last 100 chars with hash in middle
+        import hashlib
+        middle_hash = hashlib.md5(sanitized.encode()).hexdigest()[:8]
+        sanitized = sanitized[:100] + '_' + middle_hash + '_' + sanitized[-100:]
+    return sanitized
+
 def save_to_cache(data, cache_key, force_expire=False):
     """Save data to cache."""
     # Create cache directory if it doesn't exist
     os.makedirs(CACHE_DIR, exist_ok=True)
     
+    # Sanitize cache key for filesystem safety
+    safe_cache_key = sanitize_cache_key(cache_key)
+    
     # Generate cache file path
-    cache_file = os.path.join(CACHE_DIR, f"{cache_key}.cache")
+    cache_file = os.path.join(CACHE_DIR, f"{safe_cache_key}.cache")
     
     if force_expire:
         # Delete the cache file if it exists
@@ -57,8 +75,11 @@ def save_to_cache(data, cache_key, force_expire=False):
 
 def load_from_cache(cache_key, expiration=None):
     """Load data from cache if it exists and is not expired."""
+    # Sanitize cache key for filesystem safety
+    safe_cache_key = sanitize_cache_key(cache_key)
+    
     # Generate cache file path
-    cache_file = os.path.join(CACHE_DIR, f"{cache_key}.cache")
+    cache_file = os.path.join(CACHE_DIR, f"{safe_cache_key}.cache")
     
     # Check if cache file exists
     if not os.path.exists(cache_file):

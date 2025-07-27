@@ -787,8 +787,9 @@ def create_or_update_spotify_playlist(sp, playlist_name, track_uris, user_id):
         
         # Update the user playlists cache
         cache_key = f"user_playlists_{user_id}"
-        playlists.append(playlist)
-        save_to_cache(playlists, cache_key)
+        current_playlists = get_user_playlists(sp, user_id)
+        current_playlists.append(playlist)
+        save_to_cache(current_playlists, cache_key)
         
         # Cache the playlist tracks
         cache_key = f"playlist_tracks_{playlist['id']}"
@@ -1001,27 +1002,47 @@ def process_playlist_file(sp, file_path, user_id, confidence_threshold, min_scor
             confirm = input(options).lower()
             
             if confirm == 'y':
-                # Manual search option
-                search_query = input("Enter search query (artist - title): ")
-                if search_query:
-                    parts = search_query.split(" - ", 1)
-                    search_artist = parts[0].strip() if len(parts) > 1 else ""
-                    search_title = parts[1].strip() if len(parts) > 1 else search_query.strip()
-                    
-                    # Ask for album info
-                    search_album = input("Enter album name (optional): ").strip()
-                    
-                    # Perform the manual search
-                    manual_match = search_track_on_spotify(sp, search_artist, search_title, search_album if search_album else None)
-                    
-                    if manual_match:
-                        print(f"Found: {', '.join(manual_match['artists'])} - {manual_match['name']} (from album: {manual_match['album']}) (Score: {manual_match['score']:.1f})")
-                        manual_confirm = input("Accept this match? (y/n): ").lower()
-                        if manual_confirm == 'y':
-                            spotify_tracks.append(manual_match)
-                
-                # If we get here, either the search failed or the user rejected the match
-                skipped_tracks.append(track)
+                # Manual search loop
+                while True:
+                    search_query = input("Enter search query (artist - title): ")
+                    if search_query:
+                        parts = search_query.split(" - ", 1)
+                        search_artist = parts[0].strip() if len(parts) > 1 else ""
+                        search_title = parts[1].strip() if len(parts) > 1 else search_query.strip()
+                        
+                        # Ask for album info
+                        search_album = input("Enter album name (optional): ").strip()
+                        
+                        # Perform the manual search
+                        manual_match = search_track_on_spotify(sp, search_artist, search_title, search_album if search_album else None)
+                        
+                        if manual_match:
+                            print(f"Found: {', '.join(manual_match['artists'])} - {manual_match['name']} (from album: {manual_match['album']}) (Score: {manual_match['score']:.1f})")
+                            manual_confirm = input("Accept this match? (y/n/s - y:yes, n:no, s:search again): ").lower()
+                            if manual_confirm == 'y':
+                                spotify_tracks.append(manual_match)
+                                break  # Exit manual search loop
+                            elif manual_confirm == 'n':
+                                skipped_tracks.append(track)
+                                break  # Exit manual search loop
+                            elif manual_confirm == 's':
+                                # Continue the manual search loop to search again
+                                continue
+                            else:
+                                print("Invalid option. Please enter y, n, or s.")
+                                continue
+                        else:
+                            print("No matches found for your search query.")
+                            retry_search = input("Try a different search? (y/n): ").lower()
+                            if retry_search != 'y':
+                                skipped_tracks.append(track)
+                                break
+                    else:
+                        # Empty search query
+                        retry_search = input("Empty search query. Try again? (y/n): ").lower()
+                        if retry_search != 'y':
+                            skipped_tracks.append(track)
+                            break
             else:
                 skipped_tracks.append(track)
     

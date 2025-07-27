@@ -70,6 +70,17 @@ All scripts can be run independently:
 - Option 2 now uses "all_liked_songs" cache key (same as option 4) for consistency
 - Eliminates redundant API calls when both scripts run in same session
 
+### Cache System Improvements
+- Added cache key sanitization to prevent filesystem errors
+- Invalid characters (/, :, *, etc.) replaced with underscores in cache filenames
+- Long cache keys automatically truncated with hash to prevent path length issues
+- Fixes errors like "No such file or directory" for complex track search cache keys
+
+### Playlist Converter Bug Fixes
+- Fixed undefined 'playlists' variable error when creating new playlists
+- Improved error handling in playlist creation workflow
+- Enhanced playlist converter match acceptance dialog with consistent "search again" option across all prompts
+
 ## Cross-Computer Continuity
 - Always ensure `.env` file is properly set up when moving between computers
 - Verify virtual environment can be recreated using `reset.py` and `install_dependencies.py`

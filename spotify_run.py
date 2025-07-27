@@ -11,6 +11,7 @@ Version: 1.0.0
 import os
 import sys
 import subprocess
+import shutil
 
 # Get the directory of this script
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -45,10 +46,7 @@ def check_dependencies():
             # First remove the virtual environment completely if it exists
             if os.path.exists(venv_dir):
                 print("Removing existing virtual environment...")
-                if os.name == "nt":  # Windows
-                    subprocess.run(["rmdir", "/s", "/q", venv_dir], check=True, shell=True)
-                else:  # Unix/Linux/Mac
-                    subprocess.run(["rm", "-rf", venv_dir], check=True)
+                shutil.rmtree(venv_dir)
             
             # Run the install dependencies script with force flag
             install_script = os.path.join(SCRIPT_DIR, "install_dependencies.py")

@@ -12,6 +12,7 @@ Version: 1.0.0
 
 import os
 import json
+import stat
 from pathlib import Path
 
 # Define config directory
@@ -61,8 +62,14 @@ def get_spotify_credentials():
             "SPOTIFY_REDIRECT_URI": redirect_uri
         }
         
-        with open(CREDENTIALS_FILE, "w") as f:
-            json.dump(credentials, f, indent=2)
+        # Set secure file permissions before writing
+        old_umask = os.umask(0o077)
+        try:
+            with open(CREDENTIALS_FILE, "w") as f:
+                json.dump(credentials, f, indent=2)
+            os.chmod(CREDENTIALS_FILE, stat.S_IRUSR | stat.S_IWUSR)
+        finally:
+            os.umask(old_umask)
         
         return client_id, client_secret, redirect_uri
     
@@ -101,8 +108,14 @@ def get_spotify_credentials():
             "SPOTIFY_REDIRECT_URI": redirect_uri
         }
         
-        with open(CREDENTIALS_FILE, "w") as f:
-            json.dump(credentials, f, indent=2)
+        # Set secure file permissions before writing
+        old_umask = os.umask(0o077)
+        try:
+            with open(CREDENTIALS_FILE, "w") as f:
+                json.dump(credentials, f, indent=2)
+            os.chmod(CREDENTIALS_FILE, stat.S_IRUSR | stat.S_IWUSR)
+        finally:
+            os.umask(old_umask)
         
         return client_id, client_secret, redirect_uri
 
@@ -137,8 +150,14 @@ def get_lastfm_api_key():
             "LASTFM_API_KEY": api_key
         }
         
-        with open(CREDENTIALS_FILE, "w") as f:
-            json.dump(credentials, f, indent=2)
+        # Set secure file permissions before writing
+        old_umask = os.umask(0o077)
+        try:
+            with open(CREDENTIALS_FILE, "w") as f:
+                json.dump(credentials, f, indent=2)
+            os.chmod(CREDENTIALS_FILE, stat.S_IRUSR | stat.S_IWUSR)
+        finally:
+            os.umask(old_umask)
         
         return api_key
     
@@ -163,8 +182,14 @@ def get_lastfm_api_key():
                     # Update credentials
                     credentials["LASTFM_API_KEY"] = api_key
                     
-                    with open(CREDENTIALS_FILE, "w") as f:
-                        json.dump(credentials, f, indent=2)
+                    # Set secure file permissions before writing
+                    old_umask = os.umask(0o077)
+                    try:
+                        with open(CREDENTIALS_FILE, "w") as f:
+                            json.dump(credentials, f, indent=2)
+                        os.chmod(CREDENTIALS_FILE, stat.S_IRUSR | stat.S_IWUSR)
+                    finally:
+                        os.umask(old_umask)
                 except EOFError:
                     # Handle case where input is not available (like in tests)
                     return None
@@ -196,8 +221,14 @@ def get_lastfm_api_key():
         
         credentials["LASTFM_API_KEY"] = api_key
         
-        with open(CREDENTIALS_FILE, "w") as f:
-            json.dump(credentials, f, indent=2)
+        # Set secure file permissions before writing
+        old_umask = os.umask(0o077)
+        try:
+            with open(CREDENTIALS_FILE, "w") as f:
+                json.dump(credentials, f, indent=2)
+            os.chmod(CREDENTIALS_FILE, stat.S_IRUSR | stat.S_IWUSR)
+        finally:
+            os.umask(old_umask)
         
         return api_key
 
@@ -221,6 +252,11 @@ def save_credentials(credentials_dict):
     # Update with new credentials
     existing_credentials.update(credentials_dict)
     
-    # Save to file
-    with open(CREDENTIALS_FILE, "w") as f:
-        json.dump(existing_credentials, f, indent=2)
+    # Save to file with secure permissions
+    old_umask = os.umask(0o077)
+    try:
+        with open(CREDENTIALS_FILE, "w") as f:
+            json.dump(existing_credentials, f, indent=2)
+        os.chmod(CREDENTIALS_FILE, stat.S_IRUSR | stat.S_IWUSR)
+    finally:
+        os.umask(old_umask)

@@ -32,11 +32,9 @@ def main():
             print(f"Error removing virtual environment: {e}")
             print("Trying alternative method...")
             try:
-                if os.name == "nt":  # Windows
-                    subprocess.run(["rmdir", "/s", "/q", venv_dir], check=True, shell=True)
-                else:  # Unix/Linux/Mac
-                    subprocess.run(["rm", "-rf", venv_dir], check=True)
-            except subprocess.CalledProcessError as e:
+                # Use secure directory removal - this should work on all platforms
+                shutil.rmtree(venv_dir)
+            except Exception as e:
                 print(f"Error removing virtual environment: {e}")
                 sys.exit(1)
     

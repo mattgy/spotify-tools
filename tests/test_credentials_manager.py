@@ -8,6 +8,7 @@ import tempfile
 import os
 import json
 import shutil
+import stat
 from unittest.mock import patch
 import sys
 
@@ -125,6 +126,33 @@ class TestCredentialsManager(unittest.TestCase):
             self.assertEqual(client_id, "file_client_id")
             self.assertEqual(client_secret, "file_client_secret")
             self.assertEqual(redirect_uri, "http://file-redirect.com/callback")
+    
+    def test_credentials_file_secure_permissions(self):
+        """Test that credentials file is created with secure permissions."""
+        # Mock user input for credentials
+        test_inputs = ['test_client_id', 'test_client_secret', '']
+        
+        with patch('builtins.input', side_effect=test_inputs):
+            get_spotify_credentials()
+        
+        # Check that credentials file exists
+        self.assertTrue(os.path.exists(self.test_credentials_file))
+        
+        # Check file permissions (should be 0o600 - owner read/write only)
+        file_stat = os.stat(self.test_credentials_file)
+        file_mode = file_stat.st_mode
+        
+        # Check that the file has owner read/write permissions
+        self.assertTrue(file_mode & stat.S_IRUSR)  # Owner read
+        self.assertTrue(file_mode & stat.S_IWUSR)  # Owner write
+        
+        # Check that group and others have no permissions
+        self.assertFalse(file_mode & stat.S_IRGRP)  # Group should not have read
+        self.assertFalse(file_mode & stat.S_IWGRP)  # Group should not have write
+        self.assertFalse(file_mode & stat.S_IXGRP)  # Group should not have execute
+        self.assertFalse(file_mode & stat.S_IROTH)  # Others should not have read
+        self.assertFalse(file_mode & stat.S_IWOTH)  # Others should not have write
+        self.assertFalse(file_mode & stat.S_IXOTH)  # Others should not have execute
 
 
 if __name__ == '__main__':

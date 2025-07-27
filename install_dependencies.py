@@ -16,6 +16,7 @@ import os
 import sys
 import subprocess
 import argparse
+import shutil
 
 def main():
     """Main function to install dependencies."""
@@ -41,11 +42,8 @@ def main():
         if venv_exists and args.force:
             print("Removing existing virtual environment...")
             try:
-                # Use appropriate command based on OS
-                if os.name == "nt":  # Windows
-                    subprocess.run(["rmdir", "/s", "/q", venv_dir], check=True, shell=True)
-                else:  # Unix/Linux/Mac
-                    subprocess.run(["rm", "-rf", venv_dir], check=True)
+                # Use secure directory removal
+                shutil.rmtree(venv_dir)
             except subprocess.CalledProcessError as e:
                 print(f"Error removing virtual environment: {e}")
                 sys.exit(1)
@@ -54,11 +52,8 @@ def main():
         try:
             # First make sure the directory doesn't exist
             if os.path.exists(venv_dir):
-                # Use appropriate command based on OS to remove it completely
-                if os.name == "nt":  # Windows
-                    subprocess.run(["rmdir", "/s", "/q", venv_dir], check=True, shell=True)
-                else:  # Unix/Linux/Mac
-                    subprocess.run(["rm", "-rf", venv_dir], check=True)
+                # Use secure directory removal
+                shutil.rmtree(venv_dir)
             
             # Now create a fresh virtual environment
             subprocess.run([sys.executable, "-m", "venv", venv_dir], check=True)

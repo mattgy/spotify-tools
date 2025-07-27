@@ -74,3 +74,7 @@ CONTRIBUTING.md
 *.temp
 temp/
 tmp/
+
+# personal playlists
+*.m3u
+playlists_to_import/

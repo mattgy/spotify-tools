@@ -60,7 +60,6 @@ logs/
 .DS_Store
 
 # AI context files (should not be in public repos)
-CLAUDE.md
 GEMINI.md
 ABOUT.md
 AmazonQ.md

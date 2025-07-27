@@ -169,7 +169,22 @@ def clean_deprecated_caches():
         'recently_played_extended',
         'top_artists',
         'recently_played',
-        'comprehensive_listening_profile'
+        'comprehensive_listening_profile',
+        # Additional old patterns that might exist
+        'artist_info_',  # Old pattern, now using better keys
+        'track_info_',   # Old pattern
+        'album_info_',   # Old pattern
+        'user_data_',    # Old generic pattern
+        'spotify_data_', # Old generic pattern
+        'api_response_', # Old generic pattern
+        'cached_',       # Old generic pattern
+        'temp_',         # Temporary files that weren't cleaned
+        'test_',         # Test files that might have been left behind
+        # Last.fm and MusicBrainz old patterns
+        'lastfm_',       # Should be standardized with 'lastfm_'
+        'musicbrainz_',  # Should be standardized with 'mb_'
+        'artist_search_', # Old search pattern
+        'similar_artists_search_', # Old search pattern
     ]
     
     cleaned_count = 0
@@ -200,6 +215,76 @@ def clean_deprecated_caches():
     else:
         print_info("No deprecated cache files found")
         return False
+
+def clean_stale_caches(max_age_days=30):
+    """
+    Clean up cache files that are older than specified age.
+    
+    Args:
+        max_age_days: Maximum age in days before a cache is considered stale
+    """
+    import time
+    
+    caches = list_caches()
+    current_time = time.time()
+    max_age_seconds = max_age_days * 24 * 60 * 60
+    
+    cleaned_count = 0
+    total_size_cleaned = 0
+    
+    for cache in caches:
+        cache_age = current_time - cache['mtime']
+        
+        if cache_age > max_age_seconds:
+            try:
+                os.remove(cache['path'])
+                cleaned_count += 1
+                total_size_cleaned += cache['size']
+                age_days = cache_age / (24 * 60 * 60)
+                print_info(f"Removed stale cache: {cache['name']} ({age_days:.1f} days old)")
+            except Exception as e:
+                print_warning(f"Error removing stale cache {cache['name']}: {e}")
+    
+    if cleaned_count > 0:
+        print_success(f"Cleaned up {cleaned_count} stale cache files ({total_size_cleaned / 1024:.1f} KB)")
+        return True
+    else:
+        print_info(f"No stale cache files older than {max_age_days} days found")
+        return False
+
+def optimize_cache_storage():
+    """
+    Optimize cache storage by cleaning deprecated and stale caches.
+    This is a comprehensive cleanup function.
+    """
+    from spotify_utils import print_header
+    print_header("Cache Storage Optimization")
+    
+    total_cleaned = False
+    
+    # Clean deprecated caches first
+    print_info("🧹 Cleaning deprecated cache patterns...")
+    deprecated_cleaned = clean_deprecated_caches()
+    
+    # Clean stale caches (older than 30 days)
+    print_info("⏰ Cleaning stale caches...")
+    stale_cleaned = clean_stale_caches(30)
+    
+    total_cleaned = deprecated_cleaned or stale_cleaned
+    
+    # Show final cache status
+    info = get_cache_info()
+    print_info(f"✅ Cache optimization complete")
+    print_info(f"📊 Remaining: {info['count']} files, {info['total_size'] / 1024:.1f} KB")
+    
+    if info['count'] == 0:
+        print_success("🎉 Cache directory is now empty!")
+    elif info['total_size'] / 1024 < 100:  # Less than 100KB
+        print_success("✨ Cache storage is now optimized!")
+    else:
+        print_info(f"💡 Consider running manual cache cleanup if size exceeds your preferences")
+    
+    return total_cleaned
 
 def get_cache_info():
     """Get information about all caches."""

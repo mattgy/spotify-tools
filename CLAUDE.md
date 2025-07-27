@@ -15,7 +15,6 @@ Matt Y's Spotify Tools is a collection of Python utilities for managing Spotify 
 ### Environment Management
 - Install dependencies: `python3 install_dependencies.py`
 - Reset environment: `python3 reset.py` (removes and recreates venv)
-- Fix venv issues: `python3 fix_venv.py`
 
 ### Individual Script Execution
 All scripts can be run independently:
@@ -204,6 +203,7 @@ When adding new features:
 
 ## Recent Architecture Changes
 
+- **Codebase Cleanup**: Removed unused files (`external_popularity.py`, `personal_relevance.py`, `fix_venv.py`) that were never integrated into the main application, reducing codebase size by ~1,127 lines
 - **Caching System Improvements**: Standardized cache keys across all scripts to use consistent naming (followed_artists, user_playlists, liked_songs) instead of script-specific variations
 - **Analytics Enhancements**: Fixed progress bars, eliminated duplicate messages, and improved rate limiting in option 9 analytics
 - **Backup System Overhaul**: Modified backup to only backup user-created content, added progress bars, and implemented cached data usage  

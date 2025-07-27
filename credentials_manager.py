@@ -30,16 +30,29 @@ def get_spotify_credentials():
     
     # Check if credentials file exists
     if not os.path.exists(CREDENTIALS_FILE):
-        # Prompt for credentials
-        print("Spotify API credentials not found.")
-        print("Please enter your Spotify API credentials:")
+        # Check environment variables first
+        client_id = os.environ.get("SPOTIFY_CLIENT_ID", "")
+        client_secret = os.environ.get("SPOTIFY_CLIENT_SECRET", "")
+        redirect_uri = os.environ.get("SPOTIFY_REDIRECT_URI", "http://127.0.0.1:8888/callback")
         
-        client_id = input("Client ID: ").strip()
-        client_secret = input("Client Secret: ").strip()
-        redirect_uri = input("Redirect URI [http://127.0.0.1:8888/callback]: ").strip()
-        
-        if not redirect_uri:
-            redirect_uri = "http://127.0.0.1:8888/callback"
+        if not client_id or not client_secret:
+            # Prompt for credentials
+            print("Spotify API credentials not found.")
+            print("Please enter your Spotify API credentials:")
+            
+            try:
+                if not client_id:
+                    client_id = input("Client ID: ").strip()
+                if not client_secret:
+                    client_secret = input("Client Secret: ").strip()
+                if not redirect_uri:
+                    redirect_uri = input("Redirect URI [http://127.0.0.1:8888/callback]: ").strip()
+                
+                if not redirect_uri:
+                    redirect_uri = "http://127.0.0.1:8888/callback"
+            except EOFError:
+                # Handle case where input is not available (like in tests)
+                return None, None, None
         
         # Save credentials
         credentials = {
@@ -105,11 +118,19 @@ def get_lastfm_api_key():
     
     # Check if credentials file exists
     if not os.path.exists(CREDENTIALS_FILE):
-        # Prompt for API key
-        print("Last.fm API key not found.")
-        print("Please enter your Last.fm API key:")
+        # Check environment variable first
+        api_key = os.environ.get("LASTFM_API_KEY", "")
         
-        api_key = input("API Key: ").strip()
+        if not api_key:
+            # Prompt for API key
+            print("Last.fm API key not found.")
+            print("Please enter your Last.fm API key:")
+            
+            try:
+                api_key = input("API Key: ").strip()
+            except EOFError:
+                # Handle case where input is not available (like in tests)
+                return None
         
         # Save credentials
         credentials = {
@@ -128,28 +149,43 @@ def get_lastfm_api_key():
         
         api_key = credentials.get("LASTFM_API_KEY", "")
         
-        # If API key is not found or empty, prompt for it
+        # If API key is not found or empty, check environment first
         if not api_key:
-            print("Last.fm API key not found.")
-            print("Please enter your Last.fm API key:")
+            api_key = os.environ.get("LASTFM_API_KEY", "")
             
-            api_key = input("API Key: ").strip()
-            
-            # Update credentials
-            credentials["LASTFM_API_KEY"] = api_key
-            
-            with open(CREDENTIALS_FILE, "w") as f:
-                json.dump(credentials, f, indent=2)
+            if not api_key:
+                print("Last.fm API key not found.")
+                print("Please enter your Last.fm API key:")
+                
+                try:
+                    api_key = input("API Key: ").strip()
+                    
+                    # Update credentials
+                    credentials["LASTFM_API_KEY"] = api_key
+                    
+                    with open(CREDENTIALS_FILE, "w") as f:
+                        json.dump(credentials, f, indent=2)
+                except EOFError:
+                    # Handle case where input is not available (like in tests)
+                    return None
         
         return api_key
     
     except Exception as e:
         print(f"Error loading Last.fm API key: {e}")
         
-        # Prompt for API key
-        print("Please enter your Last.fm API key:")
+        # Check environment variable first
+        api_key = os.environ.get("LASTFM_API_KEY", "")
         
-        api_key = input("API Key: ").strip()
+        if not api_key:
+            # Prompt for API key
+            print("Please enter your Last.fm API key:")
+            
+            try:
+                api_key = input("API Key: ").strip()
+            except EOFError:
+                # Handle case where input is not available (like in tests)
+                return None
         
         # Save credentials
         try:

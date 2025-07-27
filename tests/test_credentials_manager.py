@@ -73,8 +73,9 @@ class TestCredentialsManager(unittest.TestCase):
         # Ensure no environment variables are set
         env_vars_to_remove = ['SPOTIFY_CLIENT_ID', 'SPOTIFY_CLIENT_SECRET', 'SPOTIFY_REDIRECT_URI']
         with patch.dict(os.environ, {}, clear=True):
-            with self.assertRaises(SystemExit):
-                get_spotify_credentials()
+            result = get_spotify_credentials()
+            # Should return None values when credentials are unavailable in test environment
+            self.assertEqual(result, (None, None, None))
     
     def test_get_lastfm_api_key_with_file(self):
         """Test getting Last.fm API key when file exists."""

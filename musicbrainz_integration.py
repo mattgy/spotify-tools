@@ -204,6 +204,165 @@ class MusicBrainzClient:
         unique_similar.sort(key=lambda x: x['confidence'], reverse=True)
         return unique_similar[:20]  # Return top 20
     
+    def get_releases(self, artist_mbid: str, limit: int = 25) -> List[Dict[str, Any]]:
+        """
+        Get releases (albums) for an artist.
+        
+        Args:
+            artist_mbid: MusicBrainz ID for the artist
+            limit: Maximum number of releases to return
+            
+        Returns:
+            List of release information dictionaries
+        """
+        cache_key = f"mb_artist_releases_{artist_mbid}"
+        cached_result = load_from_cache(cache_key, self.cache_expiration)
+        
+        if cached_result is not None:
+            return cached_result
+        
+        try:
+            time.sleep(self.api_delay)
+            
+            result = musicbrainzngs.browse_releases(
+                artist=artist_mbid,
+                limit=limit,
+                includes=['release-groups', 'media']
+            )
+            
+            releases = []
+            for release in result.get('release-list', []):
+                release_info = {
+                    'mbid': release.get('id'),
+                    'title': release.get('title'),
+                    'date': release.get('date'),
+                    'country': release.get('country'),
+                    'status': release.get('status'),
+                    'packaging': release.get('packaging'),
+                    'barcode': release.get('barcode'),
+                    'track_count': 0
+                }
+                
+                # Count tracks
+                for medium in release.get('medium-list', []):
+                    release_info['track_count'] += int(medium.get('track-count', 0))
+                
+                releases.append(release_info)
+            
+            # Sort by date (newest first)
+            releases.sort(key=lambda x: x.get('date', ''), reverse=True)
+            
+            save_to_cache(releases, cache_key)
+            return releases
+            
+        except Exception as e:
+            print(f"Error getting releases for {artist_mbid}: {e}")
+            return []
+    
+    def search_by_country(self, country: str, limit: int = 50) -> List[Dict[str, Any]]:
+        """
+        Search for artists from a specific country.
+        
+        Args:
+            country: Country name
+            limit: Maximum number of artists to return
+            
+        Returns:
+            List of artist information dictionaries
+        """
+        cache_key = f"mb_country_artists_{country.lower().replace(' ', '_')}"
+        cached_result = load_from_cache(cache_key, self.cache_expiration)
+        
+        if cached_result is not None:
+            return cached_result
+        
+        try:
+            time.sleep(self.api_delay)
+            
+            result = musicbrainzngs.search_artists(area=country, limit=limit)
+            artists = []
+            
+            for artist in result.get('artist-list', []):
+                artist_info = {
+                    'mbid': artist.get('id'),
+                    'name': artist.get('name'),
+                    'sort_name': artist.get('sort-name'),
+                    'type': artist.get('type'),
+                    'country': artist.get('area', {}).get('name') if 'area' in artist else None,
+                    'begin_date': artist.get('life-span', {}).get('begin'),
+                    'end_date': artist.get('life-span', {}).get('end'),
+                    'score': artist.get('ext:score', 0)
+                }
+                artists.append(artist_info)
+            
+            # Sort by score
+            artists.sort(key=lambda x: x.get('score', 0), reverse=True)
+            
+            save_to_cache(artists, cache_key)
+            return artists
+            
+        except Exception as e:
+            print(f"Error searching artists from {country}: {e}")
+            return []
+    
+    def get_artist_recordings(self, artist_mbid: str, limit: int = 100) -> List[Dict[str, Any]]:
+        """
+        Get recordings (songs) for an artist.
+        
+        Args:
+            artist_mbid: MusicBrainz ID for the artist
+            limit: Maximum number of recordings to return
+            
+        Returns:
+            List of recording information dictionaries
+        """
+        cache_key = f"mb_artist_recordings_{artist_mbid}"
+        cached_result = load_from_cache(cache_key, self.cache_expiration)
+        
+        if cached_result is not None:
+            return cached_result
+        
+        try:
+            time.sleep(self.api_delay)
+            
+            result = musicbrainzngs.browse_recordings(
+                artist=artist_mbid,
+                limit=limit,
+                includes=['releases', 'isrcs']
+            )
+            
+            recordings = []
+            for recording in result.get('recording-list', []):
+                recording_info = {
+                    'mbid': recording.get('id'),
+                    'title': recording.get('title'),
+                    'length': recording.get('length'),
+                    'disambiguation': recording.get('disambiguation'),
+                    'isrcs': [isrc.get('isrc') for isrc in recording.get('isrc-list', [])],
+                    'releases': [rel.get('title') for rel in recording.get('release-list', [])]
+                }
+                recordings.append(recording_info)
+            
+            save_to_cache(recordings, cache_key)
+            return recordings
+            
+        except Exception as e:
+            print(f"Error getting recordings for {artist_mbid}: {e}")
+            return []
+    
+    def discover_artists_by_genre(self, genre_tag: str, limit: int = 50) -> List[Dict[str, Any]]:
+        """
+        Discover artists by genre/tag.
+        
+        Args:
+            genre_tag: Genre or tag to search for
+            limit: Maximum number of artists to return
+            
+        Returns:
+            List of artist information dictionaries
+        """
+        return self.search_artist(genre_tag, limit)
+    
     def enrich_artist_data(self, spotify_artist: Dict[str, Any]) -> Dict[str, Any]:
         """
         Enrich Spotify artist data with MusicBrainz information.

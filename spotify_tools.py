@@ -289,17 +289,11 @@ def reset_environment():
         print_error(f"Unexpected error during reset: {e}")
         print_info("Please manually run: python3 reset.py")
 
-def manage_caches():
-    """Manage cache files."""
-    print_header("Cache Management")
+def _display_cache_summary():
+    """Display cache summary information."""
+    from cache_utils import get_cache_info, list_caches
     
-    # Import cache utilities
-    sys.path.insert(0, SCRIPT_DIR)
-    from cache_utils import list_caches, clear_cache, get_cache_info, clean_deprecated_caches
-    
-    # Get cache info
     info = get_cache_info()
-    
     print(f"Total cache files: {info['count']}")
     print(f"Total size: {info['total_size'] / 1024:.1f} KB")
     
@@ -309,7 +303,12 @@ def manage_caches():
     if info['newest']:
         print(f"Newest cache: {info['newest']['name']} ({time.ctime(info['newest']['mtime'])})")
     
-    # Group caches by type
+    return _group_caches_by_type()
+
+def _group_caches_by_type():
+    """Group caches by type and return the grouped data."""
+    from cache_utils import list_caches
+    
     caches = list_caches()
     cache_types = {}
     
@@ -340,14 +339,58 @@ def manage_caches():
             print(f"{cache_type}: {len(type_caches)} files, {total_size / 1024:.1f} KB")
             print(f"  Oldest: {oldest_age:.1f} days old, Newest: {newest_age:.1f} days old")
     
+    return cache_types
+
+def _clear_caches_by_type(cache_types):
+    """Handle clearing caches by type."""
+    from cache_utils import clear_cache
+    
+    if not cache_types:
+        print_warning("No caches to clear.")
+        return
+    
+    print("\nCache types:")
+    types_list = sorted(cache_types.keys())
+    for i, cache_type in enumerate(types_list, 1):
+        type_caches = cache_types[cache_type]
+        total_size = sum(c['size'] for c in type_caches)
+        print(f"{i}. {cache_type}: {len(type_caches)} files, {total_size / 1024:.1f} KB")
+    
+    type_num = input(f"\nEnter type number to clear (1-{len(types_list)}): ")
+    try:
+        type_num = int(type_num)
+        if 1 <= type_num <= len(types_list):
+            cache_type = types_list[type_num - 1]
+            confirm = input(f"Are you sure you want to clear all {cache_type} caches? (y/n): ").strip().lower()
+            if confirm == "y":
+                for cache in cache_types[cache_type]:
+                    clear_cache(cache['name'])
+                print_success(f"All {cache_type} caches cleared.")
+        else:
+            print_error("Invalid type number.")
+    except ValueError:
+        print_error("Invalid input. Please enter a number.")
+
+def manage_caches():
+    """Manage cache files."""
+    print_header("Cache Management")
+    
+    # Import cache utilities
+    sys.path.insert(0, SCRIPT_DIR)
+    from cache_utils import clear_cache, clean_deprecated_caches, optimize_cache_storage
+    
+    # Display cache summary and get grouped cache types
+    cache_types = _display_cache_summary()
+    
     # Options
     print("\nOptions:")
     print("1. Clear all caches")
     print("2. Clear caches by type")
     print("3. Clean up deprecated cache files")
-    print("4. Back to main menu")
+    print("4. Optimize cache storage (comprehensive cleanup)")
+    print("5. Back to main menu")
     
-    choice = input("\nEnter your choice (1-4): ")
+    choice = input("\nEnter your choice (1-5): ")
     
     if choice == "1":
         # Clear all caches
@@ -357,34 +400,14 @@ def manage_caches():
             print_success("All caches cleared.")
     elif choice == "2":
         # Clear caches by type
-        if cache_types:
-            print("\nCache types:")
-            types_list = sorted(cache_types.keys())
-            for i, cache_type in enumerate(types_list, 1):
-                type_caches = cache_types[cache_type]
-                total_size = sum(c['size'] for c in type_caches)
-                print(f"{i}. {cache_type}: {len(type_caches)} files, {total_size / 1024:.1f} KB")
-            
-            type_num = input(f"\nEnter type number to clear (1-{len(types_list)}): ")
-            try:
-                type_num = int(type_num)
-                if 1 <= type_num <= len(types_list):
-                    cache_type = types_list[type_num - 1]
-                    confirm = input(f"Are you sure you want to clear all {cache_type} caches? (y/n): ").strip().lower()
-                    if confirm == "y":
-                        for cache in cache_types[cache_type]:
-                            clear_cache(cache['name'])
-                        print_success(f"All {cache_type} caches cleared.")
-                else:
-                    print_error("Invalid type number.")
-            except ValueError:
-                print_error("Invalid input. Please enter a number.")
-        else:
-            print_warning("No caches to clear.")
+        _clear_caches_by_type(cache_types)
     elif choice == "3":
         # Clean up deprecated cache files
         print_info("Cleaning up deprecated cache files...")
         clean_deprecated_caches()
+    elif choice == "4":
+        # Optimize cache storage
+        optimize_cache_storage()
 
 def check_cache_age():
     """Check cache age and ask to clear old caches."""

@@ -455,17 +455,86 @@ class SpotifyAnalytics:
     
     def _get_discovery_insights(self) -> dict:
         """Get music discovery insights and recommendations."""
-        # This would integrate with the music discovery engine
-        # For now, return basic insights
-        return {
-            'recommendation_sources': ['spotify', 'musicbrainz', 'lastfm'],
-            'discovery_potential': 'high',  # Could be calculated based on diversity scores
-            'suggested_explorations': [
-                'Explore artists from underrepresented countries',
-                'Discover music from different time periods',
-                'Try related artists from MusicBrainz'
-            ]
-        }
+        from music_discovery_engine import MusicDiscoveryEngine
+        from lastfm_integration import lastfm_client
+        
+        try:
+            # Quick profile analysis for discovery insights
+            discovery_engine = MusicDiscoveryEngine()
+            discovery_engine.sp = self.sp  # Reuse our Spotify client
+            
+            # Get a lightweight profile analysis
+            followed_artists = fetch_followed_artists(
+                self.sp,
+                show_progress=False,
+                cache_key="followed_artists",
+                cache_expiration=CACHE_EXPIRATION['long']
+            )
+            
+            if not followed_artists:
+                return {
+                    'error': 'No followed artists found for analysis',
+                    'recommendation_sources': ['spotify', 'musicbrainz', 'lastfm'],
+                    'discovery_potential': 'unknown'
+                }
+            
+            # Analyze top genres for discovery potential
+            all_genres = []
+            for artist in followed_artists[:20]:  # Sample to avoid long processing
+                all_genres.extend(artist.get('genres', []))
+            
+            from collections import Counter
+            genre_counts = Counter(all_genres)
+            unique_genres = len(genre_counts)
+            
+            # Get some Last.fm based insights if available
+            lastfm_insights = {}
+            if lastfm_client.api_key and followed_artists:
+                sample_artist = followed_artists[0]['name']
+                artist_info = lastfm_client.get_artist_info(sample_artist)
+                if not artist_info.get('error'):
+                    lastfm_insights = {
+                        'sample_artist_listeners': artist_info.get('listeners', 0),
+                        'sample_artist_tags': artist_info.get('tags', [])[:5]
+                    }
+            
+            # Calculate discovery potential
+            discovery_score = min(unique_genres / 10, 1.0)  # Normalize to 0-1
+            if discovery_score > 0.7:
+                discovery_potential = 'high'
+            elif discovery_score > 0.4:
+                discovery_potential = 'medium' 
+            else:
+                discovery_potential = 'low'
+            
+            return {
+                'recommendation_sources': ['spotify', 'musicbrainz', 'lastfm'],
+                'discovery_potential': discovery_potential,
+                'diversity_score': discovery_score,
+                'unique_genres_analyzed': unique_genres,
+                'total_artists_analyzed': len(followed_artists),
+                'suggested_explorations': [
+                    f'Explore artists from underrepresented countries (current diversity: {unique_genres} genres)',
+                    'Discover music from different time periods using MusicBrainz data',
+                    'Try Last.fm similarity recommendations for genre expansion',
+                    'Use geographic heat maps to find new regional music styles'
+                ],
+                'lastfm_sample': lastfm_insights,
+                'top_genres_discovered': dict(genre_counts.most_common(10))
+            }
+            
+        except Exception as e:
+            print(f"Warning: Could not generate discovery insights: {e}")
+            return {
+                'error': str(e),
+                'recommendation_sources': ['spotify', 'musicbrainz', 'lastfm'],
+                'discovery_potential': 'unknown',
+                'suggested_explorations': [
+                    'Explore artists from underrepresented countries',
+                    'Discover music from different time periods',
+                    'Try related artists from MusicBrainz'
+                ]
+            }
     
     def _analyze_music_timeline(self) -> dict:
         """Analyze the timeline of user's music preferences."""
@@ -738,6 +807,11 @@ class SpotifyAnalytics:
                            dpi=300, bbox_inches='tight', facecolor='white')
                 plt.close()
             
+            # Create geographic heat map
+            artist_diversity = analytics_data.get('artist_diversity', {})
+            if artist_diversity and 'geographic_diversity' in artist_diversity:
+                self._create_geographic_heatmap(artist_diversity['geographic_diversity'], timestamp)
+            
             # Create audio features radar chart
             audio_features = analytics_data.get('audio_features_analysis', {})
             if 'audio_feature_averages' in audio_features:
@@ -782,6 +856,135 @@ class SpotifyAnalytics:
             
         except Exception as e:
             print(f"{Fore.YELLOW}Warning: Could not create radar chart: {e}")
+    
+    def _create_geographic_heatmap(self, geographic_data: dict, timestamp: str):
+        """Create geographic heat map of artist origins."""
+        try:
+            import matplotlib.pyplot as plt
+            import numpy as np
+            
+            countries = geographic_data.get('countries', {})
+            if not countries:
+                print(f"{Fore.YELLOW}No geographic data available for heat map")
+                return
+                
+            # Create country codes mapping for common countries
+            country_codes = {
+                'United States': 'US', 'United Kingdom': 'GB', 'Canada': 'CA',
+                'Germany': 'DE', 'France': 'FR', 'Australia': 'AU', 'Japan': 'JP',
+                'South Korea': 'KR', 'Sweden': 'SE', 'Norway': 'NO', 'Denmark': 'DK',
+                'Netherlands': 'NL', 'Belgium': 'BE', 'Italy': 'IT', 'Spain': 'ES',
+                'Brazil': 'BR', 'Mexico': 'MX', 'Argentina': 'AR', 'India': 'IN',
+                'China': 'CN', 'Russia': 'RU', 'Poland': 'PL', 'Finland': 'FI',
+                'Iceland': 'IS', 'Ireland': 'IE', 'Switzerland': 'CH', 'Austria': 'AT',
+                'Portugal': 'PT', 'Greece': 'GR', 'Turkey': 'TR', 'Israel': 'IL',
+                'South Africa': 'ZA', 'New Zealand': 'NZ', 'Chile': 'CL',
+                'Colombia': 'CO', 'Venezuela': 'VE', 'Peru': 'PE', 'Ecuador': 'EC',
+                'Uruguay': 'UY', 'Paraguay': 'PY', 'Bolivia': 'BO', 'Thailand': 'TH',
+                'Vietnam': 'VN', 'Philippines': 'PH', 'Indonesia': 'ID', 'Malaysia': 'MY',
+                'Singapore': 'SG', 'Taiwan': 'TW', 'Hong Kong': 'HK'
+            }
+            
+            # Create a simple world map visualization using matplotlib
+            fig, ax = plt.subplots(figsize=(16, 10))
+            
+            # Sort countries by artist count
+            sorted_countries = sorted(countries.items(), key=lambda x: x[1], reverse=True)
+            top_countries = sorted_countries[:20]  # Show top 20 countries
+            
+            # Create bar chart for geographic distribution
+            country_names = [country for country, count in top_countries]
+            artist_counts = [count for country, count in top_countries]
+            
+            # Create horizontal bar chart with color mapping
+            colors = plt.cm.plasma(np.linspace(0, 1, len(top_countries)))
+            bars = ax.barh(range(len(country_names)), artist_counts, color=colors)
+            
+            ax.set_yticks(range(len(country_names)))
+            ax.set_yticklabels(country_names)
+            ax.set_xlabel('Number of Artists')
+            ax.set_title('Geographic Distribution of Artists in Your Library\n(Artist Origins Heat Map)', 
+                        size=14, pad=20)
+            ax.grid(axis='x', alpha=0.3)
+            
+            # Add value labels on bars
+            for i, (bar, count) in enumerate(zip(bars, artist_counts)):
+                ax.text(count + 0.1, bar.get_y() + bar.get_height()/2, 
+                       str(count), va='center', fontsize=9)
+            
+            # Color bar to show intensity
+            sm = plt.cm.ScalarMappable(cmap=plt.cm.plasma, 
+                                     norm=plt.Normalize(vmin=min(artist_counts), 
+                                                       vmax=max(artist_counts)))
+            sm.set_array([])
+            cbar = plt.colorbar(sm, ax=ax, shrink=0.6)
+            cbar.set_label('Artist Count', rotation=270, labelpad=20)
+            
+            plt.tight_layout()
+            plt.savefig(os.path.join(self.output_dir, f'geographic_heatmap_{timestamp}.png'), 
+                       dpi=300, bbox_inches='tight', facecolor='white')
+            plt.close()
+            
+            # Also create a summary pie chart for continents
+            self._create_continent_distribution(countries, timestamp)
+            
+        except ImportError:
+            print(f"{Fore.YELLOW}Warning: Required packages not available for geographic heat map")
+        except Exception as e:
+            print(f"{Fore.YELLOW}Warning: Could not create geographic heat map: {e}")
+    
+    def _create_continent_distribution(self, countries: dict, timestamp: str):
+        """Create pie chart showing distribution by continent."""
+        try:
+            import matplotlib.pyplot as plt
+            
+            # Map countries to continents (simplified mapping)
+            continent_mapping = {
+                'United States': 'North America', 'Canada': 'North America', 'Mexico': 'North America',
+                'Brazil': 'South America', 'Argentina': 'South America', 'Chile': 'South America',
+                'Colombia': 'South America', 'Peru': 'South America', 'Venezuela': 'South America',
+                'United Kingdom': 'Europe', 'Germany': 'Europe', 'France': 'Europe', 'Italy': 'Europe',
+                'Spain': 'Europe', 'Sweden': 'Europe', 'Norway': 'Europe', 'Denmark': 'Europe',
+                'Netherlands': 'Europe', 'Belgium': 'Europe', 'Finland': 'Europe', 'Iceland': 'Europe',
+                'Ireland': 'Europe', 'Switzerland': 'Europe', 'Austria': 'Europe', 'Portugal': 'Europe',
+                'Greece': 'Europe', 'Poland': 'Europe', 'Russia': 'Europe',
+                'China': 'Asia', 'Japan': 'Asia', 'South Korea': 'Asia', 'India': 'Asia',
+                'Thailand': 'Asia', 'Vietnam': 'Asia', 'Philippines': 'Asia', 'Indonesia': 'Asia',
+                'Malaysia': 'Asia', 'Singapore': 'Asia', 'Taiwan': 'Asia', 'Hong Kong': 'Asia',
+                'Turkey': 'Asia', 'Israel': 'Asia',
+                'Australia': 'Oceania', 'New Zealand': 'Oceania',
+                'South Africa': 'Africa'
+            }
+            
+            continent_counts = {}
+            for country, count in countries.items():
+                continent = continent_mapping.get(country, 'Other')
+                continent_counts[continent] = continent_counts.get(continent, 0) + count
+            
+            if continent_counts:
+                fig, ax = plt.subplots(figsize=(10, 8))
+                
+                continents = list(continent_counts.keys())
+                counts = list(continent_counts.values())
+                colors = plt.cm.Set3(range(len(continents)))
+                
+                wedges, texts, autotexts = ax.pie(counts, labels=continents, autopct='%1.1f%%',
+                                                 colors=colors, startangle=90)
+                
+                ax.set_title('Geographic Distribution by Continent\n(Artist Origins)', size=14, pad=20)
+                
+                # Enhance text
+                for autotext in autotexts:
+                    autotext.set_color('white')
+                    autotext.set_fontweight('bold')
+                
+                plt.tight_layout()
+                plt.savefig(os.path.join(self.output_dir, f'continent_distribution_{timestamp}.png'), 
+                           dpi=300, bbox_inches='tight', facecolor='white')
+                plt.close()
+                
+        except Exception as e:
+            print(f"{Fore.YELLOW}Warning: Could not create continent distribution: {e}")
 
 def main():
     """Main function for analytics."""

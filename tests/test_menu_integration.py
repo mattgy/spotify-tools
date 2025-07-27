@@ -144,8 +144,7 @@ class TestMenuIntegration(unittest.TestCase):
         except ImportError as e:
             self.fail(f"Failed to import spotify_playlist_manager: {e}")
     
-    @patch('spotify_tools.setup_spotify_client')
-    def test_run_script_function(self, mock_setup):
+    def test_run_script_function(self):
         """Test that run_script function works."""
         import spotify_tools
         
@@ -183,12 +182,9 @@ class TestCacheUtils(unittest.TestCase):
         import shutil
         shutil.rmtree(self.temp_dir, ignore_errors=True)
     
-    @patch('cache_utils.CACHE_DIR')
-    def test_cache_save_load(self, mock_cache_dir):
+    @patch('cache_utils.CACHE_DIR', '/tmp/test_cache')
+    def test_cache_save_load(self):
         """Test that cache save and load works."""
-        mock_cache_dir.__str__ = lambda: self.cache_dir
-        mock_cache_dir.__fspath__ = lambda: self.cache_dir
-        
         from cache_utils import save_to_cache, load_from_cache
         
         test_data = {'test': 'data', 'number': 123}
@@ -202,12 +198,9 @@ class TestCacheUtils(unittest.TestCase):
         
         self.assertEqual(test_data, loaded_data)
     
-    @patch('cache_utils.CACHE_DIR')
-    def test_cache_expiration(self, mock_cache_dir):
+    @patch('cache_utils.CACHE_DIR', '/tmp/test_cache')
+    def test_cache_expiration(self):
         """Test that cache expiration works."""
-        mock_cache_dir.__str__ = lambda: self.cache_dir
-        mock_cache_dir.__fspath__ = lambda: self.cache_dir
-        
         from cache_utils import save_to_cache, load_from_cache
         
         test_data = {'test': 'data'}

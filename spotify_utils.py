@@ -70,9 +70,27 @@ def safe_spotify_call(func):
                 error_str = str(e).lower()
                 if any(keyword in error_str for keyword in ['rate', 'limit', '429', 'too many requests']):
                     if attempt < max_retries - 1:
-                        print(f"{Fore.YELLOW}⚠️  Rate limit hit. Waiting {retry_delay} seconds...")
-                        time.sleep(retry_delay)
-                        retry_delay *= 2  # Exponential backoff
+                        # Try to extract retry time from error message
+                        retry_time = None
+                        try:
+                            # Look for "retry after X" pattern in error message
+                            import re
+                            retry_match = re.search(r'retry[^0-9]*(\d+)', error_str)
+                            if retry_match:
+                                retry_time = int(retry_match.group(1))
+                            elif hasattr(e, 'headers') and 'retry-after' in e.headers:
+                                retry_time = int(e.headers['retry-after'])
+                        except (ValueError, AttributeError):
+                            pass
+                        
+                        if retry_time:
+                            print(f"{Fore.YELLOW}⚠️  Rate limit hit. Waiting {retry_time} seconds (from API)...")
+                            time.sleep(retry_time)
+                        else:
+                            print(f"{Fore.YELLOW}⚠️  Rate limit hit. Waiting {retry_delay} seconds...")
+                            time.sleep(retry_delay)
+                        
+                        retry_delay *= 2  # Exponential backoff for next attempt
                     else:
                         print(f"{Fore.RED}❌ Rate limiting persists after {max_retries} attempts.")
                         raise
@@ -618,6 +636,11 @@ def fetch_user_top_items(sp, item_type='artists', time_range='medium_term', limi
     except Exception as e:
         print_warning(f"Error fetching top {item_type}: {e}")
         return []
+
+# Alias for backward compatibility
+def fetch_liked_songs(sp, show_progress=True, cache_key="liked_songs", cache_expiration=None):
+    """Alias for fetch_user_saved_tracks with consistent naming."""
+    return fetch_user_saved_tracks(sp, show_progress, cache_key, cache_expiration)
 
 def extract_artists_from_playlists(playlists, sp, show_progress=True, owner_filter=None):
     """

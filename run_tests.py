@@ -19,6 +19,29 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 def install_dependencies():
     """Install required dependencies for testing."""
     print("Installing dependencies for testing...")
+    
+    # Check if we have a virtual environment
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    venv_dir = os.path.join(script_dir, "venv")
+    
+    if os.path.exists(venv_dir):
+        # Use virtual environment Python
+        if os.name == 'nt':  # Windows
+            venv_python = os.path.join(venv_dir, "Scripts", "python.exe")
+        else:  # Unix/Linux/macOS
+            venv_python = os.path.join(venv_dir, "bin", "python")
+        
+        if os.path.exists(venv_python):
+            print(f"Using virtual environment: {venv_python}")
+            try:
+                subprocess.run([venv_python, "install_dependencies.py"], check=True, capture_output=True)
+                print("✅ Dependencies installed successfully")
+                return True
+            except subprocess.CalledProcessError as e:
+                print(f"❌ Failed to install dependencies: {e}")
+                return False
+    
+    # Fallback to system Python
     try:
         subprocess.run([sys.executable, "install_dependencies.py"], check=True, capture_output=True)
         print("✅ Dependencies installed successfully")
@@ -129,20 +152,9 @@ def run_unit_tests():
     loader = unittest.TestLoader()
     start_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'tests')
     
-    # Prioritize comprehensive menu test
-    suite = unittest.TestSuite()
-    
-    # Add comprehensive menu test first
-    try:
-        comprehensive_test = loader.loadTestsFromName('test_comprehensive_menu', start_dir)
-        suite.addTest(comprehensive_test)
-        print("✅ Loaded comprehensive menu tests")
-    except Exception as e:
-        print(f"⚠️ Could not load comprehensive menu tests: {e}")
-    
-    # Add other tests
-    other_tests = loader.discover(start_dir, pattern='test_*.py')
-    suite.addTest(other_tests)
+    # Discover all tests
+    suite = loader.discover(start_dir, pattern='test_*.py')
+    print("✅ Loaded all test modules")
     
     # Run tests with verbose output
     runner = unittest.TextTestRunner(verbosity=2, stream=sys.stdout)
@@ -150,8 +162,39 @@ def run_unit_tests():
     
     return result.wasSuccessful()
 
+def run_in_venv():
+    """Run tests in virtual environment if available."""
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    venv_dir = os.path.join(script_dir, "venv")
+    
+    if os.path.exists(venv_dir):
+        # Use virtual environment Python
+        if os.name == 'nt':  # Windows
+            venv_python = os.path.join(venv_dir, "Scripts", "python")
+        else:  # Unix/Linux/macOS
+            venv_python = os.path.join(venv_dir, "bin", "python")
+        
+        if os.path.exists(venv_python):
+            print(f"🐍 Running tests in virtual environment: {venv_python}")
+            # Re-run this script with the venv Python
+            env = os.environ.copy()
+            env['SPOTIFY_TOOLS_TESTING'] = '1'  # Flag to prevent infinite recursion
+            try:
+                result = subprocess.run([venv_python, __file__], env=env)
+                sys.exit(result.returncode)
+            except Exception as e:
+                print(f"❌ Error running tests in venv: {e}")
+                print("Falling back to system Python...")
+    
+    return False
+
 def main():
     """Run all tests."""
+    # If we're not already in virtual environment, try to run in it
+    if not os.environ.get('SPOTIFY_TOOLS_TESTING'):
+        if run_in_venv():
+            return  # Successfully ran in venv
+    
     print("🧪 Matt Y's Spotify Tools - Comprehensive Test Suite")
     print("=" * 60)
     

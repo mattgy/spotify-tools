@@ -672,12 +672,70 @@ def get_playlist_tracks(sp, playlist_id):
     
     return tracks
 
-def create_or_update_spotify_playlist(sp, playlist_name, track_uris, user_id):
-    """Create a new Spotify playlist or update an existing one."""
-    # Get user playlists
+def check_for_duplicate_playlists(sp, playlist_name, track_uris, user_id):
+    """Check for existing playlists that might be duplicates based on name similarity and content."""
     playlists = get_user_playlists(sp, user_id)
     
-    existing_playlist = next((p for p in playlists if p['name'] == playlist_name), None)
+    # Look for exact name matches
+    exact_matches = [p for p in playlists if p['name'] == playlist_name]
+    
+    # Look for similar name matches
+    similar_matches = []
+    norm_target_name = normalize_string(playlist_name).lower()
+    
+    for playlist in playlists:
+        if playlist['name'] != playlist_name:  # Skip exact matches, already found
+            norm_playlist_name = normalize_string(playlist['name']).lower()
+            similarity = fuzz.ratio(norm_target_name, norm_playlist_name)
+            
+            # Consider names similar if they have >80% similarity
+            if similarity > 80:
+                similar_matches.append({
+                    'playlist': playlist,
+                    'similarity': similarity
+                })
+    
+    # Sort similar matches by similarity
+    similar_matches.sort(key=lambda x: x['similarity'], reverse=True)
+    
+    return exact_matches, similar_matches
+
+def create_or_update_spotify_playlist(sp, playlist_name, track_uris, user_id):
+    """Create a new Spotify playlist or update an existing one."""
+    # Check for duplicate playlists first
+    exact_matches, similar_matches = check_for_duplicate_playlists(sp, playlist_name, track_uris, user_id)
+    
+    # Handle similar matches - ask user if they want to use existing playlist
+    if similar_matches and not exact_matches:
+        print(f"\n{Fore.YELLOW}⚠️  Found similar playlists that might be duplicates:")
+        for i, match in enumerate(similar_matches[:3], 1):  # Show top 3 matches
+            playlist = match['playlist']
+            similarity = match['similarity']
+            print(f"{i}. {playlist['name']} ({similarity:.0f}% similar, {playlist['tracks']['total']} tracks)")
+        
+        print(f"\n{Fore.CYAN}Options:")
+        print(f"1. Use existing similar playlist (will add new tracks)")
+        print(f"2. Create new playlist '{playlist_name}'")
+        
+        choice = input(f"\n{Fore.CYAN}Choose option (1-2): ").strip()
+        
+        if choice == "1":
+            # Ask which playlist to use
+            if len(similar_matches) == 1:
+                exact_matches = [similar_matches[0]['playlist']]
+            else:
+                playlist_choice = input(f"\n{Fore.CYAN}Which playlist to use? (1-{min(len(similar_matches), 3)}): ").strip()
+                try:
+                    idx = int(playlist_choice) - 1
+                    if 0 <= idx < len(similar_matches):
+                        exact_matches = [similar_matches[idx]['playlist']]
+                except ValueError:
+                    print(f"{Fore.YELLOW}Invalid choice, creating new playlist.")
+    
+    # Handle exact matches or selected similar playlist
+    existing_playlist = None
+    if exact_matches:
+        existing_playlist = exact_matches[0]  # Use the first exact match
     
     if existing_playlist:
         logger.info(f"Found existing playlist: {playlist_name}")

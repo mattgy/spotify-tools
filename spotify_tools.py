@@ -43,6 +43,7 @@ CHRISTMAS_CLEANUP_SCRIPT = os.path.join(SCRIPT_DIR, "spotify_remove_christmas.py
 PLAYLIST_MANAGER_SCRIPT = os.path.join(SCRIPT_DIR, "spotify_playlist_manager.py")
 REMOVE_DUPLICATES_SCRIPT = os.path.join(SCRIPT_DIR, "spotify_remove_duplicates.py")
 IDENTIFY_SKIPPED_SCRIPT = os.path.join(SCRIPT_DIR, "spotify_identify_skipped.py")
+PLAYLIST_DUPLICATE_SCANNER_SCRIPT = os.path.join(SCRIPT_DIR, "spotify_playlist_duplicate_scanner.py")
 INSTALL_DEPENDENCIES_SCRIPT = os.path.join(SCRIPT_DIR, "install_dependencies.py")
 
 # Define config directory
@@ -534,26 +535,27 @@ def main():
         print(f"{Fore.WHITE}3. Remove Christmas songs from Liked Songs")
         print(f"{Fore.WHITE}4. Remove duplicate songs from Liked Songs")
         print(f"{Fore.WHITE}5. Identify frequently skipped songs in your library")
+        print(f"{Fore.WHITE}6. Scan for duplicate tracks in your playlists")
         
         # Artist Management
         print(f"\n{Fore.YELLOW}{Style.BRIGHT}ARTIST MANAGEMENT:")
-        print(f"{Fore.WHITE}6. Follow all artists in your created playlists")
-        print(f"{Fore.WHITE}7. Find Artists to Follow That You Probably Like")
-        print(f"{Fore.WHITE}8. Remove followed artists that you probably don't like")
+        print(f"{Fore.WHITE}7. Follow all artists in your created playlists")
+        print(f"{Fore.WHITE}8. Find Artists to Follow That You Probably Like")
+        print(f"{Fore.WHITE}9. Remove followed artists that you probably don't like")
         
         # Analytics & Insights
         print(f"\n{Fore.YELLOW}{Style.BRIGHT}ANALYTICS & INSIGHTS:")
-        print(f"{Fore.WHITE}9. Enhanced analytics & music insights")
-        print(f"{Fore.WHITE}10. Backup & export your music library")
+        print(f"{Fore.WHITE}10. Enhanced analytics & music insights")
+        print(f"{Fore.WHITE}11. Backup & export your music library")
         
         # System Management
         print(f"\n{Fore.YELLOW}{Style.BRIGHT}SYSTEM MANAGEMENT:")
-        print(f"{Fore.WHITE}11. Manage caches")
-        print(f"{Fore.WHITE}12. Manage API credentials")
-        print(f"{Fore.WHITE}13. Reset environment (reinstall dependencies)")
-        print(f"{Fore.WHITE}14. Exit")
+        print(f"{Fore.WHITE}12. Manage caches")
+        print(f"{Fore.WHITE}13. Manage API credentials")
+        print(f"{Fore.WHITE}14. Reset environment (reinstall dependencies)")
+        print(f"{Fore.WHITE}15. Exit")
         
-        choice = input(f"\n{Fore.CYAN}Enter your choice (1-14): ")
+        choice = input(f"\n{Fore.CYAN}Enter your choice (1-15): ")
         
         if choice == "1":
             # Run the playlist converter script
@@ -590,43 +592,48 @@ def main():
             run_script(IDENTIFY_SKIPPED_SCRIPT)
             
         elif choice == "6":
+            # Run the playlist duplicate scanner script
+            print_info("\nScanning for duplicate tracks in your playlists...")
+            run_script(PLAYLIST_DUPLICATE_SCANNER_SCRIPT)
+            
+        elif choice == "7":
             # Run the follow artists script
             print_info("\nRunning follow artists functionality...")
             run_script(FOLLOW_ARTISTS_SCRIPT)
             
-        elif choice == "7":
+        elif choice == "8":
             # Run the similar artists script
             print_info("\nFinding artists to follow that you probably like...")
             run_script(SIMILAR_ARTISTS_SCRIPT)
             
-        elif choice == "8":
+        elif choice == "9":
             # Run the artist cleanup script
             print_info("\nRemoving followed artists that you probably don't like...")
             run_script(CLEANUP_ARTISTS_SCRIPT)
             
-        elif choice == "9":
+        elif choice == "10":
             # Run the enhanced analytics script
             print_info("\nLaunching enhanced analytics & insights...")
             run_script(ANALYTICS_SCRIPT)
             
-        elif choice == "10":
+        elif choice == "11":
             # Run the backup script
             print_info("\nRunning backup & export functionality...")
             run_script(BACKUP_SCRIPT)
             
-        elif choice == "11":
+        elif choice == "12":
             # Manage caches
             manage_caches()
             
-        elif choice == "12":
+        elif choice == "13":
             # Manage API credentials
             manage_api_credentials()
             
-        elif choice == "13":
+        elif choice == "14":
             # Reset environment
             reset_environment()
             
-        elif choice == "14":
+        elif choice == "15":
             print_success("Exiting...")
             break
         

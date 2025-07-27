@@ -226,6 +226,19 @@ def identify_inactive_artists(followed_artists, top_artists, recently_played):
     """Identify artists that the user rarely listens to with simplified scoring."""
     print_info("Analyzing your listening habits...")
     
+    # Check for cache corruption and auto-repair if needed
+    corrupted_count = 0
+    for artist in followed_artists:
+        if isinstance(artist, str) or not isinstance(artist, dict) or 'id' not in artist:
+            corrupted_count += 1
+    
+    if corrupted_count > 0:
+        print_warning(f"Detected {corrupted_count} corrupted artist entries in cache. Auto-repairing...")
+        # Clear the corrupted cache to force fresh fetch
+        save_to_cache(None, "followed_artists", force_expire=True)
+        print_info("Cache cleared. Please restart the script to fetch fresh artist data.")
+        return []
+    
     # Create a set of active artist IDs
     active_artist_ids = set()
     
@@ -252,13 +265,7 @@ def identify_inactive_artists(followed_artists, top_artists, recently_played):
     # Identify inactive artists with simplified scoring
     inactive_artists = []
     for artist in followed_artists:
-        # Handle case where artist might be a string ID instead of dict
-        if isinstance(artist, str):
-            print_warning(f"Found corrupted cache data. Artist data is string instead of dict: {artist}")
-            continue
-        elif not isinstance(artist, dict) or 'id' not in artist:
-            print_warning(f"Invalid artist data found: {type(artist)}")
-            continue
+        # At this point all artists should be valid dicts due to corruption check above
             
         if artist["id"] not in active_artist_ids:
             # Calculate simplified relevance score
@@ -326,6 +333,10 @@ def bulk_unfollow_by_criteria(sp, followed_artists, top_artists, recently_played
     inactive_artists = identify_inactive_artists(followed_artists, top_artists, recently_played)
     
     if not inactive_artists:
+        # Check if this was due to cache corruption auto-repair
+        if len(followed_artists) > 0 and all(isinstance(artist, str) or not isinstance(artist, dict) for artist in followed_artists[:5]):
+            print_info("Cache corruption detected and repaired. Restarting analysis...")
+            return  # Exit early to allow restart
         print_success("You seem to be actively listening to all the artists you follow!")
         return
     

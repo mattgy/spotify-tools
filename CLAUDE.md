@@ -39,6 +39,42 @@ All scripts can be run independently:
 
 ## Development Workflow
 - Ask whether I want to commit to Git/GitHub after each set of major changes, and automatically look for any sensitive information before committing.
+- Update CLAUDE.md with important workflow/architecture changes after major modifications
+
+## Recent Changes & Important Notes
+
+### Playlist Converter (Option 1)
+- Main menu only prompts for directory, threshold selection handled by converter script itself
+- Converter script provides full explanation of confidence scores before prompting
+- Dual threshold system: auto-accept (70-100, default 85) and manual review (50-auto, default auto-5)
+- Includes duplicate playlist detection before creation
+
+### Playlist Duplicate Scanner (Option 6) 
+- New standalone script for scanning user-created playlists
+- Exact duplicate matching using Spotify track IDs (safe, non-destructive)
+- Options for auto-removal or manual review by playlist
+
+### Cache Corruption Fixes
+- Added defensive programming across multiple scripts for artist data corruption
+- Scripts now handle both proper artist objects and string IDs/names gracefully
+- Common pattern: type checking with isinstance() before accessing dict methods
+- Artist cleanup tool (option 8) now auto-detects and repairs corrupted cache
+- When corruption detected, cache is cleared and user prompted to restart
+
+### Menu Structure Changes
+- Removed option 5 "Identify frequently skipped songs" (script still exists but not in menu)
+- Menu now has options 1-14 (was 1-15)
+- All subsequent options shifted down by 1 after removal
+
+### Cache Key Standardization
+- Option 2 now uses "all_liked_songs" cache key (same as option 4) for consistency
+- Eliminates redundant API calls when both scripts run in same session
+
+## Cross-Computer Continuity
+- Always ensure `.env` file is properly set up when moving between computers
+- Verify virtual environment can be recreated using `reset.py` and `install_dependencies.py`
+- Check that Spotify API credentials and tokens are current and accessible
+- Sync local configuration files to ensure consistent setup across different machines
 
 ## Architecture
 

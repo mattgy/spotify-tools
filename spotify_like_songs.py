@@ -153,8 +153,8 @@ def get_saved_tracks(sp):
     """Get all tracks the user has already saved (liked)."""
     from spotify_utils import fetch_user_saved_tracks
     
-    # Fetch saved tracks with progress bar
-    saved_tracks_data = fetch_user_saved_tracks(sp, show_progress=True, cache_key="saved_tracks")
+    # Fetch saved tracks with progress bar - use same cache key as other scripts
+    saved_tracks_data = fetch_user_saved_tracks(sp, show_progress=True, cache_key="all_liked_songs", cache_expiration=CACHE_EXPIRATION['personal'])
     
     # Convert to set of track IDs for efficient lookup
     saved_tracks = {item['track']['id'] for item in saved_tracks_data if item['track']}
@@ -219,7 +219,7 @@ def like_tracks(sp, tracks, saved_tracks):
     print(f"Successfully liked {len(new_tracks)} new tracks!")
     
     # Invalidate the saved tracks cache
-    save_to_cache(None, "saved_tracks", force_expire=True)
+    save_to_cache(None, "all_liked_songs", force_expire=True)
     
     return new_tracks  # Return the liked tracks for analysis
 

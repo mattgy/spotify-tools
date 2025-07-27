@@ -685,9 +685,14 @@ def create_or_update_spotify_playlist(sp, playlist_name, track_uris, user_id):
         
         # Get existing tracks
         existing_tracks = get_playlist_tracks(sp, playlist_id)
+        logger.info(f"Existing playlist has {len(existing_tracks)} tracks")
         
         # Find tracks to add (tracks in track_uris but not in existing_tracks)
         tracks_to_add = [uri for uri in track_uris if uri not in existing_tracks]
+        duplicates_skipped = len(track_uris) - len(tracks_to_add)
+        
+        if duplicates_skipped > 0:
+            logger.info(f"Skipping {duplicates_skipped} duplicate tracks already in playlist")
         
         if tracks_to_add:
             logger.info(f"Adding {len(tracks_to_add)} new tracks to playlist '{playlist_name}'")
@@ -697,13 +702,14 @@ def create_or_update_spotify_playlist(sp, playlist_name, track_uris, user_id):
                 batch = tracks_to_add[i:i+100]
                 sp.playlist_add_items(playlist_id, batch)
             
-            # Invalidate the cache for this playlist's tracks
+            # Update the cache for this playlist's tracks
             cache_key = f"playlist_tracks_{playlist_id}"
             save_to_cache(existing_tracks + tracks_to_add, cache_key)
             
+            logger.info(f"✅ Successfully updated playlist '{playlist_name}' - now has {len(existing_tracks) + len(tracks_to_add)} total tracks")
             return playlist_id, len(tracks_to_add)
         else:
-            logger.info(f"Playlist '{playlist_name}' is already complete. No new tracks added.")
+            logger.info(f"✅ Playlist '{playlist_name}' is already complete. No new tracks to add.")
             return playlist_id, 0
     else:
         logger.info(f"Creating new playlist: {playlist_name}")
@@ -714,12 +720,14 @@ def create_or_update_spotify_playlist(sp, playlist_name, track_uris, user_id):
             description=f"Playlist created from local file by Spotify Playlist Converter"
         )
         
+        logger.info(f"Adding {len(track_uris)} tracks to new playlist")
+        
         # Add tracks in batches of 100 (Spotify API limit)
         for i in range(0, len(track_uris), 100):
             batch = track_uris[i:i+100]
             sp.playlist_add_items(playlist['id'], batch)
         
-        # Invalidate the user playlists cache
+        # Update the user playlists cache
         cache_key = f"user_playlists_{user_id}"
         playlists.append(playlist)
         save_to_cache(playlists, cache_key)
@@ -728,6 +736,7 @@ def create_or_update_spotify_playlist(sp, playlist_name, track_uris, user_id):
         cache_key = f"playlist_tracks_{playlist['id']}"
         save_to_cache(track_uris, cache_key)
         
+        logger.info(f"✅ Successfully created playlist '{playlist_name}' with {len(track_uris)} tracks")
         return playlist['id'], len(track_uris)
 
 def process_tracks_batch(sp, tracks_batch, confidence_threshold, batch_mode=False, auto_threshold=85):
@@ -1002,6 +1011,62 @@ def main():
     if args.max_playlists:
         playlist_files = playlist_files[:args.max_playlists]
         logger.info(f"Limited to {len(playlist_files)} playlists")
+    
+    # Interactive threshold selection (only if not in command line batch mode and threshold not explicitly set)
+    if not args.batch and args.threshold == CONFIDENCE_THRESHOLD:
+        print("\n" + "="*60)
+        print("CONFIDENCE THRESHOLD SELECTION")
+        print("="*60)
+        print("Choose your auto-acceptance threshold for track matching:")
+        print()
+        print("📊 Confidence Score Meanings:")
+        print("  95-100: Almost certainly correct (perfect matches)")
+        print("  85-94:  Very high confidence (recommended for batch)")
+        print("  80-84:  High confidence (default threshold)")
+        print("  70-79:  Good confidence (may miss some close matches)")
+        print("  60-69:  Medium confidence (more conservative)")
+        print("  50-59:  Low confidence (very conservative)")
+        print()
+        print("🎯 Recommendations:")
+        print("  • 85+ = Safe for automatic processing")
+        print("  • 80+ = Good balance of accuracy and automation")
+        print("  • 70+ = Conservative but may require more manual review")
+        print()
+        
+        while True:
+            try:
+                user_threshold = input(f"Enter threshold (50-100, default {CONFIDENCE_THRESHOLD}): ").strip()
+                if not user_threshold:
+                    confidence_threshold = CONFIDENCE_THRESHOLD
+                    break
+                
+                threshold_value = int(user_threshold)
+                if 50 <= threshold_value <= 100:
+                    confidence_threshold = threshold_value
+                    break
+                else:
+                    print("❌ Please enter a number between 50 and 100")
+            except ValueError:
+                print("❌ Please enter a valid number")
+        
+        print(f"✅ Using confidence threshold: {confidence_threshold}")
+        
+        # Ask about batch mode if threshold is high enough
+        if confidence_threshold >= 80:
+            print()
+            batch_choice = input("Enable batch mode for automatic processing? (y/n, default: n): ").lower().strip()
+            if batch_choice in ['y', 'yes']:
+                args.batch = True
+                args.auto_threshold = confidence_threshold
+                print(f"✅ Batch mode enabled with auto-threshold: {confidence_threshold}")
+            else:
+                print("✅ Interactive mode - you'll confirm each match")
+        else:
+            print("✅ Interactive mode - you'll confirm each match (threshold too low for batch mode)")
+        
+        print("="*60)
+    elif args.batch:
+        confidence_threshold = args.threshold
     
     # Batch mode information
     if args.batch:

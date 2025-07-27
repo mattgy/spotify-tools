@@ -170,7 +170,7 @@ def extract_track_info_from_path(path):
     filename_no_ext = os.path.splitext(filename)[0]
     
     # First, try to extract from the filename (common pattern: "Artist - Title.mp3")
-    parts = re.split(r' - ', filename_no_ext, 1)
+    parts = re.split(r' - ', filename_no_ext, maxsplit=1)
     
     if len(parts) > 1:
         # Remove track numbers from the beginning
@@ -312,7 +312,7 @@ def parse_pls_playlist(file_path):
         # If we have a title entry, use it to enhance the track info
         if index in titles:
             title_value = titles[index]
-            parts = re.split(r' - ', title_value, 1)
+            parts = re.split(r' - ', title_value, maxsplit=1)
             
             if len(parts) > 1:
                 # If the title entry has artist - title format, use it
@@ -423,7 +423,7 @@ def search_track_on_spotify(sp, artist, title, album=None):
     cache_key = f"track_search_{artist}_{album}_{title}".replace(" ", "_").lower()
     
     # Try to load from cache first
-    cached_result = load_from_cache(cache_key, CACHE_EXPIRATION_TRACKS)
+    cached_result = load_from_cache(cache_key, CACHE_EXPIRATION['medium'])
     if cached_result:
         logger.debug(f"Using cached result for '{artist} - {title}'")
         return cached_result

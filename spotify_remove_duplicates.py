@@ -99,6 +99,19 @@ def find_exact_duplicates(tracks):
     
     return exact_duplicates
 
+def normalize_string(s):
+    """Normalize string for better duplicate detection."""
+    if not s:
+        return ""
+    import re
+    # Remove special characters, convert to lowercase, remove extra spaces
+    s = re.sub(r'[^\w\s]', '', s.lower())
+    s = re.sub(r'\s+', ' ', s).strip()
+    # Remove common words that might interfere
+    common_words = ['the', 'a', 'an', 'and', 'or', 'feat', 'featuring', 'ft', 'remix', 'remaster']
+    words = [w for w in s.split() if w not in common_words]
+    return ' '.join(words)
+
 def calculate_similarity(track1, track2):
     """Calculate similarity score between two tracks."""
     # Create signatures for comparison
@@ -120,40 +133,68 @@ def calculate_similarity(track1, track2):
     return min(1.0, max(0.0, similarity))
 
 def find_similar_duplicates(tracks, similarity_threshold=None):
-    """Find tracks that are very similar but not exact duplicates."""
+    """Find tracks that are very similar but not exact duplicates using efficient grouping."""
     if similarity_threshold is None:
         similarity_threshold = CONFIDENCE_THRESHOLDS['fuzzy_matching']
     
+    print_info(f"Finding similar tracks with {similarity_threshold*100:.0f}% similarity threshold...")
+    print_info("Using efficient duplicate detection algorithm...")
+    
+    # Group tracks by normalized artist-title combinations for efficient comparison
+    normalized_groups = defaultdict(list)
+    
+    progress = create_progress_bar(len(tracks), "Grouping tracks", "track")
+    
+    for track in tracks:
+        # Create normalized key for efficient grouping
+        title = normalize_string(track['name'])
+        artists = normalize_string(' '.join([artist['name'] for artist in track['artists']]))
+        
+        # Create multiple keys to catch variations
+        key1 = f"{artists}_{title}"
+        key2 = f"{title}_{artists}"
+        key3 = title  # For title-only matching
+        
+        normalized_groups[key1].append(track)
+        if key2 != key1:
+            normalized_groups[key2].append(track)
+        if len(title) > 3:  # Avoid very short titles
+            normalized_groups[key3].append(track)
+        
+        update_progress_bar(progress, 1)
+    
+    close_progress_bar(progress)
+    
+    # Find groups with multiple tracks and verify similarity
     similar_groups = []
     processed_tracks = set()
     
-    print_info(f"Finding similar tracks with {similarity_threshold*100:.0f}% similarity threshold...")
+    print_info(f"Analyzing {len(normalized_groups)} grouped combinations...")
     
-    progress = create_progress_bar(len(tracks), "Comparing tracks", "track")
-    
-    for i, track1 in enumerate(tracks):
-        if track1['id'] in processed_tracks:
-            continue
-        
-        similar_tracks = [track1]
-        
-        for j, track2 in enumerate(tracks[i+1:], i+1):
-            if track2['id'] in processed_tracks:
-                continue
+    for key, group_tracks in normalized_groups.items():
+        if len(group_tracks) > 1:
+            # Remove already processed tracks
+            group_tracks = [t for t in group_tracks if t['id'] not in processed_tracks]
             
-            similarity = calculate_similarity(track1, track2)
-            
-            if similarity >= similarity_threshold:
-                similar_tracks.append(track2)
-                processed_tracks.add(track2['id'])
-        
-        if len(similar_tracks) > 1:
-            similar_groups.append(similar_tracks)
-        
-        processed_tracks.add(track1['id'])
-        update_progress_bar(progress, i + 1)
-    
-    close_progress_bar(progress)
+            if len(group_tracks) > 1:
+                # Verify similarity within the group
+                verified_group = []
+                for track in group_tracks:
+                    if not verified_group:
+                        verified_group.append(track)
+                        continue
+                    
+                    # Check if this track is similar to any in the verified group
+                    for verified_track in verified_group:
+                        similarity = calculate_similarity(track, verified_track)
+                        if similarity >= similarity_threshold:
+                            verified_group.append(track)
+                            break
+                
+                if len(verified_group) > 1:
+                    similar_groups.append(verified_group)
+                    for track in verified_group:
+                        processed_tracks.add(track['id'])
     
     return similar_groups
 

@@ -443,14 +443,14 @@ def filter_christmas_songs(tracks, exclude_christmas=False):
     original_count = len(tracks)
     
     # Filter out Christmas songs
-    filtered_tracks = {}
+    filtered_tracks = []
     christmas_count = 0
     
-    for track_id, track_info in tracks.items():
+    for track_info in tracks:
         if is_christmas_song(track_info):
             christmas_count += 1
         else:
-            filtered_tracks[track_id] = track_info
+            filtered_tracks.append(track_info)
     
     print(f"Filtered out {christmas_count} Christmas songs from {original_count} total tracks")
     print(f"Remaining: {len(filtered_tracks)} tracks")

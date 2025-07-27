@@ -117,11 +117,11 @@ def analyze_listening_patterns(recently_played):
     track_plays = defaultdict(list)
     
     for track in recently_played:
-        track_id = track['id']
+        track_id = track['track']['id']
         played_at = datetime.fromisoformat(track['played_at'].replace('Z', '+00:00'))
         
         track_plays[track_id].append({
-            'track': track,
+            'track': track['track'],
             'played_at': played_at
         })
     

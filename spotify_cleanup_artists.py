@@ -252,6 +252,14 @@ def identify_inactive_artists(followed_artists, top_artists, recently_played):
     # Identify inactive artists with simplified scoring
     inactive_artists = []
     for artist in followed_artists:
+        # Handle case where artist might be a string ID instead of dict
+        if isinstance(artist, str):
+            print_warning(f"Found corrupted cache data. Artist data is string instead of dict: {artist}")
+            continue
+        elif not isinstance(artist, dict) or 'id' not in artist:
+            print_warning(f"Invalid artist data found: {type(artist)}")
+            continue
+            
         if artist["id"] not in active_artist_ids:
             # Calculate simplified relevance score
             popularity = artist["popularity"]

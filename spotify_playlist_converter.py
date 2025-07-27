@@ -748,13 +748,13 @@ def process_tracks_batch(sp, tracks_batch, confidence_threshold, batch_mode=Fals
         
         if match:
             if batch_mode and match['score'] >= auto_threshold:
-                results.append({'track': track, 'match': match, 'accepted': True})
+                results.append({'track': track, 'match': match, 'accepted': True, 'auto': True})
             elif match['score'] >= confidence_threshold:
-                results.append({'track': track, 'match': match, 'accepted': True})
+                results.append({'track': track, 'match': match, 'accepted': False, 'review': True})
             else:
-                results.append({'track': track, 'match': match, 'accepted': False})
+                results.append({'track': track, 'match': match, 'accepted': False, 'review': False})
         else:
-            results.append({'track': track, 'match': None, 'accepted': False})
+            results.append({'track': track, 'match': None, 'accepted': False, 'review': False})
     
     return results
 
@@ -770,7 +770,7 @@ def process_playlist_file(sp, file_path, user_id, confidence_threshold, min_scor
     
     if not tracks:
         logger.warning(f"No tracks found in playlist: {file_path}")
-        return
+        return 0, 0
     
     logger.info(f"Found {len(tracks)} tracks in playlist")
     
@@ -793,6 +793,37 @@ def process_playlist_file(sp, file_path, user_id, confidence_threshold, min_scor
             for result in batch_results:
                 if result['accepted'] and result['match']:
                     spotify_tracks.append(result['match'])
+                elif result.get('review', False) and result['match']:
+                    # Manual review needed
+                    track = result['track']
+                    match = result['match']
+                    original_line = track.get('original_line', f"{track['artist']} - {track['title']}")
+                    
+                    print(f"\nManual Review Required:")
+                    print(f"Original: {original_line}")
+                    print(f"Match: {', '.join(match['artists'])} - {match['name']} (Score: {match['score']:.1f})")
+                    
+                    choice = input("Accept this match? (y/n/s - y:yes, n:no, s:search manually): ").lower().strip()
+                    if choice == 'y':
+                        spotify_tracks.append(match)
+                    elif choice == 's':
+                        # Manual search option
+                        search_artist = input("Enter artist name: ").strip()
+                        search_title = input("Enter song title: ").strip()
+                        search_album = input("Enter album (optional): ").strip() or None
+                        
+                        manual_match = search_track_on_spotify(sp, search_artist, search_title, search_album)
+                        if manual_match:
+                            print(f"Found: {', '.join(manual_match['artists'])} - {manual_match['name']} (Score: {manual_match['score']:.1f})")
+                            if input("Accept this match? (y/n): ").lower().strip() == 'y':
+                                spotify_tracks.append(manual_match)
+                            else:
+                                skipped_tracks.append(track)
+                        else:
+                            print("No matches found.")
+                            skipped_tracks.append(track)
+                    else:
+                        skipped_tracks.append(track)
                 else:
                     skipped_tracks.append(result['track'])
                     
@@ -938,7 +969,7 @@ def process_playlist_file(sp, file_path, user_id, confidence_threshold, min_scor
     
     if not spotify_tracks:
         logger.warning("No tracks could be matched on Spotify. Playlist will not be created.")
-        return
+        return 0, len(tracks)
     
     # Create or update Spotify playlist
     track_uris = [track['uri'] for track in spotify_tracks]
@@ -956,7 +987,7 @@ def process_playlist_file(sp, file_path, user_id, confidence_threshold, min_scor
         for track in skipped_tracks:
             logger.info(f"  - {track['artist']} - {track['title']}")
     
-    return playlist_id
+    return len(spotify_tracks), len(skipped_tracks)
 
 def find_playlist_files(directory):
     """Find all playlist files in the given directory and its subdirectories."""
@@ -1018,53 +1049,69 @@ def main():
         print("CONFIDENCE THRESHOLD SELECTION")
         print("="*60)
         print("The playlist converter uses fuzzy matching to find your songs on Spotify.")
-        print("You can choose how confident a match needs to be before auto-accepting it.")
+        print("You can set two thresholds to control automation:")
         print()
         print("📊 Confidence Score Meanings:")
         print("  95-100: Almost certainly correct (perfect matches)")
-        print("  85-94:  Very high confidence (recommended for batch mode)")
-        print("  80-84:  High confidence (default threshold)")  
-        print("  70-79:  Good confidence (may miss some close matches)")
-        print("  60-69:  Medium confidence (more conservative)")
-        print("  50-59:  Low confidence (very conservative)")
+        print("  85-94:  Very high confidence (recommended for auto-accept)")
+        print("  80-84:  High confidence")  
+        print("  70-79:  Good confidence")
+        print("  60-69:  Medium confidence")
+        print("  50-59:  Low confidence")
         print()
-        print("🎯 Recommendations:")
-        print("  • 85+ = Safe for automatic processing (minimal manual review)")
-        print("  • 80+ = Good balance of accuracy and automation")
-        print("  • 70+ = Conservative but may require more manual review")
-        print("  • Lower = More manual confirmation required")
+        print("🎯 Threshold Types:")
+        print("  • Auto-Accept: Tracks above this score are added automatically")
+        print("  • Manual Review: Tracks above this score are shown for your review")
+        print("  • Below Manual Review: Tracks are skipped completely")
         print()
         
+        # Get auto-accept threshold
         while True:
             try:
-                user_threshold = input(f"Enter threshold (50-100, default {CONFIDENCE_THRESHOLD}): ").strip()
-                if not user_threshold:
-                    confidence_threshold = CONFIDENCE_THRESHOLD
+                user_auto = input(f"Enter auto-accept threshold (70-100, default 85): ").strip()
+                if not user_auto:
+                    auto_threshold = 85
                     break
                 
-                threshold_value = int(user_threshold)
-                if 50 <= threshold_value <= 100:
-                    confidence_threshold = threshold_value
+                auto_value = int(user_auto)
+                if 70 <= auto_value <= 100:
+                    auto_threshold = auto_value
                     break
                 else:
-                    print("❌ Please enter a number between 50 and 100")
+                    print("❌ Please enter a number between 70 and 100")
             except ValueError:
                 print("❌ Please enter a valid number")
         
-        print(f"✅ Using confidence threshold: {confidence_threshold}")
+        # Get manual review threshold
+        while True:
+            try:
+                user_manual = input(f"Enter manual review threshold (50-{auto_threshold-1}, default {min(70, auto_threshold-5)}): ").strip()
+                default_manual = min(70, auto_threshold-5)
+                if not user_manual:
+                    manual_threshold = default_manual
+                    break
+                
+                manual_value = int(user_manual)
+                if 50 <= manual_value < auto_threshold:
+                    manual_threshold = manual_value
+                    break
+                else:
+                    print(f"❌ Manual review threshold must be between 50 and {auto_threshold-1}")
+            except ValueError:
+                print("❌ Please enter a valid number")
         
-        # Ask about batch mode if threshold is high enough
-        if confidence_threshold >= 80:
-            print()
-            batch_choice = input("Enable batch mode for automatic processing? (y/n, default: n): ").lower().strip()
-            if batch_choice in ['y', 'yes']:
-                args.batch = True
-                args.auto_threshold = confidence_threshold
-                print(f"✅ Batch mode enabled with auto-threshold: {confidence_threshold}")
-            else:
-                print("✅ Interactive mode - you'll confirm each match")
-        else:
-            print("✅ Interactive mode - you'll confirm each match (threshold too low for batch mode)")
+        print(f"✅ Auto-accept threshold: {auto_threshold}")
+        print(f"✅ Manual review threshold: {manual_threshold}")
+        
+        # Set up batch mode with dual thresholds
+        args.batch = True
+        args.auto_threshold = auto_threshold
+        confidence_threshold = manual_threshold
+        
+        print(f"✅ Batch mode enabled:")
+        print(f"  • {auto_threshold}+ = Auto-accept")
+        print(f"  • {manual_threshold}-{auto_threshold-1} = Manual review")
+        print(f"  • <{manual_threshold} = Skip")
         
         print("="*60)
     elif args.batch:

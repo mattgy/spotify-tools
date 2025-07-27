@@ -34,9 +34,10 @@ sys.path.insert(0, script_dir)
 from credentials_manager import get_spotify_credentials
 from cache_utils import save_to_cache, load_from_cache
 from tqdm_utils import create_progress_bar, update_progress_bar, close_progress_bar
-from spotify_utils import (create_spotify_client, COMMON_SCOPES, safe_spotify_call,
+from spotify_utils import (create_spotify_client, safe_spotify_call,
                           print_success, print_error, print_warning, print_info, 
-                          print_header, show_spotify_setup_help, CACHE_EXPIRATION)
+                          print_header, show_spotify_setup_help)
+from constants import CACHE_EXPIRATION
 
 # Spotify API scopes needed for this script
 SPOTIFY_SCOPES = [
@@ -66,50 +67,25 @@ def display_artists_paginated(artists, title="Artists"):
         
         print_header(f"{title} - Page {current_page}/{total_pages}")
         print(f"Showing {start_idx + 1}-{end_idx} of {len(artists)} artists")
-        print(f"{Fore.CYAN}Personal Score = Personal taste relevance | Pop = Spotify popularity | Followers = API count")
-        print(f"{Fore.CYAN}🎯 = High personal relevance | ⚠️ = Low followers but high popularity | 🚫 = Do NOT unfollow")
-        print(f"{Fore.CYAN}🔍 = Check manually | Monthly listeners NOT available via API\n")
+        print(f"{Fore.CYAN}Score = Relevance based on popularity & followers | Pop = Spotify popularity | Followers = API count")
+        print(f"{Fore.CYAN}⚠️ = Low followers but high popularity | Monthly listeners NOT available via API\n")
         
         for i, artist in enumerate(page_artists, start_idx + 1):
             # Enhanced display with better formatting and data explanations
             follower_display = f"{artist['followers']:,}" if artist['followers'] > 0 else "0"
             
-            # Add personal relevance and warning indicators
+            # Add warning indicators
             warning = ""
-            external_warning = ""
-            personal_indicator = ""
             
-            # Check for high personal relevance
-            if 'personal_relevance_score' in artist and artist['personal_relevance_score'] > 50:
-                personal_indicator = f" {Fore.GREEN}🎯"
-            
-            # Check for traditional warning (low followers, high popularity)
+            # Check for warning (low followers, high popularity)
             if artist['followers'] < 100 and artist['popularity'] > 30:
                 warning = f" {Fore.MAGENTA}⚠️"
             
-            # Check for external popularity validation if available
-            if 'external_validation' in artist:
-                ext_data = artist['external_validation']
-                if not ext_data.get('recommendation', {}).get('safe_to_unfollow', True):
-                    external_warning = f" {Fore.RED}🚫"
-                elif ext_data.get('recommendation', {}).get('should_check_manually', False):
-                    external_warning = f" {Fore.YELLOW}🔍"
-            
-            # Show personal relevance score if available, otherwise use old score
-            if 'personal_relevance_score' in artist:
-                personal_score = artist['personal_relevance_score']
-                final_score = artist.get('final_score', artist['relevance_score'])
-                print(f"{i:3d}. {Fore.WHITE}{artist['name']:<40} " + 
-                      f"{Fore.MAGENTA}Personal: {personal_score:4.1f}  " +
-                      f"{Fore.YELLOW}Pop: {artist['popularity']:2d}  " +
-                      f"{Fore.GREEN}Followers: {follower_display:>8s}  " +
-                      f"{Fore.CYAN}Final: {final_score:5.1f}{personal_indicator}{warning}{external_warning}")
-            else:
-                # Fallback for artists without personal scoring
-                print(f"{i:3d}. {Fore.WHITE}{artist['name']:<40} " + 
-                      f"{Fore.YELLOW}Pop: {artist['popularity']:2d}/100  " +
-                      f"{Fore.GREEN}Followers: {follower_display:>10s}  " +
-                      f"{Fore.CYAN}Score: {artist['relevance_score']:5.1f}{warning}{external_warning}")
+            # Show simplified scoring information
+            print(f"{i:3d}. {Fore.WHITE}{artist['name']:<40} " + 
+                  f"{Fore.YELLOW}Pop: {artist['popularity']:2d}/100  " +
+                  f"{Fore.GREEN}Followers: {follower_display:>10s}  " +
+                  f"{Fore.CYAN}Score: {artist['relevance_score']:5.1f}{warning}")
         
         print(f"\n{Fore.WHITE}Navigation:")
         nav_options = []
@@ -247,8 +223,8 @@ def get_recently_played(sp):
         return []
 
 def identify_inactive_artists(followed_artists, top_artists, recently_played):
-    """Identify artists that the user rarely listens to with personal relevance analysis."""
-    print_info("Analyzing your listening habits with personalized relevance scoring...")
+    """Identify artists that the user rarely listens to with simplified scoring."""
+    print_info("Analyzing your listening habits...")
     
     # Create a set of active artist IDs
     active_artist_ids = set()
@@ -273,54 +249,26 @@ def identify_inactive_artists(followed_artists, top_artists, recently_played):
     print_info(f"  • From recently played: {recent_artist_count} additional artists")
     print_info(f"  • Unique active artists: {len(active_artist_ids)}")
     
-    # Build personal listening profile for relevance analysis
-    print_info("Building your personal taste profile...")
-    from personal_relevance import PersonalTasteAnalyzer
-    
-    # Get Spotify client for personal analysis
-    sp = setup_spotify_client()
-    taste_analyzer = PersonalTasteAnalyzer(sp)
-    user_profile = taste_analyzer.get_comprehensive_listening_profile()
-    
-    print_success(f"✅ Personal taste profile created!")
-    print(f"   • Discovery style: {user_profile.get('discovery_patterns', {}).get('discovery_style', 'unknown')}")
-    print(f"   • Top genres: {', '.join(list(user_profile.get('genre_preferences', {}).get('top_genres', {}).keys())[:5])}")
-    print(f"   • Niche preference: {user_profile.get('genre_preferences', {}).get('niche_preference_ratio', 0):.1%}")
-    
-    # Identify inactive artists with personal relevance scoring
+    # Identify inactive artists with simplified scoring
     inactive_artists = []
     for artist in followed_artists:
         if artist["id"] not in active_artist_ids:
-            # Calculate traditional scores for comparison
+            # Calculate simplified relevance score
             popularity = artist["popularity"]
             followers = artist["followers"]["total"]
             
             import math
-            spotify_score = popularity
             
+            # Simplified scoring: popularity is main factor, followers provide context
             if followers > 0:
                 follower_score = min(100, max(0, math.log10(followers + 1) * 12))
             else:
                 follower_score = 0
             
-            base_score = (spotify_score * 0.85) + (follower_score * 0.15)
+            # Weight popularity more heavily, use followers as secondary factor
+            relevance_score = (popularity * 0.7) + (follower_score * 0.3)
             
-            # Add base scores to artist data for personal relevance calculation
-            artist_data = {
-                "id": artist["id"],
-                "name": artist["name"],
-                "popularity": popularity,
-                "followers": followers,
-                "genres": artist.get("genres", []),
-                "base_score": base_score,
-                "follower_score": follower_score
-            }
-            
-            # Calculate personal relevance score
-            from personal_relevance import calculate_personal_relevance_score
-            relevance_analysis = calculate_personal_relevance_score(artist_data, user_profile)
-            
-            # Create comprehensive artist record
+            # Create artist record with simplified scoring
             artist_record = {
                 "id": artist["id"],
                 "name": artist["name"],
@@ -328,22 +276,18 @@ def identify_inactive_artists(followed_artists, top_artists, recently_played):
                 "followers": followers,
                 "genres": artist.get("genres", []),
                 "follower_score": follower_score,
-                "base_score": base_score,
-                "personal_relevance_score": relevance_analysis["personal_relevance_score"],
-                "final_score": relevance_analysis["final_score"],
-                "confidence": relevance_analysis["confidence"],
-                "scoring_breakdown": relevance_analysis["scoring_breakdown"],
-                "recommendation": relevance_analysis["recommendation"],
-                "relevance_score": relevance_analysis["final_score"],  # For backward compatibility
-                "artist_importance_score": relevance_analysis["final_score"]  # For backward compatibility
+                "relevance_score": relevance_score,
+                "final_score": relevance_score,
+                "artist_importance_score": relevance_score  # For backward compatibility
             }
             
             inactive_artists.append(artist_record)
     
-    # Sort by final score (ascending, so least relevant first)
-    inactive_artists.sort(key=lambda x: x["final_score"])
+    # Sort by relevance score (ascending, so least relevant first)
+    inactive_artists.sort(key=lambda x: x["relevance_score"])
     
-    print_success(f"Found {len(inactive_artists)} inactive artists with personalized scoring.")
+    print_success(f"Found {len(inactive_artists)} inactive artists (artists you follow but don't appear in your recent listening).")
+    print_info(f"Note: These artists may still be worth keeping if they're seasonal, reunion bands, or you just haven't listened recently.")
     
     return inactive_artists
 
@@ -377,50 +321,38 @@ def bulk_unfollow_by_criteria(sp, followed_artists, top_artists, recently_played
     print(f"{Fore.YELLOW}• Popular artists may show low followers but have high external popularity")
     
     # Show filtering options
-    print(f"\n{Fore.WHITE}Personal Relevance Cleanup Options:")
-    print("1. Set personal relevance threshold (recommended - uses your taste profile)")
-    print("2. Run external popularity validation on all candidates")
-    print("3. Show candidates for manual review (with pagination)")
-    print("4. Show personal taste profile summary")
-    print("5. Legacy: Unfollow by raw follower count")
-    print("6. Legacy: Unfollow by Spotify popularity score")
-    print("7. Debug specific artist data")
-    print("8. Back to main menu")
+    print(f"\n{Fore.WHITE}Artist Cleanup Options:")
+    print("1. Set relevance score threshold (recommended)")
+    print("2. Show candidates for manual review (with pagination)")
+    print("3. Unfollow by raw follower count")
+    print("4. Unfollow by Spotify popularity score")
+    print("5. Back to main menu")
     
-    choice = input(f"\n{Fore.CYAN}Enter your choice (1-8): ")
+    choice = input(f"\n{Fore.CYAN}Enter your choice (1-5): ")
     
     if choice == "1":
-        # Personal relevance threshold
-        print_header("Personal Relevance Scoring")
-        print(f"{Fore.CYAN}This uses your personal listening profile to score artists based on:")
-        print(f"{Fore.CYAN}• Genre similarity to your preferences")
-        print(f"{Fore.CYAN}• Alignment with your discovery style (niche vs mainstream)")
-        print(f"{Fore.CYAN}• Popularity patterns that match your listening habits")
-        print(f"{Fore.CYAN}• External validation when available")
-        print(f"\n{Fore.YELLOW}Personal relevance score ranges:")
-        print(f"{Fore.YELLOW}• 60-100: High personal relevance (strong match to your taste)")
-        print(f"{Fore.YELLOW}• 40-59:  Moderate relevance (some alignment with your preferences)")
-        print(f"{Fore.YELLOW}• 20-39:  Low relevance (limited alignment)")
-        print(f"{Fore.YELLOW}• 0-19:   Very low relevance (doesn't match your taste)")
+        # Relevance score threshold
+        print_header("Relevance Score Threshold")
+        print(f"{Fore.CYAN}This scores artists based on:")
+        print(f"{Fore.CYAN}• Spotify popularity score (0-100)")
+        print(f"{Fore.CYAN}• Follower count (scaled logarithmically)")
+        print(f"\n{Fore.YELLOW}Relevance score ranges:")
+        print(f"{Fore.YELLOW}• 70-100: High relevance (very popular artists)")
+        print(f"{Fore.YELLOW}• 40-69:  Moderate relevance (moderately popular)")
+        print(f"{Fore.YELLOW}• 20-39:  Low relevance (emerging/niche artists)")
+        print(f"{Fore.YELLOW}• 0-19:   Very low relevance (very small/inactive artists)")
         
         try:
-            threshold = float(input(f"\n{Fore.CYAN}Set minimum final score to keep artists (recommended: 30): ") or "30")
+            threshold = float(input(f"\n{Fore.CYAN}Set minimum relevance score to keep artists (recommended: 25): ") or "25")
             
             # Filter artists below threshold
-            candidates = [a for a in inactive_artists if a.get('final_score', a.get('artist_importance_score', 0)) < threshold]
+            candidates = [a for a in inactive_artists if a.get('relevance_score', 0) < threshold]
             
             if not candidates:
-                print_warning(f"No inactive artists found with final score below {threshold:.1f}.")
+                print_warning(f"No inactive artists found with relevance score below {threshold:.1f}.")
                 return
             
-            print_info(f"Found {len(candidates)} artists with final score below {threshold:.1f}:")
-            
-            # Show breakdown of candidates by personal relevance
-            if any('personal_relevance_score' in a for a in candidates):
-                high_personal = len([a for a in candidates if a.get('personal_relevance_score', 0) > 50])
-                if high_personal > 0:
-                    print(f"\n{Fore.RED}⚠️ WARNING: {high_personal} artists have high personal relevance but low final scores!")
-                    print(f"{Fore.RED}   These might be unpopular artists that match your taste. Review carefully.")
+            print_info(f"Found {len(candidates)} artists with relevance score below {threshold:.1f}:")
             
             # Options for handling the candidates
             print(f"\n{Fore.CYAN}Options:")
@@ -432,7 +364,7 @@ def bulk_unfollow_by_criteria(sp, followed_artists, top_artists, recently_played
             
             if action == "1":
                 # Browse with pagination
-                display_artists_paginated(candidates, f"Artists with Final Score < {threshold:.1f}")
+                display_artists_paginated(candidates, f"Artists with Relevance Score < {threshold:.1f}")
             elif action == "2":
                 # Immediate unfollow
                 confirm = input(f"\n{Fore.CYAN}Are you sure you want to unfollow {len(candidates)} artists? (y/n): ").strip().lower()
@@ -445,19 +377,11 @@ def bulk_unfollow_by_criteria(sp, followed_artists, top_artists, recently_played
             print_error("Invalid score entered. Please enter a number between 0 and 100.")
             
     elif choice == "2":
-        # Run external popularity validation
-        run_external_validation(sp, inactive_artists)
-            
-    elif choice == "3":
         # Show candidates for manual review
         manual_review_artists(sp, inactive_artists[:50])
         
-    elif choice == "4":
-        # Show personal taste profile summary
-        show_personal_taste_summary(inactive_artists)
-        
-    elif choice == "5":
-        # Legacy: Unfollow by raw follower count
+    elif choice == "3":
+        # Unfollow by raw follower count
         try:
             max_followers = int(input("Unfollow all artists with fewer than how many followers? (e.g., 100): "))
             candidates = [a for a in inactive_artists if a['followers'] < max_followers]
@@ -472,8 +396,8 @@ def bulk_unfollow_by_criteria(sp, followed_artists, top_artists, recently_played
         except ValueError:
             print_error("Invalid number entered.")
             
-    elif choice == "6":
-        # Legacy: Unfollow by Spotify popularity score
+    elif choice == "4":
+        # Unfollow by Spotify popularity score
         try:
             max_popularity = int(input("Unfollow all artists with popularity less than? (0-100, e.g., 20): "))
             
@@ -493,250 +417,15 @@ def bulk_unfollow_by_criteria(sp, followed_artists, top_artists, recently_played
         except ValueError:
             print_error("Invalid number entered.")
             
-    elif choice == "7":
-        # Debug specific artist data
-        artist_name = input("Enter artist name to debug: ").strip()
-        if artist_name:
-            debug_specific_artist(sp, artist_name)
-        
-    elif choice == "8":
+    elif choice == "5":
         # Back to main menu
         return
 
-def show_personal_taste_summary(inactive_artists):
-    """Show a summary of the user's personal taste profile and how it affects scoring."""
-    print_header("Personal Taste Profile Summary")
-    
-    # Check if we have personal relevance data
-    artists_with_personal_data = [a for a in inactive_artists if 'personal_relevance_score' in a]
-    
-    if not artists_with_personal_data:
-        print_warning("No personal relevance data available. Run the main analysis first.")
-        return
-    
-    # Analyze the distribution of personal relevance scores
-    personal_scores = [a['personal_relevance_score'] for a in artists_with_personal_data]
-    final_scores = [a['final_score'] for a in artists_with_personal_data]
-    
-    avg_personal = sum(personal_scores) / len(personal_scores)
-    avg_final = sum(final_scores) / len(final_scores)
-    
-    high_personal = len([s for s in personal_scores if s > 50])
-    low_personal = len([s for s in personal_scores if s < 20])
-    
-    print(f"{Fore.CYAN}Personal Taste Analysis:")
-    print(f"  • Average personal relevance score: {avg_personal:.1f}")
-    print(f"  • Average final score: {avg_final:.1f}")
-    print(f"  • Artists with high personal relevance (>50): {high_personal}")
-    print(f"  • Artists with low personal relevance (<20): {low_personal}")
-    
-    # Show scoring breakdown for a few example artists
-    print(f"\n{Fore.YELLOW}Example Scoring Breakdowns:")
-    
-    # Show highest personal relevance artist
-    highest_personal = max(artists_with_personal_data, key=lambda x: x['personal_relevance_score'])
-    print(f"\n{Fore.GREEN}🎯 Highest Personal Relevance: {highest_personal['name']}")
-    if 'scoring_breakdown' in highest_personal:
-        breakdown = highest_personal['scoring_breakdown']
-        print(f"  • Genre similarity: {breakdown.get('genre_similarity', 0):.1f}")
-        print(f"  • Popularity alignment: {breakdown.get('popularity_alignment', 0):.1f}")
-        print(f"  • Discovery style match: {breakdown.get('discovery_style_match', 0):.1f}")
-        print(f"  • Personal relevance total: {highest_personal['personal_relevance_score']:.1f}")
-        print(f"  • Final score: {highest_personal['final_score']:.1f}")
-        print(f"  • Recommendation: {highest_personal.get('recommendation', {}).get('reasoning', 'N/A')}")
-    
-    # Show lowest personal relevance artist
-    lowest_personal = min(artists_with_personal_data, key=lambda x: x['personal_relevance_score'])
-    print(f"\n{Fore.RED}❌ Lowest Personal Relevance: {lowest_personal['name']}")
-    if 'scoring_breakdown' in lowest_personal:
-        breakdown = lowest_personal['scoring_breakdown']
-        print(f"  • Genre similarity: {breakdown.get('genre_similarity', 0):.1f}")
-        print(f"  • Popularity alignment: {breakdown.get('popularity_alignment', 0):.1f}")
-        print(f"  • Discovery style match: {breakdown.get('discovery_style_match', 0):.1f}")
-        print(f"  • Personal relevance total: {lowest_personal['personal_relevance_score']:.1f}")
-        print(f"  • Final score: {lowest_personal['final_score']:.1f}")
-        print(f"  • Recommendation: {lowest_personal.get('recommendation', {}).get('reasoning', 'N/A')}")
-    
-    # Show artists with high personal relevance but low final scores (potential false positives)
-    conflicted_artists = [a for a in artists_with_personal_data 
-                         if a['personal_relevance_score'] > 50 and a['final_score'] < 30]
-    
-    if conflicted_artists:
-        print(f"\n{Fore.MAGENTA}⚠️ Artists with High Personal Relevance but Low Final Scores:")
-        print(f"{Fore.MAGENTA}These are likely niche artists that match your taste but aren't generally popular.")
-        for artist in conflicted_artists[:5]:
-            print(f"  • {artist['name']}: Personal {artist['personal_relevance_score']:.1f}, Final {artist['final_score']:.1f}")
-        if len(conflicted_artists) > 5:
-            print(f"  ... and {len(conflicted_artists) - 5} more")
-    
-    input(f"\n{Fore.CYAN}Press Enter to continue...")
+# This function has been removed to simplify the scoring system
 
-def run_external_validation(sp, inactive_artists):
-    """Run external popularity validation on inactive artists."""
-    from external_popularity import validate_artist_for_unfollowing
-    
-    print_header("External Popularity Validation")
-    print(f"{Fore.YELLOW}This will check {len(inactive_artists)} artists against external APIs")
-    print(f"{Fore.YELLOW}(Last.fm, MusicBrainz) to find potentially popular artists.")
-    print(f"{Fore.CYAN}This may take a few minutes...")
-    
-    confirm = input("\nProceed with external validation? (y/n): ").strip().lower()
-    if confirm != 'y':
-        return
-    
-    # Create progress tracking
-    from tqdm_utils import create_progress_bar, update_progress_bar, close_progress_bar
-    
-    validated_artists = []
-    progress = create_progress_bar(len(inactive_artists), "Validating artists")
-    
-    for i, artist in enumerate(inactive_artists):
-        try:
-            # Add external validation data to artist
-            validation = validate_artist_for_unfollowing(artist['name'], artist)
-            artist['external_validation'] = validation
-            validated_artists.append(artist)
-            
-            update_progress_bar(progress, i + 1)
-            
-            # Add small delay to be respectful to external APIs
-            time.sleep(0.5)
-            
-        except Exception as e:
-            print_warning(f"Failed to validate {artist['name']}: {e}")
-            validated_artists.append(artist)  # Keep without validation
-            update_progress_bar(progress, i + 1)
-    
-    close_progress_bar(progress)
-    
-    # Analyze results
-    safe_to_unfollow = []
-    should_not_unfollow = []
-    needs_manual_check = []
-    
-    for artist in validated_artists:
-        if 'external_validation' in artist:
-            recommendation = artist['external_validation'].get('recommendation', {})
-            if not recommendation.get('safe_to_unfollow', True):
-                should_not_unfollow.append(artist)
-            elif recommendation.get('should_check_manually', False):
-                needs_manual_check.append(artist)
-            else:
-                safe_to_unfollow.append(artist)
-        else:
-            safe_to_unfollow.append(artist)  # Default to safe if no validation
-    
-    # Display results
-    print_header("External Validation Results")
-    
-    if should_not_unfollow:
-        print(f"\n{Fore.RED}🚫 DO NOT UNFOLLOW ({len(should_not_unfollow)} artists):")
-        print(f"{Fore.RED}These artists are popular on external platforms!")
-        for artist in should_not_unfollow[:10]:  # Show first 10
-            ext_data = artist['external_validation']['external_data']
-            score = ext_data.get('cross_platform_score', 0)
-            print(f"  • {artist['name']} (External score: {score:.1f})")
-        if len(should_not_unfollow) > 10:
-            print(f"  ... and {len(should_not_unfollow) - 10} more")
-    
-    if needs_manual_check:
-        print(f"\n{Fore.YELLOW}🔍 MANUAL CHECK RECOMMENDED ({len(needs_manual_check)} artists):")
-        for artist in needs_manual_check[:5]:  # Show first 5
-            print(f"  • {artist['name']}")
-        if len(needs_manual_check) > 5:
-            print(f"  ... and {len(needs_manual_check) - 5} more")
-    
-    if safe_to_unfollow:
-        print(f"\n{Fore.GREEN}✅ PROBABLY SAFE TO UNFOLLOW ({len(safe_to_unfollow)} artists)")
-    
-    # Ask if user wants to see detailed results with pagination
-    if should_not_unfollow or needs_manual_check:
-        show_details = input(f"\n{Fore.CYAN}Show detailed results with pagination? (y/n): ").strip().lower()
-        if show_details == 'y':
-            all_validated = should_not_unfollow + needs_manual_check + safe_to_unfollow
-            display_artists_paginated(all_validated, "External Validation Results")
+# This function has been removed to simplify the external dependencies
 
-def debug_specific_artist(sp, artist_name):
-    """Debug specific artist data to help understand API vs app discrepancies."""
-    try:
-        # Search for the artist
-        results = sp.search(q=artist_name, type='artist', limit=5)
-        
-        if not results['artists']['items']:
-            print_warning(f"No artists found for '{artist_name}'")
-            return
-        
-        print_header(f"Artist Data Debug: {artist_name}")
-        
-        for i, artist in enumerate(results['artists']['items']):
-            print(f"\n{i+1}. {Fore.WHITE}{artist['name']}")
-            print(f"   {Fore.CYAN}Spotify ID: {artist['id']}")
-            print(f"   {Fore.GREEN}API Followers: {artist['followers']['total']:,}")
-            print(f"   {Fore.YELLOW}Popularity Score: {artist['popularity']}/100")
-            print(f"   {Fore.BLUE}Genres: {', '.join(artist['genres']) if artist['genres'] else 'None'}")
-            print(f"   {Fore.MAGENTA}Spotify URL: {artist['external_urls']['spotify']}")
-            
-            # Check if user follows this artist
-            is_following = sp.current_user_following_artists([artist['id']])[0]
-            status = f"{Fore.GREEN}✅ Following" if is_following else f"{Fore.RED}❌ Not following"
-            print(f"   {status}")
-            
-            # Run comprehensive analysis for the first (most relevant) result
-            if i == 0:
-                print(f"\n{Fore.CYAN}Running comprehensive analysis...")
-                
-                # External validation
-                from external_popularity import print_artist_popularity_report
-                print_artist_popularity_report(artist['name'], artist)
-                
-                # Personal relevance analysis if we have the profile
-                try:
-                    from personal_relevance import PersonalTasteAnalyzer, calculate_personal_relevance_score
-                    
-                    sp_client = setup_spotify_client()
-                    taste_analyzer = PersonalTasteAnalyzer(sp_client)
-                    user_profile = taste_analyzer.get_comprehensive_listening_profile()
-                    
-                    print(f"\n{Fore.MAGENTA}Personal Relevance Analysis:")
-                    print(f"═" * 50)
-                    
-                    # Calculate personal relevance
-                    artist_data = {
-                        "id": artist["id"],
-                        "name": artist["name"],
-                        "popularity": artist["popularity"],
-                        "followers": artist["followers"]["total"],
-                        "genres": artist.get("genres", []),
-                        "base_score": artist["popularity"]  # Simplified for debug
-                    }
-                    
-                    relevance_analysis = calculate_personal_relevance_score(artist_data, user_profile)
-                    
-                    print(f"Personal Relevance Score: {relevance_analysis['personal_relevance_score']:.1f}/100")
-                    print(f"Final Combined Score: {relevance_analysis['final_score']:.1f}/100")
-                    print(f"Confidence Level: {relevance_analysis['confidence']}")
-                    
-                    breakdown = relevance_analysis['scoring_breakdown']
-                    print(f"\nScoring Breakdown:")
-                    print(f"  • Genre similarity: {breakdown.get('genre_similarity', 0):.1f}/40")
-                    print(f"  • Popularity alignment: {breakdown.get('popularity_alignment', 0):.1f}/30")
-                    print(f"  • Discovery style match: {breakdown.get('discovery_style_match', 0):.1f}/30")
-                    
-                    rec = relevance_analysis['recommendation']
-                    color = Fore.RED if not rec['safe_to_unfollow'] else Fore.GREEN
-                    print(f"\n{color}Personal Recommendation:")
-                    print(f"{color}  Safe to unfollow: {'No' if not rec['safe_to_unfollow'] else 'Yes'}")
-                    print(f"{color}  Reasoning: {rec['reasoning']}")
-                    
-                except Exception as e:
-                    print(f"{Fore.YELLOW}Could not run personal relevance analysis: {e}")
-                
-                break
-        
-        input(f"\n{Fore.CYAN}Press Enter to continue...")
-        
-    except Exception as e:
-        print_error(f"Error debugging artist: {e}")
+# This function has been removed to simplify external dependencies
 
 def manual_review_artists(sp, inactive_artists):
     """Show artists for manual review and unfollowing."""
@@ -801,9 +490,9 @@ def bulk_unfollow_artists(sp, artists_to_unfollow):
     save_to_cache(None, "followed_artists", force_expire=True)
 
 def main():
-    print_header("Personal Relevance-Based Artist Cleanup")
-    print(f"{Fore.CYAN}This tool analyzes your personal listening patterns to identify artists")
-    print(f"{Fore.CYAN}you follow but rarely listen to, while preserving those that match your taste.")
+    print_header("Spotify Artist Cleanup Tool")
+    print(f"{Fore.CYAN}This tool identifies artists you follow but haven't listened to recently.")
+    print(f"{Fore.CYAN}It uses simplified scoring based on popularity and follower count.")
     
     # Set up API client
     print_info("Setting up Spotify client...")
@@ -823,7 +512,7 @@ def main():
     # Get recently played tracks
     recently_played = get_recently_played(sp)
     
-    # Use the new bulk cleanup interface
+    # Use the bulk cleanup interface
     bulk_unfollow_by_criteria(sp, followed_artists, top_artists, recently_played)
 
 if __name__ == "__main__":

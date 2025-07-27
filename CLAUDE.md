@@ -206,3 +206,21 @@ When adding new features:
 - Improved fuzzy matching efficiency for playlist conversion
 - Added comprehensive testing framework
 - Enhanced error handling and user feedback throughout
+
+## Remaining Development Tasks
+
+The following tasks remain to be completed. Remove completed items from this list:
+
+### High Priority
+- Build comprehensive tests for all menu items
+
+### Medium Priority
+- Automate environment reset command execution
+- Add Christmas playlist filtering option to option 2
+- Improve rate limit error messages (remove 'None' retry time)
+- Add geographic heat maps of artist origins to analytics
+- Expand last.fm, musicbrainz integration and add new APIs
+- Add progress indication to option 9 analytics long operations
+
+### Low Priority
+- Simplify main menu cache management (190 lines)

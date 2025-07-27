@@ -154,7 +154,7 @@ def get_saved_tracks(sp):
     from spotify_utils import fetch_user_saved_tracks
     
     # Fetch saved tracks with progress bar - use same cache key as other scripts
-    saved_tracks_data = fetch_user_saved_tracks(sp, show_progress=True, cache_key="all_liked_songs", cache_expiration=CACHE_EXPIRATION['personal'])
+    saved_tracks_data = fetch_user_saved_tracks(sp, show_progress=True, cache_key="all_liked_songs", cache_expiration=CACHE_EXPIRATION)
     
     # Convert to set of track IDs for efficient lookup
     saved_tracks = {item['track']['id'] for item in saved_tracks_data if item['track']}

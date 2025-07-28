@@ -30,6 +30,11 @@ import json
 from tqdm import tqdm
 import traceback
 from datetime import datetime, timedelta
+import colorama
+from colorama import Fore, Style
+
+# Initialize colorama for cross-platform color support
+colorama.init(autoreset=True)
 
 # Add the script directory to the Python path
 script_dir = os.path.dirname(os.path.abspath(__file__))

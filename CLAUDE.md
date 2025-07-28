@@ -41,6 +41,9 @@ All scripts can be run independently:
 - Ask whether I want to commit to Git/GitHub after each set of major changes, and automatically look for any sensitive information before committing.
 - Update CLAUDE.md with important workflow/architecture changes after major modifications
 
+## Confidentiality and Communication Guidelines
+- Never mention Claude or another AI tool in the Git commit comments, README, or other documentation
+
 ## Recent Changes & Important Notes
 
 ### Playlist Converter (Option 1)

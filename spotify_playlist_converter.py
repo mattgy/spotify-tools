@@ -60,6 +60,136 @@ CONFIDENCE_THRESHOLD = 80  # Minimum confidence score for automatic matching
 SCOPE = "playlist-read-private playlist-modify-private playlist-modify-public"
 SUPPORTED_EXTENSIONS = ['.m3u', '.m3u8', '.pls']
 
+def create_decision_cache_key(track_info, match_info):
+    """Create a cache key for user decisions based on track and match info."""
+    # Use track path, artist, title and matched track ID for uniqueness
+    track_path = track_info.get('path', '')
+    track_artist = track_info.get('artist', '').lower().strip()
+    track_title = track_info.get('title', '').lower().strip()
+    match_id = match_info.get('id', '') if match_info else ''
+    
+    # Create a stable key
+    key_parts = [track_path, track_artist, track_title, match_id]
+    cache_key = "_".join(str(part) for part in key_parts if part)
+    return f"user_decision_{hash(cache_key) % 1000000}"  # Use hash to keep key manageable
+
+def save_user_decision(track_info, match_info, decision):
+    """Save a user decision to cache."""
+    cache_key = create_decision_cache_key(track_info, match_info)
+    decision_data = {
+        'decision': decision,
+        'track_info': {
+            'path': track_info.get('path', ''),
+            'artist': track_info.get('artist', ''),
+            'title': track_info.get('title', '')
+        },
+        'match_info': {
+            'id': match_info.get('id', '') if match_info else '',
+            'name': match_info.get('name', '') if match_info else '',
+            'artists': match_info.get('artists', []) if match_info else []
+        },
+        'timestamp': time.time()
+    }
+    save_to_cache(decision_data, cache_key, force_expire=False)
+
+def get_cached_decision(track_info, match_info):
+    """Get a previously cached user decision."""
+    cache_key = create_decision_cache_key(track_info, match_info)
+    cached_data = load_from_cache(cache_key, 30 * 24 * 60 * 60)  # Cache for 30 days
+    if cached_data and cached_data.get('decision') == 'y':
+        return cached_data
+    return None
+
+def detect_playlist_duplicates(sp, playlist_id):
+    """Detect duplicate tracks in a playlist using fast basic comparison."""
+    try:
+        # Get all tracks in the playlist
+        tracks = []
+        offset = 0
+        limit = 100
+        
+        while True:
+            response = sp.playlist_items(
+                playlist_id,
+                fields='items(track(id,name,artists(name),duration_ms)),total',
+                limit=limit,
+                offset=offset
+            )
+            
+            for item in response['items']:
+                if item['track'] and item['track']['id']:
+                    tracks.append({
+                        'id': item['track']['id'],
+                        'name': item['track']['name'].lower().strip(),
+                        'artists': [a['name'].lower().strip() for a in item['track']['artists']],
+                        'duration_ms': item['track'].get('duration_ms', 0),
+                        'position': offset + len(tracks)
+                    })
+            
+            if len(response['items']) < limit:
+                break
+            offset += limit
+        
+        # Fast duplicate detection using track ID and artist+title combinations
+        duplicates = []
+        seen_ids = set()
+        seen_combinations = set()
+        
+        for i, track in enumerate(tracks):
+            track_id = track['id']
+            
+            # Create a normalized combination for comparison
+            artists_str = ','.join(sorted(track['artists']))
+            combination = (track['name'], artists_str)
+            
+            # Check for exact ID duplicates
+            if track_id in seen_ids:
+                duplicates.append({
+                    'type': 'exact_id',
+                    'track': track,
+                    'original_position': i
+                })
+            else:
+                seen_ids.add(track_id)
+            
+            # Check for same song by different artists or slight name variations
+            if combination in seen_combinations:
+                duplicates.append({
+                    'type': 'same_song',
+                    'track': track,
+                    'original_position': i
+                })
+            else:
+                seen_combinations.add(combination)
+        
+        return duplicates
+        
+    except Exception as e:
+        logger.error(f"Error detecting duplicates: {e}")
+        return []
+
+def remove_playlist_duplicates(sp, playlist_id, duplicates):
+    """Remove duplicate tracks from a playlist."""
+    if not duplicates:
+        return 0
+    
+    # Sort duplicates by position (highest first) to maintain correct indices during removal
+    duplicates_sorted = sorted(duplicates, key=lambda x: x['original_position'], reverse=True)
+    
+    removed_count = 0
+    for duplicate in duplicates_sorted:
+        try:
+            # Remove track by position
+            sp.playlist_remove_specific_occurrences_of_items(
+                playlist_id,
+                [{"uri": f"spotify:track:{duplicate['track']['id']}", "positions": [duplicate['original_position']]}]
+            )
+            removed_count += 1
+        except Exception as e:
+            logger.error(f"Error removing duplicate at position {duplicate['original_position']}: {e}")
+    
+    return removed_count
+
 def authenticate_spotify():
     """Authenticate with Spotify API."""
     try:
@@ -770,6 +900,31 @@ def create_or_update_spotify_playlist(sp, playlist_name, track_uris, user_id):
             save_to_cache(existing_tracks + tracks_to_add, cache_key)
             
             logger.info(f"✅ Successfully updated playlist '{playlist_name}' - now has {len(existing_tracks) + len(tracks_to_add)} total tracks")
+            
+            # Check for duplicates after adding tracks
+            if len(tracks_to_add) > 0:
+                print(f"\n{Fore.CYAN}🔍 Checking for duplicates in updated playlist...")
+                duplicates = detect_playlist_duplicates(sp, playlist_id)
+                if duplicates:
+                    print(f"Found {len(duplicates)} potential duplicates:")
+                    for i, dup in enumerate(duplicates[:5], 1):  # Show first 5
+                        track = dup['track']
+                        print(f"  {i}. {track['name']} by {', '.join(track['artists'])} ({dup['type']})")
+                    if len(duplicates) > 5:
+                        print(f"  ... and {len(duplicates) - 5} more")
+                    
+                    remove_choice = input(f"\n{Fore.CYAN}Remove duplicates? (y/n): ").lower().strip()
+                    if remove_choice == 'y':
+                        removed = remove_playlist_duplicates(sp, playlist_id, duplicates)
+                        print(f"{Fore.GREEN}✅ Removed {removed} duplicate tracks")
+                        # Clear cache to force refresh
+                        cache_key = f"playlist_tracks_{playlist_id}"
+                        save_to_cache(None, cache_key, force_expire=True)
+                    else:
+                        print(f"{Fore.YELLOW}Duplicates kept in playlist")
+                else:
+                    print(f"{Fore.GREEN}✅ No duplicates found")
+            
             return playlist_id, len(tracks_to_add)
         else:
             logger.info(f"✅ Playlist '{playlist_name}' is already complete. No new tracks to add.")
@@ -801,6 +956,31 @@ def create_or_update_spotify_playlist(sp, playlist_name, track_uris, user_id):
         save_to_cache(track_uris, cache_key)
         
         logger.info(f"✅ Successfully created playlist '{playlist_name}' with {len(track_uris)} tracks")
+        
+        # Check for duplicates in new playlist
+        if len(track_uris) > 1:
+            print(f"\n{Fore.CYAN}🔍 Checking for duplicates in new playlist...")
+            duplicates = detect_playlist_duplicates(sp, playlist['id'])
+            if duplicates:
+                print(f"Found {len(duplicates)} potential duplicates:")
+                for i, dup in enumerate(duplicates[:5], 1):  # Show first 5
+                    track = dup['track']
+                    print(f"  {i}. {track['name']} by {', '.join(track['artists'])} ({dup['type']})")
+                if len(duplicates) > 5:
+                    print(f"  ... and {len(duplicates) - 5} more")
+                
+                remove_choice = input(f"\n{Fore.CYAN}Remove duplicates? (y/n): ").lower().strip()
+                if remove_choice == 'y':
+                    removed = remove_playlist_duplicates(sp, playlist['id'], duplicates)
+                    print(f"{Fore.GREEN}✅ Removed {removed} duplicate tracks")
+                    # Clear cache to force refresh
+                    cache_key = f"playlist_tracks_{playlist['id']}"
+                    save_to_cache(None, cache_key, force_expire=True)
+                else:
+                    print(f"{Fore.YELLOW}Duplicates kept in playlist")
+            else:
+                print(f"{Fore.GREEN}✅ No duplicates found")
+        
         return playlist['id'], len(track_uris)
 
 def process_tracks_batch(sp, tracks_batch, confidence_threshold, batch_mode=False, auto_threshold=85):
@@ -908,6 +1088,14 @@ def process_playlist_file(sp, file_path, user_id, confidence_threshold, min_scor
             match = search_track_on_spotify(sp, track['artist'], track['title'], track['album'])
             
             if match:
+                # Check if we have a cached decision for this track/match combination
+                cached_decision = get_cached_decision(track, match)
+                if cached_decision:
+                    print(f"\nUsing previous decision for: {original_line}")
+                    print(f"Match: {', '.join(match['artists'])} - {match['name']} (Score: {match['score']:.1f}) - PREVIOUSLY ACCEPTED")
+                    spotify_tracks.append(match)
+                    continue
+                
                 # Show the original line from the playlist file
                 print(f"\nOriginal entry: {original_line}")
                 print(f"Extracted as: {track['artist']} - {track['title']}")
@@ -919,12 +1107,16 @@ def process_playlist_file(sp, file_path, user_id, confidence_threshold, min_scor
             if batch_mode and match['score'] >= auto_threshold:
                 print(f"AUTO-ACCEPTED (score {match['score']:.1f} >= {auto_threshold})")
                 spotify_tracks.append(match)
+                # Save the auto-accept decision
+                save_user_decision(track, match, 'y')
             elif match['score'] >= confidence_threshold:
                 # High confidence match
                 if batch_mode:
                     # In batch mode, auto-accept high confidence matches above threshold
                     print(f"AUTO-ACCEPTED (high confidence: {match['score']:.1f})")
                     spotify_tracks.append(match)
+                    # Save the auto-accept decision
+                    save_user_decision(track, match, 'y')
                 else:
                     # Interactive mode - user confirmation required
                     options = "Accept this match? (y/n/s/t - y:yes, n:no, s:search manually, t:try again): "
@@ -934,9 +1126,13 @@ def process_playlist_file(sp, file_path, user_id, confidence_threshold, min_scor
                         
                         if confirm == 'y':
                             spotify_tracks.append(match)
+                            # Save the user's positive decision
+                            save_user_decision(track, match, 'y')
                             break
                         elif confirm == 'n':
                             skipped_tracks.append(track)
+                            # Save the user's negative decision
+                            save_user_decision(track, match, 'n')
                             break
                         elif confirm == 's':
                             # Manual search option
@@ -957,9 +1153,12 @@ def process_playlist_file(sp, file_path, user_id, confidence_threshold, min_scor
                                     manual_confirm = input("Accept this match? (y/n/s - y:yes, n:no, s:search again): ").lower()
                                     if manual_confirm == 'y':
                                         spotify_tracks.append(manual_match)
+                                        # Save the user's decision for the manual match
+                                        save_user_decision(track, manual_match, 'y')
                                         break
                                     elif manual_confirm == 'n':
                                         skipped_tracks.append(track)
+                                        # Don't save 'n' for manual searches as they might try different terms
                                         break
                                     # If 's', continue the loop to search again
                                 else:

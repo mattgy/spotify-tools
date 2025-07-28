@@ -12,6 +12,7 @@ import time
 from collections import Counter, defaultdict
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
+from spotipy.exceptions import SpotifyException
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
@@ -642,8 +643,20 @@ class SpotifyAnalytics:
         try:
             top_tracks = self.sp.current_user_top_tracks(limit=50, time_range='medium_term')
             track_ids = [track['id'] for track in top_tracks['items']]
+        except SpotifyException as e:
+            if e.http_status == 403:
+                print_warning("⚠️ Top tracks not accessible - this may require Spotify Premium or specific API permissions")
+                return {
+                    'tracks_analyzed': 0,
+                    'error': 'Top tracks not accessible (may require Spotify Premium)',
+                    'audio_feature_averages': {},
+                    'music_personality': {}
+                }
+            else:
+                print_warning(f"⚠️ Spotify API error {e.http_status}: {e}")
+                return {}
         except Exception as e:
-            print(f"⚠️ Could not fetch top tracks: {e}")
+            print_warning(f"⚠️ Could not fetch top tracks: {e}")
             return {}
         
         if not track_ids:
@@ -666,20 +679,21 @@ class SpotifyAnalytics:
                     all_features.extend(valid_features)
                 else:
                     print("⚠️ Audio features unavailable (may require additional permissions)")
-            except Exception as e:
-                error_str = str(e).lower()
-                if '403' in error_str or 'forbidden' in error_str:
+            except SpotifyException as e:
+                if e.http_status == 403:
                     print_warning("⚠️ Audio features not accessible - this requires Spotify Premium or specific API permissions")
                     print_info("Audio features analysis will be skipped. Other analytics will continue.")
                     break  # Stop trying other batches since this is a permission issue
-                elif 'rate limit' in error_str or '429' in error_str:
+                elif e.http_status == 429:
                     print_warning("⚠️ Rate limited by Spotify API. Waiting before retry...")
                     time.sleep(5)  # Wait 5 seconds and try this batch again
                     continue
                 else:
-                    print_warning(f"⚠️ Error fetching audio features batch {i//100 + 1}: {e}")
-                # Continue with other batches for non-permission errors
-                continue
+                    print_warning(f"⚠️ Spotify API error {e.http_status}: {e}")
+                    break  # Stop for other API errors
+            except Exception as e:
+                print_warning(f"⚠️ Unexpected error fetching audio features: {e}")
+                break  # Stop for unexpected errors
             
             update_progress_bar(progress_bar, 1)
             time.sleep(0.3)  # Increased delay to avoid rate limits

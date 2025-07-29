@@ -644,8 +644,8 @@ class SpotifyAnalytics:
             top_tracks = self.sp.current_user_top_tracks(limit=50, time_range='medium_term')
             track_ids = [track['id'] for track in top_tracks['items']]
         except SpotifyException as e:
-            if e.http_status == 403:
-                print_warning("⚠️ Top tracks not accessible - this may require Spotify Premium or specific API permissions")
+            print_warning(f"⚠️ Spotify API error: {e}")
+            if hasattr(e, 'http_status') and e.http_status == 403:
                 return {
                     'tracks_analyzed': 0,
                     'error': 'Top tracks not accessible (may require Spotify Premium)',
@@ -653,11 +653,29 @@ class SpotifyAnalytics:
                     'music_personality': {}
                 }
             else:
-                print_warning(f"⚠️ Spotify API error {e.http_status}: {e}")
-                return {}
+                return {
+                    'tracks_analyzed': 0,
+                    'error': f'Spotify API error: {e}',
+                    'audio_feature_averages': {},
+                    'music_personality': {}
+                }
         except Exception as e:
-            print_warning(f"⚠️ Could not fetch top tracks: {e}")
-            return {}
+            error_str = str(e)
+            if '403' in error_str or 'forbidden' in error_str.lower():
+                return {
+                    'tracks_analyzed': 0,
+                    'error': 'Top tracks not accessible (may require Spotify Premium)',
+                    'audio_feature_averages': {},
+                    'music_personality': {}
+                }
+            else:
+                print_warning(f"⚠️ Could not fetch top tracks: {e}")
+                return {
+                    'tracks_analyzed': 0,
+                    'error': f'Could not fetch top tracks: {e}',
+                    'audio_feature_averages': {},
+                    'music_personality': {}
+                }
         
         if not track_ids:
             return {}
@@ -680,20 +698,34 @@ class SpotifyAnalytics:
                 else:
                     print("⚠️ Audio features unavailable (may require additional permissions)")
             except SpotifyException as e:
-                if e.http_status == 403:
-                    print_warning("⚠️ Audio features not accessible - this requires Spotify Premium or specific API permissions")
-                    print_info("Audio features analysis will be skipped. Other analytics will continue.")
-                    break  # Stop trying other batches since this is a permission issue
-                elif e.http_status == 429:
-                    print_warning("⚠️ Rate limited by Spotify API. Waiting before retry...")
-                    time.sleep(5)  # Wait 5 seconds and try this batch again
+                print_warning(f"⚠️ Spotify API error: {e}")
+                if hasattr(e, 'http_status'):
+                    if e.http_status == 403:
+                        print_warning("Audio features not accessible - this requires Spotify Premium or specific API permissions")
+                        print_info("Audio features analysis will be skipped. Other analytics will continue.")
+                        break  # Stop trying other batches since this is a permission issue
+                    elif e.http_status == 429:
+                        print_warning("Rate limited by Spotify API. Waiting before retry...")
+                        time.sleep(5)  # Wait 5 seconds and try this batch again
+                        continue
+                    else:
+                        print_warning(f"API error {e.http_status}: stopping audio features analysis")
+                        break  # Stop for other API errors
+                else:
+                    print_warning("Unknown Spotify API error: stopping audio features analysis")
+                    break
+            except Exception as e:
+                error_str = str(e)
+                print_warning(f"⚠️ Error fetching audio features: {error_str}")
+                if '403' in error_str or 'forbidden' in error_str.lower():
+                    print_info("This appears to be a permissions issue - audio features may require Spotify Premium")
+                    break
+                elif '429' in error_str or 'rate limit' in error_str.lower():
+                    print_warning("Rate limited by Spotify API. Waiting before retry...")
+                    time.sleep(5)
                     continue
                 else:
-                    print_warning(f"⚠️ Spotify API error {e.http_status}: {e}")
-                    break  # Stop for other API errors
-            except Exception as e:
-                print_warning(f"⚠️ Unexpected error fetching audio features: {e}")
-                break  # Stop for unexpected errors
+                    break  # Stop for other unexpected errors
             
             update_progress_bar(progress_bar, 1)
             time.sleep(0.3)  # Increased delay to avoid rate limits

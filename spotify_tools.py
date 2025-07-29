@@ -179,12 +179,46 @@ def manage_api_credentials():
     print("The concert finder now uses web scraping instead of the Songkick API.")
     print("You can leave this field empty.")
     
+    # AI Service credentials (optional)
+    print_info("\nAI Service Credentials (Optional)")
+    print("AI services can help find difficult-to-match tracks.")
+    print("Leave blank to skip AI-assisted matching.")
+    print("\nSupported services:")
+    print("1. Google Gemini Pro (free tier available)")
+    print("   Get API key at: https://makersuite.google.com/app/apikey")
+    print("2. OpenAI GPT-4 (paid)")
+    print("   Get API key at: https://platform.openai.com/api-keys")
+    print("3. Anthropic Claude (paid)")
+    print("   Get API key at: https://console.anthropic.com/settings/keys")
+    print("4. Perplexity (paid)")
+    print("   Get API key at: https://www.perplexity.ai/settings/api")
+    
+    gemini_api_key = input(f"\nEnter Google Gemini API Key [{existing_credentials.get('GEMINI_API_KEY', '')}]: ").strip()
+    if not gemini_api_key and 'GEMINI_API_KEY' in existing_credentials:
+        gemini_api_key = existing_credentials['GEMINI_API_KEY']
+    
+    openai_api_key = input(f"Enter OpenAI API Key [{existing_credentials.get('OPENAI_API_KEY', '')}]: ").strip()
+    if not openai_api_key and 'OPENAI_API_KEY' in existing_credentials:
+        openai_api_key = existing_credentials['OPENAI_API_KEY']
+    
+    anthropic_api_key = input(f"Enter Anthropic API Key [{existing_credentials.get('ANTHROPIC_API_KEY', '')}]: ").strip()
+    if not anthropic_api_key and 'ANTHROPIC_API_KEY' in existing_credentials:
+        anthropic_api_key = existing_credentials['ANTHROPIC_API_KEY']
+    
+    perplexity_api_key = input(f"Enter Perplexity API Key [{existing_credentials.get('PERPLEXITY_API_KEY', '')}]: ").strip()
+    if not perplexity_api_key and 'PERPLEXITY_API_KEY' in existing_credentials:
+        perplexity_api_key = existing_credentials['PERPLEXITY_API_KEY']
+    
     # Save credentials
     credentials = {
         "SPOTIFY_CLIENT_ID": spotify_client_id,
         "SPOTIFY_CLIENT_SECRET": spotify_client_secret,
         "SPOTIFY_REDIRECT_URI": spotify_redirect_uri,
-        "LASTFM_API_KEY": lastfm_api_key
+        "LASTFM_API_KEY": lastfm_api_key,
+        "GEMINI_API_KEY": gemini_api_key,
+        "OPENAI_API_KEY": openai_api_key,
+        "ANTHROPIC_API_KEY": anthropic_api_key,
+        "PERPLEXITY_API_KEY": perplexity_api_key
     }
     
     try:
@@ -424,12 +458,13 @@ def playlist_converter_menu():
         print(f"{Fore.WHITE}3. Clean up Spotify playlists to match local ones exactly")
         print(f"{Fore.WHITE}4. Delete duplicate Spotify playlists (same name as local)")
         
-        print(f"\n{Fore.YELLOW}{Style.BRIGHT}CACHE MANAGEMENT:")
+        print(f"\n{Fore.YELLOW}{Style.BRIGHT}MAINTENANCE:")
         print(f"{Fore.WHITE}5. Clear processed playlist cache")
+        print(f"{Fore.WHITE}6. Remove .m3u suffixes from Spotify playlists")
         
-        print(f"\n{Fore.WHITE}6. Back to main menu")
+        print(f"\n{Fore.WHITE}7. Back to main menu")
         
-        choice = input(f"\n{Fore.CYAN}Enter your choice (1-6): ")
+        choice = input(f"\n{Fore.CYAN}Enter your choice (1-7): ")
         
         if choice == "1":
             # Auto-sync mode - fully autonomous
@@ -495,6 +530,11 @@ def playlist_converter_menu():
                 print_warning("Cache clearing cancelled.")
             
         elif choice == "6":
+            # Remove .m3u suffixes from Spotify playlists
+            print_info("\nRemoving .m3u suffixes from Spotify playlists...")
+            run_script(PLAYLIST_RECONCILE_SCRIPT, ["--remove-suffixes-mode"])
+            
+        elif choice == "7":
             break
         
         else:

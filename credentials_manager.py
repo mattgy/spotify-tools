@@ -260,3 +260,97 @@ def save_credentials(credentials_dict):
         os.chmod(CREDENTIALS_FILE, stat.S_IRUSR | stat.S_IWUSR)
     finally:
         os.umask(old_umask)
+
+def get_credentials():
+    """Get all credentials from file and environment."""
+    credentials = {}
+    
+    # Load from file if exists
+    if os.path.exists(CREDENTIALS_FILE):
+        try:
+            with open(CREDENTIALS_FILE, 'r') as f:
+                credentials = json.load(f)
+        except Exception as e:
+            print(f"Warning: Could not load credentials file: {e}")
+    
+    # Override with environment variables if they exist
+    env_vars = [
+        'SPOTIFY_CLIENT_ID',
+        'SPOTIFY_CLIENT_SECRET', 
+        'SPOTIFY_REDIRECT_URI',
+        'LASTFM_API_KEY',
+        'SONGKICK_API_KEY',
+        # AI service credentials
+        'GEMINI_API_KEY',
+        'OPENAI_API_KEY',
+        'ANTHROPIC_API_KEY',
+        'PERPLEXITY_API_KEY'
+    ]
+    
+    for var in env_vars:
+        if var in os.environ:
+            credentials[var] = os.environ[var]
+    
+    return credentials
+
+def get_ai_credentials(service=None):
+    """Get AI service API credentials.
+    
+    Args:
+        service: 'gemini', 'openai', 'anthropic', 'perplexity', or None for all available
+    
+    Returns:
+        API key string, dict of all AI keys, or None if not found
+    """
+    credentials = get_credentials()
+    
+    service_map = {
+        'gemini': 'GEMINI_API_KEY',
+        'openai': 'OPENAI_API_KEY',
+        'anthropic': 'ANTHROPIC_API_KEY',
+        'perplexity': 'PERPLEXITY_API_KEY'
+    }
+    
+    if service:
+        key_name = service_map.get(service.lower())
+        if not key_name:
+            return None
+        return credentials.get(key_name)
+    else:
+        # Return all available AI credentials
+        ai_creds = {}
+        for service_name, key_name in service_map.items():
+            if key_name in credentials and credentials[key_name]:
+                ai_creds[service_name] = credentials[key_name]
+        return ai_creds if ai_creds else None
+
+def remove_ai_credentials(service=None):
+    """Remove AI service credentials.
+    
+    Args:
+        service: specific service to remove, or None to remove all AI credentials
+    
+    Returns:
+        bool: True if successful
+    """
+    credentials = get_credentials()
+    
+    ai_keys = ['GEMINI_API_KEY', 'OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'PERPLEXITY_API_KEY']
+    
+    if service:
+        service_map = {
+            'gemini': 'GEMINI_API_KEY',
+            'openai': 'OPENAI_API_KEY',
+            'anthropic': 'ANTHROPIC_API_KEY',
+            'perplexity': 'PERPLEXITY_API_KEY'
+        }
+        key_to_remove = service_map.get(service.lower())
+        if key_to_remove:
+            credentials[key_to_remove] = ''  # Set to empty to trigger removal
+    else:
+        # Remove all AI credentials
+        for key in ai_keys:
+            credentials[key] = ''  # Set to empty to trigger removal
+    
+    save_credentials(credentials)
+    return True

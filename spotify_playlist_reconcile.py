@@ -44,7 +44,9 @@ from credentials_manager import get_spotify_credentials
 from cache_utils import save_to_cache, load_from_cache
 from spotify_playlist_converter import (
     parse_playlist_file as original_parse_playlist_file, authenticate_spotify, get_user_playlists, 
-    get_playlist_tracks, normalize_string, SUPPORTED_EXTENSIONS
+    get_playlist_tracks, normalize_string, SUPPORTED_EXTENSIONS,
+    find_playlist_files as converter_find_playlist_files, 
+    is_text_playlist_file as converter_is_text_playlist_file
 )
 
 # Configure logging
@@ -531,32 +533,8 @@ def reconcile_playlist_pair(sp, local_path, spotify_playlists, user_id):
                     else:
                         print(f"{Fore.GREEN}✅ No extra tracks found in '{playlist['name']}'")
 
-def is_text_playlist_file(file_path):
-    """Check if a file contains playlist data in text format (artist - song pairs)."""
-    try:
-        with open(file_path, 'r', encoding='utf-8') as f:
-            lines = f.readlines()[:10]  # Check first 10 lines
-        
-        if len(lines) < 2:
-            return False
-            
-        # Look for patterns like "Artist - Song" or "Artist: Song"
-        valid_lines = 0
-        for line in lines:
-            line = line.strip()
-            if not line:  # Skip empty lines
-                continue
-            # Check for common playlist patterns
-            if (' - ' in line or ' – ' in line or ' — ' in line or 
-                ': ' in line or ' :: ' in line or '\t' in line):
-                valid_lines += 1
-            elif len(line.split()) >= 2:  # At least two words, could be artist song
-                valid_lines += 1
-        
-        # If at least 50% of non-empty lines look like playlist entries
-        return valid_lines >= len([l for l in lines if l.strip()]) * 0.5
-    except:
-        return False
+# Using converter's is_text_playlist_file instead
+is_text_playlist_file = converter_is_text_playlist_file
 
 def parse_text_playlist_file(file_path):
     """Parse a text file containing artist/song pairs."""
@@ -623,82 +601,12 @@ def parse_playlist_file(file_path):
             # Fall back to original parser
             return original_parse_playlist_file(file_path)
 
-def find_playlist_files(directory):
-    """Find all playlist files in the given directory and its subdirectories."""
-    playlist_files = []
-    potential_playlist_files = []
-    
-    # First, find standard playlist files
-    for ext in SUPPORTED_EXTENSIONS:
-        pattern = os.path.join(directory, f"**/*{ext}")
-        playlist_files.extend(glob.glob(pattern, recursive=True))
-    
-    # Then find all other files that might be playlists
-    all_files = glob.glob(os.path.join(directory, "**/*"), recursive=True)
-    
-    # Extensions to definitely skip
-    skip_extensions = {
-        '.py', '.pyc', '.pyo', '.pyw', '.pyi',  # Python files
-        '.js', '.jsx', '.ts', '.tsx', '.mjs',   # JavaScript files  
-        '.java', '.class', '.jar',              # Java files
-        '.c', '.cpp', '.h', '.hpp', '.cc',      # C/C++ files
-        '.rs', '.go', '.rb', '.php',            # Other code files
-        '.json', '.xml', '.yaml', '.yml',       # Data files
-        '.db', '.sqlite', '.sql',               # Database files
-        '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.svg', '.ico',  # Images
-        '.mp3', '.mp4', '.flac', '.wav', '.ogg', '.m4a', '.aac',  # Audio/Video
-        '.avi', '.mov', '.mkv', '.webm',
-        '.exe', '.dll', '.so', '.dylib', '.app',  # Executables
-        '.zip', '.tar', '.gz', '.bz2', '.7z', '.rar',  # Archives
-        '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',  # Documents
-        '.log', '.bak', '.tmp', '.cache',         # Temp files
-        '.git', '.svn', '.hg',                    # Version control
-        '.DS_Store', '.gitignore', '.env'         # System files
-    }
-    
-    for file_path in all_files:
-        if os.path.isfile(file_path):
-            ext = os.path.splitext(file_path)[1].lower()
-            basename = os.path.basename(file_path)
-            
-            # Skip if already in standard extensions
-            if ext in SUPPORTED_EXTENSIONS:
-                continue
-                
-            # Skip known non-playlist extensions
-            if ext in skip_extensions:
-                continue
-                
-            # Skip hidden files and system files
-            if basename.startswith('.'):
-                continue
-                
-            # Skip files in certain directories
-            if any(part in file_path.split(os.sep) for part in ['.git', '__pycache__', 'node_modules', '.venv', 'venv']):
-                continue
-            
-            # Check if it could be a text playlist
-            if is_text_playlist_file(file_path):
-                potential_playlist_files.append(file_path)
-    
-    return playlist_files, potential_playlist_files
+# Removed - using converter's find_playlist_files instead
 
 def cleanup_spotify_playlists_to_match_local(sp, directory, user_id, similarity_threshold=None):
     """Clean up Spotify playlists to match local ones exactly (remove extra tracks)."""
-    # Find playlist files
-    playlist_files, other_files = find_playlist_files(directory)
-    
-    # Ask about non-standard files if any were found
-    if other_files:
-        print(f"\n{Fore.YELLOW}Found {len(other_files)} non-standard files that might be playlists:")
-        for i, file_path in enumerate(other_files[:10], 1):
-            print(f"  {i}. {os.path.basename(file_path)}")
-        if len(other_files) > 10:
-            print(f"  ... and {len(other_files) - 10} more")
-        
-        include = input(f"\n{Fore.CYAN}Include these files in playlist processing? (y/n): ").lower().strip()
-        if include == 'y':
-            playlist_files.extend(other_files)
+    # Find playlist files - use the converter's function which already handles text files
+    playlist_files = converter_find_playlist_files(directory)
     
     if not playlist_files:
         logger.info(f"No playlist files found in {directory}")
@@ -795,22 +703,69 @@ def cleanup_spotify_playlists_to_match_local(sp, directory, user_id, similarity_
     print(f"{Fore.WHITE}Total tracks removed: {total_removed}")
     print(f"{Fore.GREEN}✅ Cleanup completed successfully!")
 
+def remove_playlist_suffixes(sp, user_id):
+    """Remove .m3u and other file suffixes from Spotify playlist names."""
+    # Get all user playlists
+    user_playlists = get_user_playlists(sp, user_id)
+    
+    print(f"\n{Fore.CYAN}{'='*70}")
+    print(f"{Fore.CYAN}REMOVE PLAYLIST SUFFIXES")
+    print(f"{Fore.CYAN}{'='*70}")
+    print(f"{Fore.WHITE}This will remove file extensions like .m3u from playlist names")
+    print(f"{Fore.CYAN}{'='*70}\n")
+    
+    # Find playlists with suffixes
+    playlists_with_suffixes = []
+    suffixes = ['.m3u', '.m3u8', '.pls', '.txt']
+    
+    for playlist in user_playlists:
+        for suffix in suffixes:
+            if playlist['name'].lower().endswith(suffix):
+                playlists_with_suffixes.append(playlist)
+                break
+    
+    if not playlists_with_suffixes:
+        print(f"{Fore.GREEN}No playlists found with file suffixes!")
+        return
+    
+    print(f"{Fore.YELLOW}Found {len(playlists_with_suffixes)} playlists with file suffixes:")
+    for playlist in playlists_with_suffixes:
+        print(f"  • {playlist['name']} ({playlist['tracks']['total']} tracks)")
+    
+    confirm = input(f"\n{Fore.CYAN}Remove suffixes from all these playlists? (y/n): ").strip().lower()
+    
+    if confirm != 'y':
+        print(f"{Fore.YELLOW}Cancelled.")
+        return
+    
+    # Process each playlist
+    renamed_count = 0
+    for playlist in playlists_with_suffixes:
+        old_name = playlist['name']
+        # Find and remove the suffix
+        new_name = old_name
+        for suffix in suffixes:
+            if old_name.lower().endswith(suffix):
+                new_name = old_name[:-len(suffix)]
+                break
+        
+        try:
+            sp.playlist_change_details(playlist['id'], name=new_name)
+            print(f"{Fore.GREEN}✅ Renamed '{old_name}' to '{new_name}'")
+            renamed_count += 1
+        except Exception as e:
+            print(f"{Fore.RED}❌ Failed to rename '{old_name}': {e}")
+    
+    print(f"\n{Fore.CYAN}{'='*50}")
+    print(f"{Fore.CYAN}SUFFIX REMOVAL COMPLETE")
+    print(f"{Fore.CYAN}{'='*50}")
+    print(f"{Fore.WHITE}Playlists renamed: {renamed_count}")
+    print(f"{Fore.GREEN}✅ Suffix removal completed successfully!")
+
 def delete_duplicate_spotify_playlists(sp, directory, user_id):
     """Delete duplicate Spotify playlists that have the same name as local ones."""
-    # Find playlist files
-    playlist_files, other_files = find_playlist_files(directory)
-    
-    # Ask about non-standard files if any were found
-    if other_files:
-        print(f"\n{Fore.YELLOW}Found {len(other_files)} non-standard files that might be playlists:")
-        for i, file_path in enumerate(other_files[:10], 1):
-            print(f"  {i}. {os.path.basename(file_path)}")
-        if len(other_files) > 10:
-            print(f"  ... and {len(other_files) - 10} more")
-        
-        include = input(f"\n{Fore.CYAN}Include these files in playlist processing? (y/n): ").lower().strip()
-        if include == 'y':
-            playlist_files.extend(other_files)
+    # Find playlist files - the converter's find_playlist_files already handles text files
+    playlist_files = converter_find_playlist_files(directory)
     
     if not playlist_files:
         logger.info(f"No playlist files found in {directory}")
@@ -830,40 +785,171 @@ def delete_duplicate_spotify_playlists(sp, directory, user_id):
     print(f"\n{Fore.CYAN}{'='*70}")
     print(f"{Fore.CYAN}DELETE DUPLICATES MODE")
     print(f"{Fore.CYAN}{'='*70}")
-    print(f"{Fore.WHITE}This will delete duplicate Spotify playlists that match local playlist names")
-    print(f"{Fore.WHITE}(Keeps the one with most tracks, deletes the rest)")
+    print(f"{Fore.WHITE}This will detect and handle duplicate Spotify playlists")
+    print(f"{Fore.WHITE}including those with file extensions like .m3u")
+    print(f"{Fore.WHITE}(Keeps the one with most tracks, offers to delete the rest)")
     print(f"{Fore.CYAN}{'='*70}\n")
     
-    # Group playlists by name
+    # Group playlists by base name (without extensions)
     playlist_groups = {}
+    processed_names = set()  # Track which playlists we've already grouped
+    
     for playlist in user_playlists:
         name = playlist['name']
-        if name in local_playlist_names:
-            if name not in playlist_groups:
-                playlist_groups[name] = []
-            playlist_groups[name].append(playlist)
+        
+        # Skip if already processed as part of another group
+        if name in processed_names:
+            continue
+            
+        # Check if this playlist name matches any local playlist
+        base_name = None
+        for local_name in local_playlist_names:
+            # Check exact match
+            if name == local_name:
+                base_name = local_name
+                break
+            # Check if it's the local name with an extension
+            elif name.startswith(local_name + '.'):
+                base_name = local_name
+                break
+            # Check if the playlist name without extension matches
+            elif name.endswith(('.m3u', '.m3u8', '.pls', '.txt')):
+                name_without_ext = name.rsplit('.', 1)[0]
+                if name_without_ext == local_name:
+                    base_name = local_name
+                    break
+        
+        if base_name:
+            if base_name not in playlist_groups:
+                playlist_groups[base_name] = []
+            
+            # Add this playlist
+            playlist_groups[base_name].append(playlist)
+            processed_names.add(name)
+            
+            # Look for other playlists with similar names
+            for other_playlist in user_playlists:
+                other_name = other_playlist['name']
+                if other_name in processed_names:
+                    continue
+                    
+                # Check if it's the same base name with different extension
+                if (other_name == base_name or 
+                    other_name.startswith(base_name + '.') or
+                    (other_name.endswith(('.m3u', '.m3u8', '.pls', '.txt')) and 
+                     other_name.rsplit('.', 1)[0] == base_name)):
+                    playlist_groups[base_name].append(other_playlist)
+                    processed_names.add(other_name)
     
     total_deleted = 0
+    duplicates_to_process = []
     
-    for name, playlists in playlist_groups.items():
+    # First, collect all duplicate groups
+    for base_name, playlists in playlist_groups.items():
         if len(playlists) > 1:
-            print(f"\n{Fore.YELLOW}Found {len(playlists)} playlists named '{name}':")
-            
+            duplicates_to_process.append((base_name, playlists))
+    
+    if not duplicates_to_process:
+        print(f"\n{Fore.GREEN}No duplicate playlists found!")
+        return
+    
+    # Show summary
+    print(f"\n{Fore.YELLOW}Found {len(duplicates_to_process)} groups of duplicate playlists")
+    total_duplicates = sum(len(playlists) - 1 for _, playlists in duplicates_to_process)
+    print(f"{Fore.YELLOW}Total duplicate playlists that can be removed: {total_duplicates}")
+    
+    # Ask for bulk action
+    print(f"\n{Fore.CYAN}Options:")
+    print(f"1. Remove ALL duplicates automatically (keep the one with most tracks)")
+    print(f"2. Review each group individually")
+    print(f"3. Cancel")
+    
+    bulk_choice = input(f"\n{Fore.CYAN}Choose option (1-3): ").strip()
+    
+    if bulk_choice == "1":
+        # Bulk remove all duplicates
+        print(f"\n{Fore.YELLOW}Removing all duplicate playlists...")
+        for base_name, playlists in duplicates_to_process:
             # Sort by track count (keep the one with most tracks)
             playlists.sort(key=lambda p: p['tracks']['total'], reverse=True)
+            kept_playlist = playlists[0]
             
-            for i, playlist in enumerate(playlists):
-                print(f"  {i+1}. {playlist['name']} ({playlist['tracks']['total']} tracks)")
+            print(f"\n{Fore.CYAN}Processing '{base_name}':")
+            print(f"  Keeping: {kept_playlist['name']} ({kept_playlist['tracks']['total']} tracks)")
             
-            print(f"\n{Fore.CYAN}Keeping playlist with {playlists[0]['tracks']['total']} tracks")
+            # Check if the kept playlist needs renaming (has .m3u suffix)
+            if kept_playlist['name'].endswith(('.m3u', '.m3u8', '.pls', '.txt')):
+                # Rename to remove suffix
+                new_name = kept_playlist['name'].rsplit('.', 1)[0]
+                try:
+                    sp.playlist_change_details(kept_playlist['id'], name=new_name)
+                    print(f"{Fore.GREEN}  ✅ Renamed '{kept_playlist['name']}' to '{new_name}'")
+                    kept_playlist['name'] = new_name
+                except Exception as e:
+                    print(f"{Fore.RED}  ❌ Failed to rename: {e}")
             
-            # Delete all but the first (largest) playlist
+            # Delete the rest
             for playlist in playlists[1:]:
                 if delete_spotify_playlist(sp, playlist['id']):
-                    print(f"{Fore.GREEN}✅ Deleted duplicate: {playlist['name']} ({playlist['tracks']['total']} tracks)")
+                    print(f"  {Fore.GREEN}✅ Deleted: {playlist['name']} ({playlist['tracks']['total']} tracks)")
                     total_deleted += 1
                 else:
-                    print(f"{Fore.RED}❌ Failed to delete: {playlist['name']}")
+                    print(f"  {Fore.RED}❌ Failed to delete: {playlist['name']}")
+    
+    elif bulk_choice == "2":
+        # Individual review
+        for base_name, playlists in duplicates_to_process:
+            if len(playlists) > 1:
+                print(f"\n{Fore.YELLOW}Found {len(playlists)} duplicate playlists for '{base_name}':")
+                
+                # Sort by track count (keep the one with most tracks)
+                playlists.sort(key=lambda p: p['tracks']['total'], reverse=True)
+                
+                for i, playlist in enumerate(playlists):
+                    suffix_note = ""
+                    if playlist['name'] != base_name:
+                        suffix_note = f" {Fore.YELLOW}(with suffix)"
+                    print(f"  {i+1}. {playlist['name']} ({playlist['tracks']['total']} tracks){suffix_note}")
+                
+                print(f"\n{Fore.CYAN}These appear to be the same playlist with different names/extensions.")
+                print(f"{Fore.CYAN}The playlist with most tracks has {playlists[0]['tracks']['total']} tracks: {playlists[0]['name']}")
+                print(f"\n{Fore.CYAN}Options:")
+                print(f"1. Keep the playlist with most tracks, delete others")
+                print(f"2. Keep all playlists as separate")
+                print(f"3. Skip this group")
+                
+                choice = input(f"\n{Fore.CYAN}Choose option (1-3): ").strip()
+                
+                if choice == "1":
+                    # Delete all but the first (largest) playlist
+                    kept_playlist = playlists[0]
+                    
+                    # Check if the kept playlist needs renaming (has .m3u suffix)
+                    if kept_playlist['name'].endswith(('.m3u', '.m3u8', '.pls', '.txt')):
+                        # Rename to remove suffix
+                        new_name = kept_playlist['name'].rsplit('.', 1)[0]
+                        try:
+                            sp.playlist_change_details(kept_playlist['id'], name=new_name)
+                            print(f"{Fore.GREEN}✅ Renamed '{kept_playlist['name']}' to '{new_name}'")
+                            kept_playlist['name'] = new_name
+                        except Exception as e:
+                            print(f"{Fore.RED}❌ Failed to rename: {e}")
+                    
+                    for playlist in playlists[1:]:
+                        if delete_spotify_playlist(sp, playlist['id']):
+                            print(f"{Fore.GREEN}✅ Deleted duplicate: {playlist['name']} ({playlist['tracks']['total']} tracks)")
+                            total_deleted += 1
+                        else:
+                            print(f"{Fore.RED}❌ Failed to delete: {playlist['name']}")
+                    print(f"{Fore.GREEN}✅ Kept: {kept_playlist['name']} ({kept_playlist['tracks']['total']} tracks)")
+                elif choice == "2":
+                    print(f"{Fore.YELLOW}Keeping all playlists as separate.")
+                else:
+                    print(f"{Fore.YELLOW}Skipping this group.")
+    
+    elif bulk_choice == "3":
+        print(f"{Fore.YELLOW}Cancelled.")
+        return
     
     print(f"\n{Fore.CYAN}{'='*50}")
     print(f"{Fore.CYAN}DUPLICATE DELETION COMPLETE")
@@ -882,6 +968,7 @@ def main():
     # New mode arguments
     parser.add_argument("--cleanup-mode", action="store_true", help="Clean up Spotify playlists to match local ones exactly")
     parser.add_argument("--delete-duplicates-mode", action="store_true", help="Delete duplicate Spotify playlists")
+    parser.add_argument("--remove-suffixes-mode", action="store_true", help="Remove .m3u and other file suffixes from playlist names")
     
     args = parser.parse_args()
     
@@ -902,21 +989,9 @@ def main():
         logger.error(f"Directory not found: {directory}")
         sys.exit(1)
     
-    # Find playlist files
+    # Find playlist files - use converter's function which handles the prompting
     logger.info(f"Searching for playlist files in: {directory}")
-    playlist_files, other_files = find_playlist_files(directory)
-    
-    # Ask about non-standard files if any were found
-    if other_files:
-        print(f"\n{Fore.YELLOW}Found {len(other_files)} non-standard files that might be playlists:")
-        for i, file_path in enumerate(other_files[:10], 1):
-            print(f"  {i}. {os.path.basename(file_path)}")
-        if len(other_files) > 10:
-            print(f"  ... and {len(other_files) - 10} more")
-        
-        include = input(f"\n{Fore.CYAN}Include these files in playlist processing? (y/n): ").lower().strip()
-        if include == 'y':
-            playlist_files.extend(other_files)
+    playlist_files = converter_find_playlist_files(directory)
     
     if not playlist_files:
         logger.info(f"No playlist files found in {directory}")
@@ -951,6 +1026,11 @@ def main():
     elif args.delete_duplicates_mode:
         # Delete duplicates mode
         delete_duplicate_spotify_playlists(sp, directory, user_id)
+        return
+    
+    elif args.remove_suffixes_mode:
+        # Remove suffixes mode
+        remove_playlist_suffixes(sp, user_id)
         return
     
     # Default reconciliation mode

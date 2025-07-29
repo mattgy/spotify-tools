@@ -21,17 +21,23 @@ A comprehensive collection of Python utilities for managing your Spotify account
    - Create a free Spotify app at [developer.spotify.com](https://developer.spotify.com/dashboard/)
    - Set redirect URI to: `http://127.0.0.1:8888/callback`
    - Use menu option 12 to enter your Client ID and Client Secret
+   - (Optional) Add AI service API keys for enhanced track matching
 
 **That's it!** The program handles Python virtual environment setup, dependency installation, and provides a user-friendly menu.
 
 ## 🎵 Core Features
 
 ### Playlist Management
-- **Convert Local Playlists**: Transform M3U, M3U8, and PLS files into Spotify playlists with advanced fuzzy matching
+- **Convert Local Playlists**: Transform M3U, M3U8, PLS, and text files into Spotify playlists
+  - Advanced fuzzy matching with artist/title swap detection
+  - AI-assisted matching for difficult-to-find tracks (optional)
+  - Intelligent featuring artist handling (Ft., Feat., featuring variations)
+  - Session memory - remembers your decisions between runs
+  - Incremental sync and parallel processing for efficiency
 - **Add Songs to Liked Songs**: Automatically like all songs from your created playlists (with optional Christmas filtering)
 - **Remove Christmas Songs**: Intelligent detection and removal of holiday music from your library
 - **Remove Duplicate Songs**: Find and remove duplicate tracks from your Liked Songs with smart matching
-- **Identify Frequently Skipped Songs**: Analyze listening patterns to identify songs you consistently skip
+- **Scan for Playlist Duplicates**: Find duplicate tracks within your playlists
 
 ### Artist Management
 - **Follow Playlist Artists**: Automatically follow all artists from your playlists

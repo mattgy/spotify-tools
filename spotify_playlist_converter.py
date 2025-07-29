@@ -34,6 +34,10 @@ import colorama
 from colorama import Fore, Style
 import unicodedata
 from collections import defaultdict
+import hashlib
+import concurrent.futures
+import threading
+from typing import List, Dict, Tuple, Optional, Set
 
 # Initialize colorama for cross-platform color support
 colorama.init(autoreset=True)
@@ -56,6 +60,12 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
+
+# Global variables for API optimization
+_user_playlists_cache = None
+_user_playlists_cache_time = 0
+_rate_limit_delay = 0.1  # Base delay between API calls
+_last_api_call_time = 0
 
 # Constants
 CONFIDENCE_THRESHOLD = 80  # Default minimum confidence score for automatic matching
@@ -207,13 +217,75 @@ def apply_learning_patterns(artist, title):
     
     return artist, title
 
-def get_cached_decision(track_info, match_info):
-    """Get a previously cached user decision."""
-    cache_key = create_decision_cache_key(track_info, match_info)
-    cached_data = load_from_cache(cache_key, 30 * 24 * 60 * 60)  # Cache for 30 days
-    if cached_data and cached_data.get('decision') == 'y':
-        return cached_data
+def get_cached_decision(track_info, match_info=None):
+    """Get a previously cached user decision.
+    If match_info is None, looks for any cached decision for this track.
+    """
+    if match_info:
+        # Look for specific track/match combination
+        cache_key = create_decision_cache_key(track_info, match_info)
+        cached_data = load_from_cache(cache_key, 30 * 24 * 60 * 60)  # Cache for 30 days
+        if cached_data:
+            return cached_data
+    else:
+        # Look for any decision for this track
+        from cache_utils import list_caches
+        caches = list_caches()
+        
+        # Create pattern to match this track
+        track_key = f"{track_info.get('artist', '').lower()}||{track_info.get('title', '').lower()}"
+        track_hash = hashlib.md5(track_key.encode()).hexdigest()[:8]
+        
+        for cache in caches:
+            if cache['name'].startswith(f'user_decision_{track_hash}_'):
+                cached_data = load_from_cache(cache['name'], 30 * 24 * 60 * 60)
+                if cached_data:
+                    return cached_data
+    
     return None
+
+def check_and_use_previous_session():
+    """Check if there are previous decisions and ask user if they want to reuse them."""
+    from cache_utils import list_caches
+    
+    # Look for user decision caches
+    caches = list_caches()
+    decision_caches = [c for c in caches if c['name'].startswith('user_decision_')]
+    
+    if not decision_caches:
+        return False  # No previous decisions to use
+    
+    # Find most recent decision
+    most_recent = max(decision_caches, key=lambda c: c['mtime'])
+    age_days = (time.time() - most_recent['mtime']) / (24 * 60 * 60)
+    
+    print(f"\n{Fore.CYAN}Found previous session with {len(decision_caches)} saved decisions")
+    print(f"{Fore.CYAN}Most recent decision was {age_days:.1f} days ago")
+    print(f"\n{Fore.YELLOW}Options:")
+    print(f"1. Use previous decisions (skip already reviewed tracks)")
+    print(f"2. Review all tracks again (ignore previous decisions)")
+    print(f"3. Clear previous decisions and start fresh")
+    
+    choice = input(f"\n{Fore.CYAN}Enter your choice (1-3): ").strip()
+    
+    if choice == '1':
+        print(f"{Fore.GREEN}✅ Using previous decisions")
+        return True
+    elif choice == '2':
+        print(f"{Fore.YELLOW}Ignoring previous decisions for this session")
+        return False
+    elif choice == '3':
+        # Clear decision caches
+        from cache_utils import clear_cache
+        cleared = 0
+        for cache in decision_caches:
+            clear_cache(cache['name'])
+            cleared += 1
+        print(f"{Fore.GREEN}✅ Cleared {cleared} previous decisions")
+        return True
+    else:
+        print(f"{Fore.YELLOW}Invalid choice, using previous decisions")
+        return True
 
 def detect_playlist_duplicates(sp, playlist_id):
     """Detect duplicate tracks in a playlist using fast basic comparison."""
@@ -282,6 +354,116 @@ def detect_playlist_duplicates(sp, playlist_id):
     except Exception as e:
         logger.error(f"Error detecting duplicates: {e}")
         return []
+
+def apply_rate_limit():
+    """Apply rate limiting between API calls with exponential backoff."""
+    global _last_api_call_time, _rate_limit_delay
+    
+    current_time = time.time()
+    time_since_last_call = current_time - _last_api_call_time
+    
+    if time_since_last_call < _rate_limit_delay:
+        sleep_time = _rate_limit_delay - time_since_last_call
+        time.sleep(sleep_time)
+    
+    _last_api_call_time = time.time()
+
+def handle_rate_limit_error(e):
+    """Handle rate limit errors with exponential backoff."""
+    global _rate_limit_delay
+    
+    if hasattr(e, 'http_status') and e.http_status == 429:
+        # Extract retry-after header if available
+        retry_after = getattr(e, 'retry_after', None)
+        if retry_after:
+            wait_time = int(retry_after)
+        else:
+            wait_time = _rate_limit_delay * 2
+        
+        logger.warning(f"Rate limit hit. Waiting {wait_time} seconds...")
+        time.sleep(wait_time)
+        
+        # Increase base delay for future calls
+        _rate_limit_delay = min(_rate_limit_delay * 1.5, 2.0)  # Max 2 second delay
+        return True
+    
+    return False
+
+def bulk_search_tracks_on_spotify(sp, tracks: List[Dict], max_workers: int = 5) -> Dict[str, Optional[Dict]]:
+    """
+    Search for multiple tracks on Spotify in parallel using thread pool.
+    Returns a dictionary mapping track keys to search results.
+    """
+    results = {}
+    
+    def search_single_track(track_data):
+        """Helper function to search a single track."""
+        track_key = f"{track_data.get('artist', '')}||{track_data.get('title', '')}"
+        try:
+            result = search_track_on_spotify(sp, track_data['artist'], track_data['title'], track_data.get('album'))
+            return (track_key, result)
+        except Exception as e:
+            logger.error(f"Error searching for track {track_key}: {e}")
+            return (track_key, None)
+    
+    # Use ThreadPoolExecutor for parallel searches
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Submit all search tasks
+        future_to_track = {executor.submit(search_single_track, track): track for track in tracks}
+        
+        # Process completed searches with progress bar
+        for future in tqdm(concurrent.futures.as_completed(future_to_track), 
+                          total=len(tracks), 
+                          desc="Searching tracks"):
+            track_key, result = future.result()
+            results[track_key] = result
+            
+            # Small delay to avoid rate limiting
+            time.sleep(0.05)
+    
+    return results
+
+def compute_playlist_hash(tracks: List[Dict]) -> str:
+    """Compute a hash of playlist contents for change detection."""
+    # Sort tracks by artist and title for consistent hashing
+    sorted_tracks = sorted(tracks, key=lambda t: (t.get('artist', ''), t.get('title', '')))
+    
+    # Create a string representation of the playlist
+    playlist_str = ""
+    for track in sorted_tracks:
+        playlist_str += f"{track.get('artist', '')}|{track.get('title', '')}|{track.get('album', '')}|"
+    
+    # Return SHA256 hash
+    return hashlib.sha256(playlist_str.encode()).hexdigest()
+
+def get_playlist_sync_state(playlist_path: str) -> Optional[Dict]:
+    """Get the last sync state for a playlist."""
+    cache_key = f"playlist_sync_state_{hashlib.md5(playlist_path.encode()).hexdigest()}"
+    return load_from_cache(cache_key, 30 * 24 * 60 * 60)  # Cache for 30 days
+
+def save_playlist_sync_state(playlist_path: str, state: Dict):
+    """Save the sync state for a playlist."""
+    cache_key = f"playlist_sync_state_{hashlib.md5(playlist_path.encode()).hexdigest()}"
+    save_to_cache(state, cache_key)
+
+def playlist_needs_sync(playlist_path: str, tracks: List[Dict]) -> Tuple[bool, Optional[str]]:
+    """Check if a playlist needs to be synced based on its content hash."""
+    current_hash = compute_playlist_hash(tracks)
+    sync_state = get_playlist_sync_state(playlist_path)
+    
+    if not sync_state:
+        return True, current_hash
+    
+    last_hash = sync_state.get('content_hash')
+    if last_hash != current_hash:
+        return True, current_hash
+    
+    # Check if it's been too long since last sync (force sync after 7 days)
+    last_sync = sync_state.get('last_sync_time', 0)
+    if time.time() - last_sync > 7 * 24 * 60 * 60:
+        return True, current_hash
+    
+    return False, current_hash
 
 def remove_playlist_duplicates(sp, playlist_id, duplicates):
     """Remove duplicate tracks from a playlist."""
@@ -635,21 +817,91 @@ def parse_text_playlist_file(file_path):
                         title = parts[1].strip()
                         break
             
-            # If no separator found, assume space-separated (artist first words, song rest)
-            if not artist and len(line.split()) >= 2:
-                words = line.split()
-                # Simple heuristic: first 1-2 words are artist, rest is title
-                if len(words) > 4:
-                    artist = ' '.join(words[:2])
-                    title = ' '.join(words[2:])
+            # Handle special cases before falling back to space-separated
+            if not artist:
+                # Check for "Various -" or "- Track X" patterns
+                if line.startswith('Various -') or line.startswith('Various Artists -'):
+                    artist = 'Various Artists'
+                    title = line.split('-', 1)[1].strip() if '-' in line else line
+                elif line.startswith('- '):
+                    # Just a title, no artist
+                    artist = 'Unknown Artist'
+                    title = line[2:].strip()
+                # Check for album info in the line (e.g., "Album Name - Artist - Title")
+                elif line.count(' - ') >= 2:
+                    parts = line.split(' - ')
+                    # Could be Album - Artist - Title or Artist - Album - Title
+                    # Try to guess based on common patterns
+                    if len(parts) >= 3:
+                        # Assume first part is less likely to be artist if it has 'disc', 'album', 'vol' etc
+                        first_lower = parts[0].lower()
+                        if any(word in first_lower for word in ['disc', 'album', 'vol', 'collection', 'anniversary']):
+                            # Likely Album - Artist - Title
+                            artist = parts[1].strip()
+                            title = parts[2].strip()
+                        else:
+                            # Likely Artist - Album - Title or Artist - Title - Extra
+                            artist = parts[0].strip()
+                            title = parts[1].strip()  # Use second part as title
+                # Handle file path entries (extract from filename)
+                elif '/' in line or '\\' in line:
+                    # Extract just the filename
+                    filename = os.path.basename(line)
+                    filename = os.path.splitext(filename)[0]  # Remove extension
+                    # Now parse the filename
+                    if ' - ' in filename:
+                        parts = filename.split(' - ', 1)
+                        artist = parts[0].strip()
+                        title = parts[1].strip()
+                    else:
+                        artist = 'Unknown Artist'
+                        title = filename
+                # Default space-separated fallback
+                elif len(line.split()) >= 2:
+                    words = line.split()
+                    # Simple heuristic: first 1-2 words are artist, rest is title
+                    if len(words) > 4:
+                        artist = ' '.join(words[:2])
+                        title = ' '.join(words[2:])
+                    else:
+                        artist = words[0]
+                        title = ' '.join(words[1:])
                 else:
-                    artist = words[0]
-                    title = ' '.join(words[1:])
+                    # Single word or unrecognized format
+                    artist = 'Unknown Artist'
+                    title = line
             
             if artist and title:
+                # Clean up common issues
+                # Remove track numbers from beginning
+                title = remove_track_numbers(title)
+                artist = remove_track_numbers(artist)
+                
+                # Remove file extensions that might have been included
+                for ext in ['.mp3', '.m4a', '.flac', '.wav', '.ogg', '.wma']:
+                    if title.lower().endswith(ext):
+                        title = title[:-len(ext)]
+                    if artist.lower().endswith(ext):
+                        artist = artist[:-len(ext)]
+                
+                # Handle accented characters and special encoding
+                # Common replacements
+                replacements = {
+                    '%B4': "'",  # Apostrophe
+                    '%E9': 'é',   # e acute
+                    '%E8': 'è',   # e grave
+                    '%E0': 'à',   # a grave
+                    '%F4': 'ô',   # o circumflex
+                    '%20': ' ',   # Space
+                }
+                
+                for old, new in replacements.items():
+                    artist = artist.replace(old, new)
+                    title = title.replace(old, new)
+                
                 tracks.append({
-                    'artist': artist,
-                    'title': title,
+                    'artist': artist.strip(),
+                    'title': title.strip(),
                     'album': None,
                     'duration': None,
                     'path': file_path,
@@ -764,13 +1016,50 @@ def phonetic_match(s1, s2, threshold=85):
             return 90
         return fuzz.ratio(p1, p2)
 
+def extract_featuring_info(text):
+    """Extract main artist and featuring artists from a string."""
+    # Look for featuring patterns
+    feat_patterns = [
+        r'\s+[\[\(](?:feat\.?|featuring|ft\.?)\s+([^\]\)]+)[\]\)]',  # [feat. X] or (feat. X)
+        r'\s+(?:feat\.?|featuring|ft\.?)\s+(.+?)(?:\s*[\[\(]|$)',  # feat. X (before bracket or end)
+        r'\s+[\[\(](?:with|w\/)\s+([^\]\)]+)[\]\)]',  # [with X] or (with X)
+    ]
+    
+    main_text = text
+    featuring = ""
+    
+    for pattern in feat_patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            featuring = match.group(1).strip()
+            main_text = re.sub(pattern, '', text, flags=re.IGNORECASE).strip()
+            break
+    
+    return main_text, featuring
+
 def calculate_match_score(search_artist, search_title, result_artist, result_title, result_album=""):
     """Calculate a comprehensive match score between search terms and result."""
-    # First apply variations normalization
-    search_artist_var = normalize_for_variations(search_artist)
-    search_title_var = normalize_for_variations(search_title)
-    result_artist_var = normalize_for_variations(result_artist)
-    result_title_var = normalize_for_variations(result_title)
+    # Extract featuring info from both search and result
+    search_artist_main, search_artist_feat = extract_featuring_info(search_artist)
+    search_title_main, search_title_feat = extract_featuring_info(search_title)
+    result_artist_main, result_artist_feat = extract_featuring_info(result_artist)
+    result_title_main, result_title_feat = extract_featuring_info(result_title)
+    
+    # Combine featuring info
+    if search_artist_feat and not search_title_feat:
+        search_title_feat = search_artist_feat
+    if search_title_feat and not search_artist_feat:
+        search_artist_feat = search_title_feat
+    if result_artist_feat and not result_title_feat:
+        result_title_feat = result_artist_feat
+    if result_title_feat and not result_artist_feat:
+        result_artist_feat = result_title_feat
+    
+    # Apply variations normalization
+    search_artist_var = normalize_for_variations(search_artist_main)
+    search_title_var = normalize_for_variations(search_title_main)
+    result_artist_var = normalize_for_variations(result_artist_main)
+    result_title_var = normalize_for_variations(result_title_main)
     
     # Strip remaster tags for comparison
     search_title_clean = strip_remaster_tags(search_title_var)
@@ -788,7 +1077,7 @@ def calculate_match_score(search_artist, search_title, result_artist, result_tit
     
     # If artist score is low, try phonetic matching
     if artist_score < 70:
-        phonetic_artist_score = phonetic_match(search_artist, result_artist)
+        phonetic_artist_score = phonetic_match(search_artist_main, result_artist_main)
         if phonetic_artist_score > artist_score:
             artist_score = (artist_score + phonetic_artist_score) / 2
     
@@ -808,6 +1097,15 @@ def calculate_match_score(search_artist, search_title, result_artist, result_tit
     if norm_search_title in norm_result_title or norm_result_title in norm_search_title:
         bonus_score += 30
     
+    # Bonus for matching featuring artists (don't penalize if missing)
+    if search_artist_feat and result_artist_feat:
+        feat_score = fuzz.ratio(normalize_string(search_artist_feat), normalize_string(result_artist_feat))
+        if feat_score > 70:
+            bonus_score += 10
+    elif search_artist_feat or result_artist_feat:
+        # Don't penalize if featuring info is only on one side
+        bonus_score += 5
+    
     # Special handling for remix vs non-remix
     search_is_remix = 'remix' in search_title.lower()
     result_is_remix = 'remix' in result_title.lower()
@@ -816,12 +1114,23 @@ def calculate_match_score(search_artist, search_title, result_artist, result_tit
     if search_is_remix != result_is_remix:
         bonus_score -= 15
     
-    # Penalty for very different string lengths (unless it's due to remaster tags)
+    # Reduced penalty for different versions (live, acoustic, etc)
+    version_keywords = ['live', 'acoustic', 'demo', 'alternate', 'radio edit']
+    search_has_version = any(kw in search_title.lower() for kw in version_keywords)
+    result_has_version = any(kw in result_title.lower() for kw in version_keywords)
+    
+    if search_has_version != result_has_version:
+        bonus_score -= 10  # Less penalty than remix
+    
+    # Don't penalize for length differences due to featuring info
     length_penalty = 0
     if not ('remaster' in result_title.lower() and 'remaster' not in search_title.lower()):
-        title_len_diff = abs(len(norm_search_title) - len(norm_result_title))
-        if title_len_diff > 15:  # Increased tolerance for length differences
-            length_penalty = min(15, title_len_diff - 10)  # Reduced penalty
+        # Only apply length penalty if the difference isn't due to featuring/brackets
+        if not (search_title_feat or result_title_feat or '[' in search_title or '[' in result_title or
+                '(' in search_title or '(' in result_title):
+            title_len_diff = abs(len(norm_search_title) - len(norm_result_title))
+            if title_len_diff > 20:  # Very tolerant of length differences
+                length_penalty = min(10, title_len_diff - 20)  # Minimal penalty
     
     # Calculate weighted score
     total_score = (artist_score * 0.4 + title_score * 0.5 + bonus_score * 0.1) - length_penalty
@@ -900,6 +1209,22 @@ def search_track_on_spotify(sp, artist, title, album=None):
         artist = parts[0].strip()
         title = parts[1].strip()
     
+    # Also check if we have title - artist format (reversed)
+    elif artist and not title and " - " in artist:
+        parts = artist.split(" - ", 1)
+        title = parts[0].strip()
+        artist = parts[1].strip()
+    
+    # Extract and clean featuring info for better searching
+    artist_main, artist_feat = extract_featuring_info(artist) if artist else ("", "")
+    title_main, title_feat = extract_featuring_info(title) if title else ("", "")
+    
+    # Use cleaned versions for search
+    if artist_main:
+        artist = artist_main
+    if title_main:
+        title = title_main
+    
     # Log the search parameters
     logger.debug(f"Searching for: Artist='{artist}', Album='{album}', Title='{title}'")
     
@@ -911,9 +1236,9 @@ def search_track_on_spotify(sp, artist, title, album=None):
         query1 = f"artist:\"{artist}\" album:\"{album}\" track:\"{title}\""
         logger.debug(f"Strategy 1: {query1}")
         try:
+            apply_rate_limit()
             results1 = sp.search(q=query1, type='track', limit=10)
             process_search_results(results1, artist, title, album, candidates, weight=1.5)
-            time.sleep(0.1)  # Rate limiting between strategies
             
             # Early exit if we found a very high-confidence match
             if candidates and max(c['score'] for c in candidates) > 95:
@@ -930,13 +1255,22 @@ def search_track_on_spotify(sp, artist, title, album=None):
                 save_to_cache(result, cache_key)
                 return result
         except Exception as e:
-            logger.error(f"Error in search strategy 1: {e}")
+            if handle_rate_limit_error(e):
+                # Retry after rate limit handling
+                try:
+                    results1 = sp.search(q=query1, type='track', limit=10)
+                    process_search_results(results1, artist, title, album, candidates, weight=1.5)
+                except Exception as retry_e:
+                    logger.error(f"Error in search strategy 1 retry: {retry_e}")
+            else:
+                logger.error(f"Error in search strategy 1: {e}")
     
     # Strategy 2: Exact artist and title search
     if artist:
         query2 = f"artist:\"{artist}\" track:\"{title}\""
         logger.debug(f"Strategy 2: {query2}")
         try:
+            apply_rate_limit()
             results2 = sp.search(q=query2, type='track', limit=10)
             process_search_results(results2, artist, title, album, candidates, weight=1.3)
         except Exception as e:
@@ -977,6 +1311,7 @@ def search_track_on_spotify(sp, artist, title, album=None):
         query6 = f"{artist} {title}"
         logger.debug(f"Strategy 6: {query6}")
         try:
+            apply_rate_limit()
             results6 = sp.search(q=query6, type='track', limit=10)
             process_search_results(results6, artist, title, album, candidates, weight=1.0)
         except Exception as e:
@@ -986,22 +1321,122 @@ def search_track_on_spotify(sp, artist, title, album=None):
     query7 = f"\"{title}\""
     logger.debug(f"Strategy 7: {query7}")
     try:
+        apply_rate_limit()
         results7 = sp.search(q=query7, type='track', limit=10)
         process_search_results(results7, artist, title, album, candidates, weight=0.9)
     except Exception as e:
         logger.error(f"Error in search strategy 7: {e}")
     
-    # Strategy 8: Try with partial matching for title
-    # This helps with tracks that have additional info in parentheses
-    base_title = re.sub(r'\([^\)]+\)|\[[^\]]+\]', '', title).strip()
+    # Strategy 8: Try with partial matching for title (only remove remaster/deluxe tags)
+    # Keep featuring info in parentheses
+    base_title = title
+    # Only remove specific tags that are not part of the song
+    for tag in ['remaster', 'remastered', 'deluxe', 'anniversary', 'expanded']:
+        base_title = re.sub(rf'\s*[\(\[].*{tag}.*[\)\]]\s*', '', base_title, flags=re.IGNORECASE)
+    base_title = base_title.strip()
+    
     if base_title != title:
         query8 = f"artist:\"{artist}\" track:\"{base_title}\"" if artist else f"\"{base_title}\""
-        logger.debug(f"Strategy 8: {query8}")
+        logger.debug(f"Strategy 8 (cleaned title): {query8}")
         try:
             results8 = sp.search(q=query8, type='track', limit=10)
             process_search_results(results8, artist, title, album, candidates, weight=0.95)
         except Exception as e:
             logger.error(f"Error in search strategy 8: {e}")
+    
+    # Strategy 8b: Try swapping artist and title (common in some playlists)
+    if artist and title and ' - ' not in artist:  # Only swap if artist doesn't contain ' - '
+        query8b = f"artist:\"{title}\" track:\"{artist}\""
+        logger.debug(f"Strategy 8b (swapped artist/title): {query8b}")
+        try:
+            results8b = sp.search(q=query8b, type='track', limit=10)
+            # Process results with swapped expectations
+            if results8b['tracks']['items']:
+                for track in results8b['tracks']['items']:
+                    track_artists = ', '.join([a['name'] for a in track['artists']])
+                    track_title = track['name']
+                    
+                    # Check if this looks like a swap (title matches our artist, artist matches our title)
+                    title_to_artist_score = fuzz.ratio(title.lower(), track_artists.lower())
+                    artist_to_title_score = fuzz.ratio(artist.lower(), track_title.lower())
+                    
+                    if title_to_artist_score > 70 and artist_to_title_score > 70:
+                        # This is likely a swapped match
+                        candidates.append({
+                            'track': track,
+                            'score': (title_to_artist_score + artist_to_title_score) / 2 * 0.9,  # Slight penalty for swap
+                            'artist_match': track_artists,
+                            'title_match': track_title,
+                            'album_match': track['album']['name'] if track['album'] else "",
+                            'swapped': True
+                        })
+        except Exception as e:
+            logger.error(f"Error in search strategy 8b: {e}")
+    
+    # Strategy 8c: Try title-only search but check if artist matches
+    if artist:
+        query8c = f"\"{title}\""
+        logger.debug(f"Strategy 8c (title only, verify artist): {query8c}")
+        try:
+            results8c = sp.search(q=query8c, type='track', limit=20)
+            if results8c['tracks']['items']:
+                for track in results8c['tracks']['items']:
+                    track_artists = ', '.join([a['name'] for a in track['artists']])
+                    # Check if any artist name is similar to our search
+                    artist_match = False
+                    best_artist_score = 0
+                    for a in track['artists']:
+                        score = fuzz.ratio(artist.lower(), a['name'].lower())
+                        if score > best_artist_score:
+                            best_artist_score = score
+                        if score > 70:
+                            artist_match = True
+                    
+                    if artist_match:
+                        # Calculate score based on how well artist matches
+                        candidates.append({
+                            'track': track,
+                            'score': min(95, 60 + best_artist_score * 0.35),  # Score 60-95 based on artist match
+                            'artist_match': track_artists,
+                            'title_match': track['name'],
+                            'album_match': track['album']['name'] if track['album'] else ""
+                        })
+        except Exception as e:
+            logger.error(f"Error in search strategy 8c: {e}")
+    
+    # Strategy 8d: Search for just our artist name and see if any results have our title as artist
+    if artist and title:
+        query8d = f"\"{artist}\""
+        logger.debug(f"Strategy 8d (artist only, check for title as artist): {query8d}")
+        try:
+            results8d = sp.search(q=query8d, type='track', limit=20)
+            if results8d['tracks']['items']:
+                for track in results8d['tracks']['items']:
+                    track_title = track['name']
+                    track_artists_str = ', '.join([a['name'] for a in track['artists']])
+                    
+                    # Check if our title matches any of the artists
+                    title_matches_artist = False
+                    for a in track['artists']:
+                        if fuzz.ratio(title.lower(), a['name'].lower()) > 80:
+                            title_matches_artist = True
+                            break
+                    
+                    # Check if track title matches our artist
+                    artist_matches_title = fuzz.ratio(artist.lower(), track_title.lower()) > 80
+                    
+                    if title_matches_artist and artist_matches_title:
+                        # Strong indication of a swap
+                        candidates.append({
+                            'track': track,
+                            'score': 88,  # High score for confirmed swap
+                            'artist_match': track_artists_str,
+                            'title_match': track_title,
+                            'album_match': track['album']['name'] if track['album'] else "",
+                            'swapped': True
+                        })
+        except Exception as e:
+            logger.error(f"Error in search strategy 8d: {e}")
     
     # Strategy 9: Try with just the album name and artist
     if artist and album:
@@ -1069,14 +1504,23 @@ def search_track_on_spotify(sp, artist, title, album=None):
 def get_user_playlists(sp, user_id):
     """
     Get all playlists for the current user.
-    Uses caching to avoid redundant API calls.
+    Uses session-level caching and disk caching to avoid redundant API calls.
     """
+    global _user_playlists_cache, _user_playlists_cache_time
+    
+    # Check session-level cache first (valid for 10 minutes)
+    if _user_playlists_cache and (time.time() - _user_playlists_cache_time) < 600:
+        logger.debug("Using session-cached user playlists")
+        return _user_playlists_cache
+    
     cache_key = f"user_playlists_{user_id}"
     
-    # Try to load from cache first
+    # Try to load from disk cache
     cached_playlists = load_from_cache(cache_key, 60 * 60)  # Cache for 1 hour
     if cached_playlists:
-        logger.debug("Using cached user playlists")
+        logger.debug("Using disk-cached user playlists")
+        _user_playlists_cache = cached_playlists
+        _user_playlists_cache_time = time.time()
         return cached_playlists
     
     playlists = []
@@ -1092,8 +1536,10 @@ def get_user_playlists(sp, user_id):
         
         offset += limit
     
-    # Save to cache
+    # Save to caches
     save_to_cache(playlists, cache_key)
+    _user_playlists_cache = playlists
+    _user_playlists_cache_time = time.time()
     
     return playlists
 
@@ -1138,17 +1584,44 @@ def check_for_duplicate_playlists(sp, playlist_name, track_uris, user_id):
     """Check for existing playlists that might be duplicates based on name similarity and content."""
     playlists = get_user_playlists(sp, user_id)
     
-    # Look for exact name matches
-    exact_matches = [p for p in playlists if p['name'] == playlist_name]
+    # Clean the playlist name - remove common file extensions
+    clean_name = playlist_name
+    for ext in ['.m3u', '.m3u8', '.pls', '.txt']:
+        if clean_name.lower().endswith(ext):
+            clean_name = clean_name[:-len(ext)]
+            break
+    
+    # Look for exact name matches (including with/without extensions)
+    exact_matches = []
+    suffix_matches = []  # Playlists that match when ignoring file extensions
+    
+    for playlist in playlists:
+        if playlist['name'] == playlist_name:
+            exact_matches.append(playlist)
+        elif playlist['name'] == clean_name or playlist['name'].startswith(clean_name + '.'):
+            # Check if it's the same name with just a file extension difference
+            suffix_matches.append(playlist)
     
     # Look for similar name matches
     similar_matches = []
-    norm_target_name = normalize_string(playlist_name).lower()
+    norm_target_name = normalize_string(clean_name).lower()
     
     for playlist in playlists:
-        if playlist['name'] != playlist_name:  # Skip exact matches, already found
+        if playlist['name'] != playlist_name and playlist not in suffix_matches:  # Skip exact and suffix matches
             norm_playlist_name = normalize_string(playlist['name']).lower()
-            similarity = fuzz.ratio(norm_target_name, norm_playlist_name)
+            # Also check without extensions
+            clean_playlist_name = playlist['name']
+            for ext in ['.m3u', '.m3u8', '.pls', '.txt']:
+                if clean_playlist_name.lower().endswith(ext):
+                    clean_playlist_name = clean_playlist_name[:-len(ext)]
+                    break
+            norm_clean_playlist_name = normalize_string(clean_playlist_name).lower()
+            
+            # Check similarity with both original and cleaned names
+            similarity = max(
+                fuzz.ratio(norm_target_name, norm_playlist_name),
+                fuzz.ratio(norm_target_name, norm_clean_playlist_name)
+            )
             
             # Consider names similar if they have >80% similarity
             if similarity > 80:
@@ -1157,18 +1630,58 @@ def check_for_duplicate_playlists(sp, playlist_name, track_uris, user_id):
                     'similarity': similarity
                 })
     
-    # Sort similar matches by similarity
-    similar_matches.sort(key=lambda x: x['similarity'], reverse=True)
+    # Sort matches by track count (keep the one with most tracks)
+    exact_matches.sort(key=lambda p: p['tracks']['total'], reverse=True)
+    suffix_matches.sort(key=lambda p: p['tracks']['total'], reverse=True)
+    similar_matches.sort(key=lambda x: (x['similarity'], x['playlist']['tracks']['total']), reverse=True)
     
-    return exact_matches, similar_matches
+    return exact_matches, suffix_matches, similar_matches
 
 def create_or_update_spotify_playlist(sp, playlist_name, track_uris, user_id):
     """Create a new Spotify playlist or update an existing one."""
     # Check for duplicate playlists first
-    exact_matches, similar_matches = check_for_duplicate_playlists(sp, playlist_name, track_uris, user_id)
+    exact_matches, suffix_matches, similar_matches = check_for_duplicate_playlists(sp, playlist_name, track_uris, user_id)
+    
+    # Handle suffix matches (e.g., "Playlist" vs "Playlist.m3u")
+    if suffix_matches:
+        print(f"\n{Fore.YELLOW}⚠️  Found duplicate playlists with file extensions:")
+        all_suffix_playlists = suffix_matches + exact_matches
+        all_suffix_playlists.sort(key=lambda p: p['tracks']['total'], reverse=True)
+        
+        for i, playlist in enumerate(all_suffix_playlists[:5], 1):  # Show top 5
+            suffix_indicator = " (current name)" if playlist['name'] == playlist_name else ""
+            print(f"{i}. {playlist['name']} ({playlist['tracks']['total']} tracks){suffix_indicator}")
+        
+        print(f"\n{Fore.CYAN}These appear to be the same playlist with different file extensions.")
+        print(f"Options:")
+        print(f"1. Keep the playlist with most tracks and remove others")
+        print(f"2. Update the playlist with most tracks (add missing songs)")
+        print(f"3. Keep all playlists as separate")
+        
+        choice = input(f"\n{Fore.CYAN}Choose option (1-3): ").strip()
+        
+        if choice == "1":
+            # Keep playlist with most tracks, delete others
+            keeper = all_suffix_playlists[0]
+            for playlist in all_suffix_playlists[1:]:
+                try:
+                    sp.current_user_unfollow_playlist(playlist['id'])
+                    print(f"{Fore.GREEN}✓ Removed duplicate: {playlist['name']}")
+                except Exception as e:
+                    print(f"{Fore.RED}✗ Failed to remove {playlist['name']}: {e}")
+            
+            exact_matches = [keeper]
+            print(f"{Fore.GREEN}✓ Keeping: {keeper['name']} ({keeper['tracks']['total']} tracks)")
+            
+        elif choice == "2":
+            # Use the one with most tracks
+            exact_matches = [all_suffix_playlists[0]]
+            print(f"{Fore.GREEN}✓ Will update: {exact_matches[0]['name']}")
+            
+        # For option 3, continue as normal (create new playlist)
     
     # Handle similar matches - ask user if they want to use existing playlist
-    if similar_matches and not exact_matches:
+    elif similar_matches and not exact_matches:
         print(f"\n{Fore.YELLOW}⚠️  Found similar playlists that might be duplicates:")
         for i, match in enumerate(similar_matches[:3], 1):  # Show top 3 matches
             playlist = match['playlist']
@@ -1314,11 +1827,43 @@ def manual_search_flow(sp, track):
     """Handle manual search flow for a track."""
     print(f"\nManual search for: {track.get('artist', '')} - {track.get('title', '')}")
     
+    # Check if AI assistance is available
+    ai_available = False
+    ai_creds = get_ai_credentials()
+    if ai_creds:
+        ai_available = True
+        print(f"{Fore.CYAN}AI assistance available: {', '.join(ai_creds.keys())}")
+    
     while True:
-        search_query = input("\nEnter search query (artist - title) or 'skip' to skip: ").strip()
+        options = "\nEnter search query (artist - title) or 'skip' to skip"
+        if ai_available:
+            options += " or 'ai' for AI help"
+        options += ": "
+        
+        search_query = input(options).strip()
         
         if search_query.lower() == 'skip':
             return None
+        
+        if search_query.lower() == 'ai' and ai_available:
+            # Try AI-assisted search
+            from ai_track_matcher import ai_assisted_search
+            print(f"\n{Fore.YELLOW}Requesting AI assistance...")
+            ai_match = ai_assisted_search(sp, track.get('artist', ''), track.get('title', ''), track.get('album'))
+            
+            if ai_match:
+                print(f"\n{Fore.GREEN}AI suggestion:")
+                print(f"Found: {', '.join(ai_match['artists'])} - {ai_match['name']}")
+                print(f"Album: {ai_match['album']} (Score: {ai_match['score']:.1f})")
+                if ai_match.get('ai_notes'):
+                    print(f"{Fore.YELLOW}AI notes: {ai_match['ai_notes']}")
+                
+                confirm = input("\nAccept AI suggestion? (y/n): ").lower().strip()
+                if confirm == 'y':
+                    return ai_match
+            else:
+                print(f"{Fore.RED}AI couldn't identify the track.")
+            continue
         
         if ' - ' in search_query:
             parts = search_query.split(' - ', 1)
@@ -1352,15 +1897,50 @@ def manual_search_flow(sp, track):
                     print("Please enter y, n, or s")
         else:
             print("No matches found.")
+            
+            # Offer AI help if available and not already tried
+            if ai_available:
+                ai_choice = input("Try AI-assisted search? (y/n): ").lower().strip()
+                if ai_choice == 'y':
+                    from ai_track_matcher import ai_assisted_search
+                    print(f"\n{Fore.YELLOW}Requesting AI assistance...")
+                    ai_match = ai_assisted_search(sp, search_artist or track.get('artist', ''), 
+                                                 search_title or track.get('title', ''), 
+                                                 search_album or track.get('album'))
+                    if ai_match:
+                        print(f"\n{Fore.GREEN}AI suggestion:")
+                        print(f"Found: {', '.join(ai_match['artists'])} - {ai_match['name']}")
+                        print(f"Album: {ai_match['album']} (Score: {ai_match['score']:.1f})")
+                        if ai_match.get('ai_notes'):
+                            print(f"{Fore.YELLOW}AI notes: {ai_match['ai_notes']}")
+                        
+                        confirm = input("\nAccept AI suggestion? (y/n): ").lower().strip()
+                        if confirm == 'y':
+                            return ai_match
+                    else:
+                        print(f"{Fore.RED}AI couldn't identify the track.")
+            
             retry = input("Try again? (y/n): ").lower().strip()
             if retry != 'y':
                 return None
 
-def process_tracks_batch(sp, tracks_batch, confidence_threshold, batch_mode=False, auto_threshold=85):
+def process_tracks_batch(sp, tracks_batch, confidence_threshold, batch_mode=False, auto_threshold=85, use_previous_decisions=False):
     """Process a batch of tracks efficiently with minimal user interaction."""
     results = []
     
     for track in tracks_batch:
+        # Check for cached decision first if using previous decisions
+        if use_previous_decisions:
+            cached_decision = get_cached_decision(track)
+            if cached_decision:
+                # Apply the cached decision
+                if cached_decision['decision'] == 'y' and cached_decision.get('match'):
+                    results.append({'track': track, 'match': cached_decision['match'], 'accepted': True, 'auto': False, 'cached': True})
+                    continue
+                elif cached_decision['decision'] == 'n':
+                    results.append({'track': track, 'match': None, 'accepted': False, 'review': False, 'cached': True})
+                    continue
+        
         match = search_track_on_spotify(sp, track['artist'], track['title'], track['album'])
         
         if match:
@@ -1375,7 +1955,7 @@ def process_tracks_batch(sp, tracks_batch, confidence_threshold, batch_mode=Fals
     
     return results
 
-def process_playlist_file(sp, file_path, user_id, confidence_threshold, min_score=50, batch_mode=False, auto_threshold=85):
+def process_playlist_file(sp, file_path, user_id, confidence_threshold, min_score=50, batch_mode=False, auto_threshold=85, use_previous_decisions=False):
     """Process a single playlist file and convert it to a Spotify playlist."""
     logger.info(f"Processing playlist: {file_path}")
     
@@ -1391,6 +1971,12 @@ def process_playlist_file(sp, file_path, user_id, confidence_threshold, min_scor
     
     logger.info(f"Found {len(tracks)} tracks in playlist")
     
+    # Check if playlist needs sync (incremental sync optimization)
+    needs_sync, content_hash = playlist_needs_sync(file_path, tracks)
+    if not needs_sync and batch_mode:
+        logger.info(f"Playlist '{playlist_name}' is up to date, skipping...")
+        return 0, 0
+    
     # Search for tracks on Spotify
     spotify_tracks = []
     skipped_tracks = []
@@ -1405,16 +1991,33 @@ def process_playlist_file(sp, file_path, user_id, confidence_threshold, min_scor
             batch = tracks[i:i + batch_size]
             logger.info(f"Processing batch {i//batch_size + 1}/{(len(tracks) + batch_size - 1)//batch_size}")
             
-            batch_results = process_tracks_batch(sp, batch, confidence_threshold, batch_mode, auto_threshold)
+            batch_results = process_tracks_batch(sp, batch, confidence_threshold, batch_mode, auto_threshold, use_previous_decisions)
             
             for result in batch_results:
                 if result['accepted'] and result['match']:
                     spotify_tracks.append(result['match'])
+                    if result.get('cached'):
+                        track = result['track']
+                        original_line = track.get('original_line', f"{track['artist']} - {track['title']}")
+                        print(f"\n{Fore.GREEN}✅ Using cached decision for: {original_line}")
                 elif result.get('review', False) and result['match']:
-                    # Manual review needed
+                    # Check for cached decision first
                     track = result['track']
                     match = result['match']
                     original_line = track.get('original_line', f"{track['artist']} - {track['title']}")
+                    
+                    # Check if we have a cached decision for this exact match
+                    if use_previous_decisions:
+                        cached_decision = get_cached_decision(track, match)
+                        if cached_decision:
+                            if cached_decision['decision'] == 'y':
+                                print(f"\n{Fore.GREEN}✅ Using cached positive decision for: {original_line}")
+                                spotify_tracks.append(match)
+                                continue
+                            elif cached_decision['decision'] == 'n':
+                                print(f"\n{Fore.YELLOW}⏭️  Using cached negative decision for: {original_line}")
+                                skipped_tracks.append(track)
+                                continue
                     
                     print(f"\nManual Review Required:")
                     print(f"Original: {original_line}")
@@ -1437,6 +2040,10 @@ def process_playlist_file(sp, file_path, user_id, confidence_threshold, min_scor
                         save_user_decision(track, match, 'n')
                 else:
                     skipped_tracks.append(result['track'])
+                    if result.get('cached') and result['match'] is None:
+                        track = result['track']
+                        original_line = track.get('original_line', f"{track['artist']} - {track['title']}")
+                        print(f"\n{Fore.YELLOW}⏭️  Skipping based on cached decision: {original_line}")
                     
             # Add delay between batches for rate limiting
             if i + batch_size < len(tracks):
@@ -1451,18 +2058,24 @@ def process_playlist_file(sp, file_path, user_id, confidence_threshold, min_scor
             # Log the extracted metadata
             logger.debug(f"Extracted metadata: Artist='{track['artist']}', Album='{track['album']}', Title='{track['title']}'")
             
+            # Check for cached decision first if using previous decisions
+            if use_previous_decisions:
+                cached_decision = get_cached_decision(track)
+                if cached_decision:
+                    if cached_decision['decision'] == 'y' and cached_decision.get('match'):
+                        print(f"\nUsing previous decision for: {original_line}")
+                        print(f"Match: {', '.join(cached_decision['match']['artists'])} - {cached_decision['match']['name']} - PREVIOUSLY ACCEPTED")
+                        spotify_tracks.append(cached_decision['match'])
+                        continue
+                    elif cached_decision['decision'] == 'n':
+                        print(f"\nSkipping (previously rejected): {original_line}")
+                        skipped_tracks.append(track)
+                        continue
+            
             # Search with all available metadata
             match = search_track_on_spotify(sp, track['artist'], track['title'], track['album'])
             
             if match:
-                # Check if we have a cached decision for this track/match combination
-                cached_decision = get_cached_decision(track, match)
-                if cached_decision:
-                    print(f"\nUsing previous decision for: {original_line}")
-                    print(f"Match: {', '.join(match['artists'])} - {match['name']} (Score: {match['score']:.1f}) - PREVIOUSLY ACCEPTED")
-                    spotify_tracks.append(match)
-                    continue
-                
                 # Show the original line from the playlist file
                 print(f"\nOriginal entry: {original_line}")
                 print(f"Extracted as: {track['artist']} - {track['title']}")
@@ -1470,152 +2083,152 @@ def process_playlist_file(sp, file_path, user_id, confidence_threshold, min_scor
                     print(f"Album: {track['album']}")
                 print(f"Match: {', '.join(match['artists'])} - {match['name']} (from album: {match['album']}) (Score: {match['score']:.1f})")
             
-            # Batch mode logic
-            if batch_mode and match['score'] >= auto_threshold:
-                print(f"AUTO-ACCEPTED (score {match['score']:.1f} >= {auto_threshold})")
-                spotify_tracks.append(match)
-                # Save the auto-accept decision
-                save_user_decision(track, match, 'y')
-            elif match['score'] >= confidence_threshold:
-                # High confidence match
-                if batch_mode:
-                    # In batch mode, auto-accept high confidence matches above threshold
-                    print(f"AUTO-ACCEPTED (high confidence: {match['score']:.1f})")
+                # Batch mode logic
+                if batch_mode and match['score'] >= auto_threshold:
+                    print(f"AUTO-ACCEPTED (score {match['score']:.1f} >= {auto_threshold})")
                     spotify_tracks.append(match)
                     # Save the auto-accept decision
                     save_user_decision(track, match, 'y')
-                else:
-                    # Interactive mode - user confirmation required
-                    options = "Accept this match? (y/n/s/t - y:yes, n:no, s:search manually, t:try again): "
-                    
-                    while True:
-                        confirm = input(options).lower()
+                elif match['score'] >= confidence_threshold:
+                    # High confidence match
+                    if batch_mode:
+                        # In batch mode, auto-accept high confidence matches above threshold
+                        print(f"AUTO-ACCEPTED (high confidence: {match['score']:.1f})")
+                        spotify_tracks.append(match)
+                        # Save the auto-accept decision
+                        save_user_decision(track, match, 'y')
+                    else:
+                        # Interactive mode - user confirmation required
+                        options = "Accept this match? (y/n/s/t - y:yes, n:no, s:search manually, t:try again): "
                         
-                        if confirm == 'y':
-                            spotify_tracks.append(match)
-                            # Save the user's positive decision
-                            save_user_decision(track, match, 'y')
-                            break
-                        elif confirm == 'n':
-                            skipped_tracks.append(track)
-                            # Save the user's negative decision
-                            save_user_decision(track, match, 'n')
-                            break
-                        elif confirm == 's':
-                            # Manual search option
-                            search_query = input("Enter search query (artist - title): ")
-                            if search_query:
-                                parts = search_query.split(" - ", 1)
-                                search_artist = parts[0].strip() if len(parts) > 1 else ""
-                                search_title = parts[1].strip() if len(parts) > 1 else search_query.strip()
-                                
-                                # Ask for album info
-                                search_album = input("Enter album name (optional): ").strip()
-                                
-                                # Perform the manual search
-                                manual_match = search_track_on_spotify(sp, search_artist, search_title, search_album if search_album else None)
-                                
-                                if manual_match:
-                                    print(f"Found: {', '.join(manual_match['artists'])} - {manual_match['name']} (from album: {manual_match['album']}) (Score: {manual_match['score']:.1f})")
-                                    manual_confirm = input("Accept this match? (y/n/s - y:yes, n:no, s:search again): ").lower()
-                                    if manual_confirm == 'y':
-                                        spotify_tracks.append(manual_match)
-                                        # Save the user's decision for the manual match
-                                        save_user_decision(track, manual_match, 'y', manual_search_used=True)
-                                        break
-                                    elif manual_confirm == 'n':
-                                        skipped_tracks.append(track)
-                                        # Don't save 'n' for manual searches as they might try different terms
-                                        break
-                                    # If 's', continue the loop to search again
-                                else:
-                                    print("No matches found for your search query.")
-                                    # Continue the loop to try again
-                            else:
-                                # Empty search query, ask again
-                                continue
-                        elif confirm == 't':
-                            # Try again option - attempt a different search strategy
-                            # Try with just the title if we were using artist before, or vice versa
-                            if track['artist']:
-                                print("Trying with title only...")
-                                retry_match = search_track_on_spotify(sp, "", track['title'], track['album'])
-                            else:
-                                # If we don't have artist info, try with partial title
-                                print("Trying with partial title...")
-                                base_title = re.sub(r'\([^\)]+\)|\[[^\]]+\]', '', track['title']).strip()
-                                retry_match = search_track_on_spotify(sp, track['artist'], base_title, track['album'])
+                        while True:
+                            confirm = input(options).lower()
                             
-                            if retry_match:
-                                print(f"New match: {', '.join(retry_match['artists'])} - {retry_match['name']} (from album: {retry_match['album']}) (Score: {retry_match['score']:.1f})")
-                                retry_confirm = input("Accept this match? (y/n/s - y:yes, n:no, s:search manually): ").lower()
-                                if retry_confirm == 'y':
-                                    spotify_tracks.append(retry_match)
-                                    break
-                                elif retry_confirm == 'n':
+                            if confirm == 'y':
+                                spotify_tracks.append(match)
+                                # Save the user's positive decision
+                                save_user_decision(track, match, 'y')
+                                break
+                            elif confirm == 'n':
+                                skipped_tracks.append(track)
+                                # Save the user's negative decision
+                                save_user_decision(track, match, 'n')
+                                break
+                            elif confirm == 's':
+                                # Manual search option
+                                search_query = input("Enter search query (artist - title): ")
+                                if search_query:
+                                    parts = search_query.split(" - ", 1)
+                                    search_artist = parts[0].strip() if len(parts) > 1 else ""
+                                    search_title = parts[1].strip() if len(parts) > 1 else search_query.strip()
+                                    
+                                    # Ask for album info
+                                    search_album = input("Enter album name (optional): ").strip()
+                                    
+                                    # Perform the manual search
+                                    manual_match = search_track_on_spotify(sp, search_artist, search_title, search_album if search_album else None)
+                                    
+                                    if manual_match:
+                                        print(f"Found: {', '.join(manual_match['artists'])} - {manual_match['name']} (from album: {manual_match['album']}) (Score: {manual_match['score']:.1f})")
+                                        manual_confirm = input("Accept this match? (y/n/s - y:yes, n:no, s:search again): ").lower()
+                                        if manual_confirm == 'y':
+                                            spotify_tracks.append(manual_match)
+                                            # Save the user's decision for the manual match
+                                            save_user_decision(track, manual_match, 'y', manual_search_used=True)
+                                            break
+                                        elif manual_confirm == 'n':
+                                            skipped_tracks.append(track)
+                                            # Don't save 'n' for manual searches as they might try different terms
+                                            break
+                                        # If 's', continue the loop to search again
+                                    else:
+                                        print("No matches found for your search query.")
+                                        # Continue the loop to try again
+                                else:
+                                    # Empty search query, ask again
+                                    continue
+                            elif confirm == 't':
+                                # Try again option - attempt a different search strategy
+                                # Try with just the title if we were using artist before, or vice versa
+                                if track['artist']:
+                                    print("Trying with title only...")
+                                    retry_match = search_track_on_spotify(sp, "", track['title'], track['album'])
+                                else:
+                                    # If we don't have artist info, try with partial title
+                                    print("Trying with partial title...")
+                                    base_title = re.sub(r'\([^\)]+\)|\[[^\]]+\]', '', track['title']).strip()
+                                    retry_match = search_track_on_spotify(sp, track['artist'], base_title, track['album'])
+                                
+                                if retry_match:
+                                    print(f"New match: {', '.join(retry_match['artists'])} - {retry_match['name']} (from album: {retry_match['album']}) (Score: {retry_match['score']:.1f})")
+                                    retry_confirm = input("Accept this match? (y/n/s - y:yes, n:no, s:search manually): ").lower()
+                                    if retry_confirm == 'y':
+                                        spotify_tracks.append(retry_match)
+                                        break
+                                    elif retry_confirm == 'n':
+                                        skipped_tracks.append(track)
+                                        break
+                                    elif retry_confirm == 's':
+                                        # Go back to manual search option
+                                        continue
+                                else:
+                                    print("No alternative matches found.")
+                                    skip_confirm = input("Skip this track? (y/n/s - y:yes, n:try again, s:search manually): ").lower()
+                                    if skip_confirm == 'y':
+                                        skipped_tracks.append(track)
+                                        break
+                                # Otherwise continue the loop to try again
+                            else:
+                                print("Invalid option. Please try again.")
+            else:
+                print(f"\nNo match found for: {original_line}")
+                options = "Would you like to search manually? (y/n): "
+                confirm = input(options).lower()
+                
+                if confirm == 'y':
+                    # Manual search loop
+                    while True:
+                        search_query = input("Enter search query (artist - title): ")
+                        if search_query:
+                            parts = search_query.split(" - ", 1)
+                            search_artist = parts[0].strip() if len(parts) > 1 else ""
+                            search_title = parts[1].strip() if len(parts) > 1 else search_query.strip()
+                            
+                            # Ask for album info
+                            search_album = input("Enter album name (optional): ").strip()
+                            
+                            # Perform the manual search
+                            manual_match = search_track_on_spotify(sp, search_artist, search_title, search_album if search_album else None)
+                            
+                            if manual_match:
+                                print(f"Found: {', '.join(manual_match['artists'])} - {manual_match['name']} (from album: {manual_match['album']}) (Score: {manual_match['score']:.1f})")
+                                manual_confirm = input("Accept this match? (y/n/s - y:yes, n:no, s:search again): ").lower()
+                                if manual_confirm == 'y':
+                                    spotify_tracks.append(manual_match)
+                                    break  # Exit manual search loop
+                                elif manual_confirm == 'n':
                                     skipped_tracks.append(track)
-                                    break
-                                elif retry_confirm == 's':
-                                    # Go back to manual search option
+                                    break  # Exit manual search loop
+                                elif manual_confirm == 's':
+                                    # Continue the manual search loop to search again
+                                    continue
+                                else:
+                                    print("Invalid option. Please enter y, n, or s.")
                                     continue
                             else:
-                                print("No alternative matches found.")
-                                skip_confirm = input("Skip this track? (y/n/s - y:yes, n:try again, s:search manually): ").lower()
-                                if skip_confirm == 'y':
+                                print("No matches found for your search query.")
+                                retry_search = input("Try a different search? (y/n): ").lower()
+                                if retry_search != 'y':
                                     skipped_tracks.append(track)
                                     break
-                            # Otherwise continue the loop to try again
                         else:
-                            print("Invalid option. Please try again.")
-        else:
-            print(f"\nNo match found for: {original_line}")
-            options = "Would you like to search manually? (y/n): "
-            confirm = input(options).lower()
-            
-            if confirm == 'y':
-                # Manual search loop
-                while True:
-                    search_query = input("Enter search query (artist - title): ")
-                    if search_query:
-                        parts = search_query.split(" - ", 1)
-                        search_artist = parts[0].strip() if len(parts) > 1 else ""
-                        search_title = parts[1].strip() if len(parts) > 1 else search_query.strip()
-                        
-                        # Ask for album info
-                        search_album = input("Enter album name (optional): ").strip()
-                        
-                        # Perform the manual search
-                        manual_match = search_track_on_spotify(sp, search_artist, search_title, search_album if search_album else None)
-                        
-                        if manual_match:
-                            print(f"Found: {', '.join(manual_match['artists'])} - {manual_match['name']} (from album: {manual_match['album']}) (Score: {manual_match['score']:.1f})")
-                            manual_confirm = input("Accept this match? (y/n/s - y:yes, n:no, s:search again): ").lower()
-                            if manual_confirm == 'y':
-                                spotify_tracks.append(manual_match)
-                                break  # Exit manual search loop
-                            elif manual_confirm == 'n':
-                                skipped_tracks.append(track)
-                                break  # Exit manual search loop
-                            elif manual_confirm == 's':
-                                # Continue the manual search loop to search again
-                                continue
-                            else:
-                                print("Invalid option. Please enter y, n, or s.")
-                                continue
-                        else:
-                            print("No matches found for your search query.")
-                            retry_search = input("Try a different search? (y/n): ").lower()
+                            # Empty search query
+                            retry_search = input("Empty search query. Try again? (y/n): ").lower()
                             if retry_search != 'y':
                                 skipped_tracks.append(track)
                                 break
-                    else:
-                        # Empty search query
-                        retry_search = input("Empty search query. Try again? (y/n): ").lower()
-                        if retry_search != 'y':
-                            skipped_tracks.append(track)
-                            break
-            else:
-                skipped_tracks.append(track)
+                else:
+                    skipped_tracks.append(track)
     
     if not spotify_tracks:
         logger.warning("No tracks could be matched on Spotify. Playlist will not be created.")
@@ -1636,6 +2249,17 @@ def process_playlist_file(sp, file_path, user_id, confidence_threshold, min_scor
         logger.info("Skipped tracks:")
         for track in skipped_tracks:
             logger.info(f"  - {track['artist']} - {track['title']}")
+    
+    # Save sync state for incremental sync
+    if spotify_tracks and content_hash:
+        sync_state = {
+            'content_hash': content_hash,
+            'last_sync_time': time.time(),
+            'tracks_matched': len(spotify_tracks),
+            'tracks_skipped': len(skipped_tracks),
+            'playlist_name': playlist_name
+        }
+        save_playlist_sync_state(file_path, sync_state)
     
     return len(spotify_tracks), len(skipped_tracks)
 
@@ -1871,6 +2495,38 @@ def clear_processed_playlist_cache():
         clear_cache(cache['name'])
     print(f"{Fore.GREEN}✅ Cleared {len(converter_caches)} converter cache entries.")
 
+def process_playlists_parallel(sp, playlist_files, user_id, auto_threshold=85, max_workers=3):
+    """Process multiple playlists in parallel for auto mode."""
+    results = []
+    
+    def process_single_playlist(file_path):
+        """Helper to process a single playlist."""
+        try:
+            return process_playlist_file_auto_mode(sp, file_path, user_id, auto_threshold)
+        except Exception as e:
+            logger.error(f"Error processing {file_path}: {e}")
+            return (0, 0, 0)
+    
+    # Use ThreadPoolExecutor for parallel processing
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Submit all tasks
+        future_to_file = {executor.submit(process_single_playlist, f): f for f in playlist_files}
+        
+        # Process completed tasks
+        with tqdm(total=len(playlist_files), desc="Processing playlists") as pbar:
+            for future in concurrent.futures.as_completed(future_to_file):
+                file_path = future_to_file[future]
+                try:
+                    result = future.result()
+                    results.append((file_path, result))
+                except Exception as e:
+                    logger.error(f"Failed to process {file_path}: {e}")
+                    results.append((file_path, (0, 0, 0)))
+                
+                pbar.update(1)
+    
+    return results
+
 def process_playlist_file_auto_mode(sp, file_path, user_id, auto_threshold=85):
     """Process a playlist file in fully autonomous mode - no user interaction."""
     logger.info(f"[AUTO] Processing playlist: {file_path}")
@@ -1964,12 +2620,29 @@ def auto_create_or_update_playlist(sp, playlist_name, track_uris, user_id):
     # Get user playlists
     user_playlists = get_user_playlists(sp, user_id)
     
-    # Find exact match only
+    # Clean the playlist name - remove common file extensions
+    clean_name = playlist_name
+    for ext in ['.m3u', '.m3u8', '.pls', '.txt']:
+        if clean_name.lower().endswith(ext):
+            clean_name = clean_name[:-len(ext)]
+            break
+    
+    # Find exact match or suffix match - prefer the one with most tracks
     existing_playlist = None
+    suffix_playlists = []
+    
     for playlist in user_playlists:
         if playlist['name'] == playlist_name:
             existing_playlist = playlist
             break
+        elif playlist['name'] == clean_name or playlist['name'].startswith(clean_name + '.'):
+            suffix_playlists.append(playlist)
+    
+    # If no exact match but found suffix matches, use the one with most tracks
+    if not existing_playlist and suffix_playlists:
+        suffix_playlists.sort(key=lambda p: p['tracks']['total'], reverse=True)
+        existing_playlist = suffix_playlists[0]
+        logger.info(f"[AUTO] Using existing playlist '{existing_playlist['name']}' instead of creating '{playlist_name}'")
     
     if existing_playlist:
         # Update existing playlist
@@ -2253,24 +2926,26 @@ def main():
                     total_skipped += len(tracks)
                     logger.info(f"[AUTO] {playlist_name}: No tracks matched threshold")
         else:
-            # Standard processing for fewer playlists
+            # Parallel processing for fewer playlists
+            print(f"{Fore.CYAN}Processing {len(playlist_files)} playlists in parallel...")
+            
+            # Process playlists in parallel
+            results = process_playlists_parallel(sp, playlist_files, user_id, args.auto_threshold, max_workers=min(3, len(playlist_files)))
+            
+            # Aggregate results
             total_processed = 0
             total_matches = 0
             total_skipped = 0
             total_added = 0
             
-            for i, file_path in enumerate(playlist_files, 1):
-                try:
-                    logger.info(f"\n[AUTO] Processing playlist {i}/{len(playlist_files)}")
-                    matches, skipped, added = process_playlist_file_auto_mode(sp, file_path, user_id, args.auto_threshold)
+            for file_path, (matches, skipped, added) in results:
+                if matches > 0 or skipped > 0:
                     total_processed += 1
                     total_matches += matches
                     total_skipped += skipped
                     total_added += added
-                except Exception as e:
-                    logger.error(f"[AUTO] Error processing {file_path}: {e}")
-                    if args.debug:
-                        traceback.print_exc()
+                    playlist_name = os.path.splitext(os.path.basename(file_path))[0]
+                    logger.info(f"[AUTO] {playlist_name}: {matches} matched, {added} added, {skipped} skipped")
         
         # Print summary
         print(f"\n{Fore.CYAN}{'='*50}")
@@ -2399,6 +3074,9 @@ def main():
     user_info = sp.current_user()
     user_id = user_info['id']
     
+    # Check if user wants to use previous session decisions
+    use_previous_decisions = check_and_use_previous_session()
+    
     # Process each playlist file
     total_processed = 0
     total_matches = 0
@@ -2407,7 +3085,7 @@ def main():
     for i, file_path in enumerate(playlist_files, 1):
         try:
             logger.info(f"\nProcessing playlist {i}/{len(playlist_files)}: {os.path.basename(file_path)}")
-            matches, skipped = process_playlist_file(sp, file_path, user_id, confidence_threshold, min_score, args.batch, args.auto_threshold)
+            matches, skipped = process_playlist_file(sp, file_path, user_id, confidence_threshold, min_score, args.batch, args.auto_threshold, use_previous_decisions)
             total_processed += 1
             total_matches += matches
             total_skipped += skipped

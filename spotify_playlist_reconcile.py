@@ -603,10 +603,11 @@ def parse_playlist_file(file_path):
 
 # Removed - using converter's find_playlist_files instead
 
-def cleanup_spotify_playlists_to_match_local(sp, directory, user_id, similarity_threshold=None):
+def cleanup_spotify_playlists_to_match_local(sp, directory, user_id, similarity_threshold=None, playlist_files=None):
     """Clean up Spotify playlists to match local ones exactly (remove extra tracks)."""
-    # Find playlist files - use the converter's function which already handles text files
-    playlist_files = converter_find_playlist_files(directory)
+    # Use provided playlist files or find them
+    if playlist_files is None:
+        playlist_files = converter_find_playlist_files(directory)
     
     if not playlist_files:
         logger.info(f"No playlist files found in {directory}")
@@ -762,10 +763,11 @@ def remove_playlist_suffixes(sp, user_id):
     print(f"{Fore.WHITE}Playlists renamed: {renamed_count}")
     print(f"{Fore.GREEN}✅ Suffix removal completed successfully!")
 
-def delete_duplicate_spotify_playlists(sp, directory, user_id):
+def delete_duplicate_spotify_playlists(sp, directory, user_id, playlist_files=None):
     """Delete duplicate Spotify playlists that have the same name as local ones."""
-    # Find playlist files - the converter's find_playlist_files already handles text files
-    playlist_files = converter_find_playlist_files(directory)
+    # Use provided playlist files or find them
+    if playlist_files is None:
+        playlist_files = converter_find_playlist_files(directory)
     
     if not playlist_files:
         logger.info(f"No playlist files found in {directory}")
@@ -1020,12 +1022,12 @@ def main():
     # Handle different modes
     if args.cleanup_mode:
         # Cleanup mode - remove extra tracks
-        cleanup_spotify_playlists_to_match_local(sp, directory, user_id)
+        cleanup_spotify_playlists_to_match_local(sp, directory, user_id, playlist_files=playlist_files)
         return
     
     elif args.delete_duplicates_mode:
         # Delete duplicates mode
-        delete_duplicate_spotify_playlists(sp, directory, user_id)
+        delete_duplicate_spotify_playlists(sp, directory, user_id, playlist_files=playlist_files)
         return
     
     elif args.remove_suffixes_mode:

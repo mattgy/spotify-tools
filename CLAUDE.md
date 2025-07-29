@@ -61,6 +61,8 @@ All scripts can be run independently:
 - **NEW**: Incremental sync with content hashing
 - **NEW**: Parallel playlist processing for efficiency
 - **NEW**: Bulk track search with deduplication
+- **FIXED**: Auto-sync mode now includes text playlist files automatically
+- **FIXED**: Delete duplicates no longer prompts twice for text files
 
 ### Playlist Duplicate Scanner (Option 6) 
 - New standalone script for scanning user-created playlists

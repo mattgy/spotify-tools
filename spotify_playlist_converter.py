@@ -2807,9 +2807,8 @@ def main():
     
     # Find playlist files
     logger.info(f"Searching for playlist files in: {directory}")
-    # In auto-mode, don't prompt for text files
-    include_text = not args.auto_mode
-    playlist_files = find_playlist_files(directory, include_text_files=include_text)
+    # In auto-mode, include text files automatically without prompting
+    playlist_files = find_playlist_files(directory, include_text_files=True)
     
     if not playlist_files:
         logger.info(f"No playlist files found in {directory}")

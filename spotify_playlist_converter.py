@@ -32,6 +32,8 @@ import traceback
 from datetime import datetime, timedelta
 import colorama
 from colorama import Fore, Style
+import unicodedata
+from collections import defaultdict
 
 # Initialize colorama for cross-platform color support
 colorama.init(autoreset=True)
@@ -56,9 +58,35 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Constants
-CONFIDENCE_THRESHOLD = 80  # Minimum confidence score for automatic matching
+CONFIDENCE_THRESHOLD = 80  # Default minimum confidence score for automatic matching
 SCOPE = "playlist-read-private playlist-modify-private playlist-modify-public"
 SUPPORTED_EXTENSIONS = ['.m3u', '.m3u8', '.pls']
+
+# Common variations mapping for normalization
+COMMON_VARIATIONS = {
+    'feat.': 'featuring',
+    'ft.': 'featuring',
+    'feat': 'featuring',
+    'ft': 'featuring',
+    '&': 'and',
+    'vs.': 'versus',
+    'vs': 'versus',
+    'pt.': 'part',
+    'pt': 'part',
+    'vol.': 'volume',
+    'vol': 'volume',
+    'no.': 'number',
+    'no': 'number'
+}
+
+# Track number patterns to remove
+TRACK_NUMBER_PATTERNS = [
+    r'^\d+[\s\-\.\)]+',  # "01 ", "01-", "01.", "01)"
+    r'^\[\d+\]\s*',       # "[01] "
+    r'^\(\d+\)\s*',       # "(01) "
+    r'^Track\s*\d+[\s\-:]+',  # "Track 01 - "
+    r'^\d+\.\s*-\s*',     # "01. - "
+]
 
 def create_decision_cache_key(track_info, match_info):
     """Create a cache key for user decisions based on track and match info."""
@@ -73,24 +101,111 @@ def create_decision_cache_key(track_info, match_info):
     cache_key = "_".join(str(part) for part in key_parts if part)
     return f"user_decision_{hash(cache_key) % 1000000}"  # Use hash to keep key manageable
 
-def save_user_decision(track_info, match_info, decision):
-    """Save a user decision to cache."""
+def save_user_decision(track_info, match_info, decision, manual_search_used=False):
+    """Save a user decision to cache for learning."""
     cache_key = create_decision_cache_key(track_info, match_info)
     decision_data = {
         'decision': decision,
         'track_info': {
             'path': track_info.get('path', ''),
             'artist': track_info.get('artist', ''),
-            'title': track_info.get('title', '')
+            'title': track_info.get('title', ''),
+            'album': track_info.get('album', '')
         },
         'match_info': {
             'id': match_info.get('id', '') if match_info else '',
             'name': match_info.get('name', '') if match_info else '',
-            'artists': match_info.get('artists', []) if match_info else []
+            'artists': match_info.get('artists', []) if match_info else [],
+            'album': match_info.get('album', '') if match_info else '',
+            'score': match_info.get('score', 0) if match_info else 0
         },
+        'manual_search_used': manual_search_used,
         'timestamp': time.time()
     }
     save_to_cache(decision_data, cache_key, force_expire=False)
+    
+    # Also save to learning cache for pattern analysis
+    if decision == 'y' and match_info:
+        save_to_learning_cache(track_info, match_info, manual_search_used)
+
+def save_to_learning_cache(track_info, match_info, manual_search_used=False):
+    """Save successful matches to learning cache for pattern recognition."""
+    learning_key = "playlist_converter_learning_data"
+    
+    # Load existing learning data
+    learning_data = load_from_cache(learning_key, 365 * 24 * 60 * 60) or {'matches': [], 'patterns': {}}
+    
+    # Add new match
+    match_entry = {
+        'original_artist': track_info.get('artist', ''),
+        'original_title': track_info.get('title', ''),
+        'matched_artists': match_info.get('artists', []),
+        'matched_title': match_info.get('name', ''),
+        'score': match_info.get('score', 0),
+        'manual_search': manual_search_used,
+        'timestamp': time.time()
+    }
+    
+    learning_data['matches'].append(match_entry)
+    
+    # Keep only last 1000 matches
+    if len(learning_data['matches']) > 1000:
+        learning_data['matches'] = learning_data['matches'][-1000:]
+    
+    # Update patterns
+    update_learning_patterns(learning_data)
+    
+    # Save back to cache
+    save_to_cache(learning_data, learning_key)
+
+def update_learning_patterns(learning_data):
+    """Analyze matches to find common patterns."""
+    patterns = learning_data.get('patterns', {})
+    
+    # Analyze artist name variations
+    artist_variations = defaultdict(list)
+    for match in learning_data['matches']:
+        orig_artist = match['original_artist'].lower()
+        matched_artists = [a.lower() for a in match['matched_artists']]
+        
+        for matched_artist in matched_artists:
+            if orig_artist != matched_artist and fuzz.ratio(orig_artist, matched_artist) > 70:
+                artist_variations[orig_artist].append(matched_artist)
+    
+    # Find most common variations
+    patterns['artist_variations'] = {}
+    for orig, variations in artist_variations.items():
+        if variations:
+            # Count occurrences
+            variation_counts = defaultdict(int)
+            for var in variations:
+                variation_counts[var] += 1
+            
+            # Keep most common variation
+            most_common = max(variation_counts.items(), key=lambda x: x[1])
+            if most_common[1] >= 2:  # At least 2 occurrences
+                patterns['artist_variations'][orig] = most_common[0]
+    
+    learning_data['patterns'] = patterns
+
+def apply_learning_patterns(artist, title):
+    """Apply learned patterns to improve matching."""
+    learning_key = "playlist_converter_learning_data"
+    learning_data = load_from_cache(learning_key, 365 * 24 * 60 * 60)
+    
+    if not learning_data:
+        return artist, title
+    
+    patterns = learning_data.get('patterns', {})
+    artist_variations = patterns.get('artist_variations', {})
+    
+    # Apply artist variations
+    artist_lower = artist.lower() if artist else ""
+    if artist_lower in artist_variations:
+        logger.debug(f"Applying learned artist variation: {artist} -> {artist_variations[artist_lower]}")
+        return artist_variations[artist_lower], title
+    
+    return artist, title
 
 def get_cached_decision(track_info, match_info):
     """Get a previously cached user decision."""
@@ -396,16 +511,19 @@ def extract_track_info_from_path(path):
 def clean_metadata_field(text):
     """Clean up metadata fields by removing common prefixes, brackets, etc."""
     # Remove track numbers from the beginning
-    text = re.sub(r'^(\d+[\s\.\-_]+)', '', text)
+    text = remove_track_numbers(text)
     
     # Remove common file extensions
-    text = re.sub(r'\.mp3$|\.flac$|\.wav$|\.m4a$|\.ogg$', '', text)
+    text = re.sub(r'\.mp3$|\.flac$|\.wav$|\.m4a$|\.ogg$|\.wma$|\.aac$|\.opus$', '', text, flags=re.IGNORECASE)
     
     # Remove brackets and their contents if they appear to be technical info
-    text = re.sub(r'\([^\)]*kbps[^\)]*\)|\[[^\]]*kbps[^\]]*\]', '', text)
+    text = re.sub(r'\([^\)]*(?:kbps|khz|kHz|mp3|flac|wav)[^\)]*\)|\[[^\]]*(?:kbps|khz|kHz|mp3|flac|wav)[^\]]*\]', '', text, flags=re.IGNORECASE)
+    
+    # Remove CD rip info
+    text = re.sub(r'\[?(?:EAC|FLAC|Rip|CDRip|CD\s*Rip)\]?', '', text, flags=re.IGNORECASE)
     
     # Clean up whitespace
-    text = text.strip()
+    text = ' '.join(text.split())
     
     return text
 
@@ -460,8 +578,91 @@ def parse_pls_playlist(file_path):
     
     return tracks
 
+def is_text_playlist_file(file_path):
+    """Check if a file contains playlist data in text format (artist - song pairs)."""
+    try:
+        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+            lines = f.readlines()[:10]  # Check first 10 lines
+        
+        if len(lines) < 2:
+            return False
+            
+        # Look for patterns like "Artist - Song" or "Artist: Song"
+        valid_lines = 0
+        for line in lines:
+            line = line.strip()
+            if not line:  # Skip empty lines
+                continue
+            # Check for common playlist patterns
+            if (' - ' in line or ' – ' in line or ' — ' in line or 
+                ': ' in line or ' :: ' in line or '\t' in line):
+                valid_lines += 1
+            elif len(line.split()) >= 2:  # At least two words, could be artist song
+                valid_lines += 1
+        
+        # If at least 50% of non-empty lines look like playlist entries
+        non_empty_lines = [l for l in lines if l.strip()]
+        return valid_lines >= len(non_empty_lines) * 0.5 if non_empty_lines else False
+    except:
+        return False
+
+def parse_text_playlist_file(file_path):
+    """Parse a text file containing artist/song pairs."""
+    tracks = []
+    
+    try:
+        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+            lines = f.readlines()
+        
+        for line in lines:
+            line = line.strip()
+            if not line:  # Skip empty lines
+                continue
+            
+            # Store original line for display
+            original_line = line
+            
+            # Try different separator patterns
+            separators = [' - ', ' – ', ' — ', ' : ', ' :: ', '\t']
+            artist = None
+            title = None
+            
+            for sep in separators:
+                if sep in line:
+                    parts = line.split(sep, 1)
+                    if len(parts) == 2:
+                        artist = parts[0].strip()
+                        title = parts[1].strip()
+                        break
+            
+            # If no separator found, assume space-separated (artist first words, song rest)
+            if not artist and len(line.split()) >= 2:
+                words = line.split()
+                # Simple heuristic: first 1-2 words are artist, rest is title
+                if len(words) > 4:
+                    artist = ' '.join(words[:2])
+                    title = ' '.join(words[2:])
+                else:
+                    artist = words[0]
+                    title = ' '.join(words[1:])
+            
+            if artist and title:
+                tracks.append({
+                    'artist': artist,
+                    'title': title,
+                    'album': None,
+                    'duration': None,
+                    'path': file_path,
+                    'original_line': original_line
+                })
+    
+    except Exception as e:
+        logger.error(f"Error parsing text playlist file {file_path}: {e}")
+    
+    return tracks
+
 def parse_playlist_file(file_path):
-    """Parse a playlist file based on its extension."""
+    """Parse a playlist file based on its extension or content."""
     ext = os.path.splitext(file_path)[1].lower()
     
     if ext in ['.m3u', '.m3u8']:
@@ -469,8 +670,13 @@ def parse_playlist_file(file_path):
     elif ext == '.pls':
         return parse_pls_playlist(file_path)
     else:
-        logger.warning(f"Unsupported playlist format: {ext}")
-        return []
+        # Check if it's a text playlist file
+        if is_text_playlist_file(file_path):
+            logger.info(f"Detected text playlist file: {file_path}")
+            return parse_text_playlist_file(file_path)
+        else:
+            logger.warning(f"Unsupported playlist format: {ext}")
+            return []
 
 def normalize_string(s):
     """Normalize string for better matching."""
@@ -484,20 +690,116 @@ def normalize_string(s):
     words = [w for w in words if w not in common_words]
     return ' '.join(words).strip()
 
+def normalize_for_variations(text):
+    """Apply common variations normalization."""
+    if not text:
+        return ""
+    
+    # Convert to lowercase
+    text = text.lower()
+    
+    # Apply common variations
+    for variant, normalized in COMMON_VARIATIONS.items():
+        # Use word boundaries to avoid partial replacements
+        pattern = r'\b' + re.escape(variant) + r'\b'
+        text = re.sub(pattern, normalized, text)
+    
+    return text
+
+def remove_track_numbers(text):
+    """Remove common track number patterns from text."""
+    for pattern in TRACK_NUMBER_PATTERNS:
+        text = re.sub(pattern, '', text, flags=re.IGNORECASE)
+    return text.strip()
+
+def strip_remaster_tags(text):
+    """Remove remaster tags but keep remix tags."""
+    # Remove remaster tags but keep remix
+    remaster_patterns = [
+        r'\s*[\(\[]\s*remaster(?:ed)?\s*(?:\d{4})?\s*[\)\]]\s*',
+        r'\s*-\s*remaster(?:ed)?\s*(?:\d{4})?\s*$',
+        r'\s*[\(\[]\s*\d{4}\s*remaster\s*[\)\]]\s*',
+        r'\s*[\(\[]\s*anniversary\s*edition\s*[\)\]]\s*',
+        r'\s*[\(\[]\s*deluxe\s*edition\s*[\)\]]\s*',
+        r'\s*[\(\[]\s*expanded\s*edition\s*[\)\]]\s*'
+    ]
+    
+    for pattern in remaster_patterns:
+        text = re.sub(pattern, '', text, flags=re.IGNORECASE)
+    
+    return text.strip()
+
+def phonetic_match(s1, s2, threshold=85):
+    """Check if two strings are phonetically similar."""
+    try:
+        import metaphone
+        # Get primary metaphone codes
+        meta1 = metaphone.doublemetaphone(s1)[0]
+        meta2 = metaphone.doublemetaphone(s2)[0]
+        
+        if meta1 and meta2:
+            # If metaphones match exactly, high confidence
+            if meta1 == meta2:
+                return 95
+            # Otherwise use fuzzy matching on metaphones
+            return fuzz.ratio(meta1, meta2)
+    except ImportError:
+        # Fallback to soundex-like simple phonetic comparison
+        # Remove vowels except first letter and compare
+        def simple_phonetic(s):
+            if not s:
+                return ""
+            s = s.lower()
+            # Keep first letter, remove subsequent vowels
+            result = s[0]
+            for c in s[1:]:
+                if c not in 'aeiou':
+                    result += c
+            return result
+        
+        p1 = simple_phonetic(s1)
+        p2 = simple_phonetic(s2)
+        
+        if p1 == p2:
+            return 90
+        return fuzz.ratio(p1, p2)
+
 def calculate_match_score(search_artist, search_title, result_artist, result_title, result_album=""):
     """Calculate a comprehensive match score between search terms and result."""
-    # Normalize all strings
-    norm_search_artist = normalize_string(search_artist)
-    norm_search_title = normalize_string(search_title)
-    norm_result_artist = normalize_string(result_artist)
-    norm_result_title = normalize_string(result_title)
+    # First apply variations normalization
+    search_artist_var = normalize_for_variations(search_artist)
+    search_title_var = normalize_for_variations(search_title)
+    result_artist_var = normalize_for_variations(result_artist)
+    result_title_var = normalize_for_variations(result_title)
+    
+    # Strip remaster tags for comparison
+    search_title_clean = strip_remaster_tags(search_title_var)
+    result_title_clean = strip_remaster_tags(result_title_var)
+    
+    # Then normalize for comparison
+    norm_search_artist = normalize_string(search_artist_var)
+    norm_search_title = normalize_string(search_title_clean)
+    norm_result_artist = normalize_string(result_artist_var)
+    norm_result_title = normalize_string(result_title_clean)
     norm_result_album = normalize_string(result_album)
     
     # Artist matching (40% weight)
     artist_score = fuzz.ratio(norm_search_artist, norm_result_artist)
     
+    # If artist score is low, try phonetic matching
+    if artist_score < 70:
+        phonetic_artist_score = phonetic_match(search_artist, result_artist)
+        if phonetic_artist_score > artist_score:
+            artist_score = (artist_score + phonetic_artist_score) / 2
+    
     # Title matching (50% weight)
     title_score = fuzz.ratio(norm_search_title, norm_result_title)
+    
+    # If title score is low, try phonetic matching
+    if title_score < 70:
+        phonetic_title_score = phonetic_match(search_title_clean, result_title_clean)
+        if phonetic_title_score > title_score:
+            title_score = (title_score + phonetic_title_score) / 2
     
     # Bonus points for partial matches (10% weight)
     bonus_score = 0
@@ -506,11 +808,20 @@ def calculate_match_score(search_artist, search_title, result_artist, result_tit
     if norm_search_title in norm_result_title or norm_result_title in norm_search_title:
         bonus_score += 30
     
-    # Penalty for very different string lengths
+    # Special handling for remix vs non-remix
+    search_is_remix = 'remix' in search_title.lower()
+    result_is_remix = 'remix' in result_title.lower()
+    
+    # Penalty if remix status doesn't match
+    if search_is_remix != result_is_remix:
+        bonus_score -= 15
+    
+    # Penalty for very different string lengths (unless it's due to remaster tags)
     length_penalty = 0
-    title_len_diff = abs(len(norm_search_title) - len(norm_result_title))
-    if title_len_diff > 10:
-        length_penalty = min(20, title_len_diff)
+    if not ('remaster' in result_title.lower() and 'remaster' not in search_title.lower()):
+        title_len_diff = abs(len(norm_search_title) - len(norm_result_title))
+        if title_len_diff > 15:  # Increased tolerance for length differences
+            length_penalty = min(15, title_len_diff - 10)  # Reduced penalty
     
     # Calculate weighted score
     total_score = (artist_score * 0.4 + title_score * 0.5 + bonus_score * 0.1) - length_penalty
@@ -554,7 +865,23 @@ def search_track_on_spotify(sp, artist, title, album=None):
         return None
     
     # Create a cache key based on artist, album and title
-    cache_key = f"track_search_{artist}_{album}_{title}".replace(" ", "_").lower()
+    # Clean the key components first
+    clean_artist = normalize_for_variations(artist) if artist else "none"
+    clean_title = normalize_for_variations(title) if title else "none"
+    clean_album = normalize_for_variations(album) if album else "none"
+    
+    # Create cache key
+    cache_key = f"track_search_{clean_artist}_{clean_album}_{clean_title}".replace(" ", "_").lower()
+    
+    # Also check for variation cache keys (e.g., with/without "feat." vs "featuring")
+    variation_keys = []
+    if artist and ('feat' in artist.lower() or 'ft' in artist.lower() or '&' in artist):
+        # Create alternate keys with variations
+        for variant, normalized in COMMON_VARIATIONS.items():
+            if variant in artist.lower():
+                alt_artist = artist.lower().replace(variant, normalized)
+                alt_key = f"track_search_{alt_artist}_{clean_album}_{clean_title}".replace(" ", "_").lower()
+                variation_keys.append(alt_key)
     
     # Try to load from cache first
     cached_result = load_from_cache(cache_key, CACHE_EXPIRATION['medium'])
@@ -564,8 +891,8 @@ def search_track_on_spotify(sp, artist, title, album=None):
     
     # Clean up the title and artist
     # Remove common file extensions and numbering
-    title = re.sub(r'\.mp3$|\.flac$|\.wav$|\.m4a$|\.ogg$', '', title)
-    title = re.sub(r'^(\d+[\s\.\-_]+)', '', title)  # Remove leading numbers like "01 - " or "1. "
+    title = re.sub(r'\.mp3$|\.flac$|\.wav$|\.m4a$|\.ogg$|\.wma$|\.aac$|\.opus$', '', title, flags=re.IGNORECASE)
+    title = remove_track_numbers(title)
     
     # Handle cases where artist might be in the title
     if not artist and " - " in title:
@@ -983,6 +1310,52 @@ def create_or_update_spotify_playlist(sp, playlist_name, track_uris, user_id):
         
         return playlist['id'], len(track_uris)
 
+def manual_search_flow(sp, track):
+    """Handle manual search flow for a track."""
+    print(f"\nManual search for: {track.get('artist', '')} - {track.get('title', '')}")
+    
+    while True:
+        search_query = input("\nEnter search query (artist - title) or 'skip' to skip: ").strip()
+        
+        if search_query.lower() == 'skip':
+            return None
+        
+        if ' - ' in search_query:
+            parts = search_query.split(' - ', 1)
+            search_artist = parts[0].strip()
+            search_title = parts[1].strip()
+        else:
+            search_artist = ""
+            search_title = search_query
+        
+        search_album = input("Album (optional, press Enter to skip): ").strip() or None
+        
+        match = search_track_on_spotify(sp, search_artist, search_title, search_album)
+        
+        if match:
+            print(f"\nFound: {', '.join(match['artists'])} - {match['name']}")
+            print(f"Album: {match['album']} (Score: {match['score']:.1f})")
+            
+            while True:
+                confirm = input("Accept? (y/n/s to search again): ").lower().strip()
+                if confirm == 'y':
+                    return match
+                elif confirm == 'n':
+                    skip_choice = input("Skip this track entirely? (y/n): ").lower().strip()
+                    if skip_choice == 'y':
+                        return None
+                    else:
+                        break  # Go back to search
+                elif confirm == 's':
+                    break  # Go back to search
+                else:
+                    print("Please enter y, n, or s")
+        else:
+            print("No matches found.")
+            retry = input("Try again? (y/n): ").lower().strip()
+            if retry != 'y':
+                return None
+
 def process_tracks_batch(sp, tracks_batch, confidence_threshold, batch_mode=False, auto_threshold=85):
     """Process a batch of tracks efficiently with minimal user interaction."""
     results = []
@@ -1050,24 +1423,18 @@ def process_playlist_file(sp, file_path, user_id, confidence_threshold, min_scor
                     choice = input("Accept this match? (y/n/s - y:yes, n:no, s:search manually): ").lower().strip()
                     if choice == 'y':
                         spotify_tracks.append(match)
+                        save_user_decision(track, match, 'y')
                     elif choice == 's':
-                        # Manual search option
-                        search_artist = input("Enter artist name: ").strip()
-                        search_title = input("Enter song title: ").strip()
-                        search_album = input("Enter album (optional): ").strip() or None
-                        
-                        manual_match = search_track_on_spotify(sp, search_artist, search_title, search_album)
+                        # Manual search option with continuous searching
+                        manual_match = manual_search_flow(sp, track)
                         if manual_match:
-                            print(f"Found: {', '.join(manual_match['artists'])} - {manual_match['name']} (Score: {manual_match['score']:.1f})")
-                            if input("Accept this match? (y/n): ").lower().strip() == 'y':
-                                spotify_tracks.append(manual_match)
-                            else:
-                                skipped_tracks.append(track)
+                            spotify_tracks.append(manual_match)
+                            save_user_decision(track, manual_match, 'y', manual_search_used=True)
                         else:
-                            print("No matches found.")
                             skipped_tracks.append(track)
                     else:
                         skipped_tracks.append(track)
+                        save_user_decision(track, match, 'n')
                 else:
                     skipped_tracks.append(result['track'])
                     
@@ -1154,7 +1521,7 @@ def process_playlist_file(sp, file_path, user_id, confidence_threshold, min_scor
                                     if manual_confirm == 'y':
                                         spotify_tracks.append(manual_match)
                                         # Save the user's decision for the manual match
-                                        save_user_decision(track, manual_match, 'y')
+                                        save_user_decision(track, manual_match, 'y', manual_search_used=True)
                                         break
                                     elif manual_confirm == 'n':
                                         skipped_tracks.append(track)
@@ -1272,15 +1639,458 @@ def process_playlist_file(sp, file_path, user_id, confidence_threshold, min_scor
     
     return len(spotify_tracks), len(skipped_tracks)
 
-def find_playlist_files(directory):
+def view_all_text_files_paginated(files, page_size=20):
+    """View all text files with pagination."""
+    total_files = len(files)
+    total_pages = (total_files + page_size - 1) // page_size
+    current_page = 0
+    
+    while True:
+        start_idx = current_page * page_size
+        end_idx = min(start_idx + page_size, total_files)
+        
+        print(f"\n{Fore.CYAN}Page {current_page + 1}/{total_pages} (showing files {start_idx + 1}-{end_idx} of {total_files}):")
+        print(f"{Fore.CYAN}{'-' * 60}")
+        
+        for i in range(start_idx, end_idx):
+            # Show relative path from current directory for readability
+            try:
+                rel_path = os.path.relpath(files[i])
+            except:
+                rel_path = files[i]
+            print(f"{i + 1:3d}. {rel_path}")
+        
+        print(f"{Fore.CYAN}{'-' * 60}")
+        
+        # Navigation options
+        options = []
+        if current_page > 0:
+            options.append("p=previous")
+        if current_page < total_pages - 1:
+            options.append("n=next")
+        options.append("q=quit")
+        
+        nav = input(f"\n{Fore.CYAN}Navigation ({', '.join(options)}): ").lower().strip()
+        
+        if nav == 'p' and current_page > 0:
+            current_page -= 1
+        elif nav == 'n' and current_page < total_pages - 1:
+            current_page += 1
+        elif nav == 'q':
+            break
+
+def select_specific_text_files(files):
+    """Allow user to select specific files from the list."""
+    print(f"\n{Fore.CYAN}Select files to include:")
+    print(f"{Fore.WHITE}Enter file numbers separated by commas (e.g., 1,3,5-10,15)")
+    print(f"{Fore.WHITE}Or 'view' to see all files with pagination")
+    
+    # Show first 20 files
+    for i, file_path in enumerate(files[:20], 1):
+        try:
+            rel_path = os.path.relpath(file_path)
+        except:
+            rel_path = file_path
+        print(f"{i:3d}. {rel_path}")
+    
+    if len(files) > 20:
+        print(f"\n{Fore.YELLOW}... and {len(files) - 20} more files")
+        print(f"{Fore.YELLOW}Type 'view' to see all files")
+    
+    while True:
+        selection = input(f"\n{Fore.CYAN}Enter selection: ").strip()
+        
+        if selection.lower() == 'view':
+            view_all_text_files_paginated(files)
+            continue
+        
+        if not selection:
+            return []
+        
+        try:
+            selected_indices = parse_number_ranges(selection, len(files))
+            selected_files = [files[i-1] for i in selected_indices if 1 <= i <= len(files)]
+            
+            print(f"\n{Fore.GREEN}Selected {len(selected_files)} files:")
+            for f in selected_files[:5]:
+                print(f"  • {os.path.basename(f)}")
+            if len(selected_files) > 5:
+                print(f"  ... and {len(selected_files) - 5} more")
+            
+            confirm = input(f"\n{Fore.CYAN}Confirm selection? (y/n): ").lower().strip()
+            if confirm == 'y':
+                return selected_files
+            
+        except ValueError as e:
+            print(f"{Fore.RED}Invalid selection: {e}")
+
+def parse_number_ranges(selection, max_value):
+    """Parse comma-separated numbers and ranges like '1,3,5-10,15'."""
+    indices = set()
+    
+    for part in selection.split(','):
+        part = part.strip()
+        if not part:
+            continue
+            
+        if '-' in part:
+            # Range
+            try:
+                start, end = part.split('-', 1)
+                start = int(start.strip())
+                end = int(end.strip())
+                
+                if start < 1 or end > max_value or start > end:
+                    raise ValueError(f"Invalid range: {part}")
+                
+                indices.update(range(start, end + 1))
+            except ValueError:
+                raise ValueError(f"Invalid range format: {part}")
+        else:
+            # Single number
+            try:
+                num = int(part)
+                if num < 1 or num > max_value:
+                    raise ValueError(f"Number out of range: {num}")
+                indices.add(num)
+            except ValueError:
+                raise ValueError(f"Invalid number: {part}")
+    
+    return sorted(indices)
+
+def find_playlist_files(directory, include_text_files=True):
     """Find all playlist files in the given directory and its subdirectories."""
     playlist_files = []
     
+    # First get standard playlist files
     for ext in SUPPORTED_EXTENSIONS:
         pattern = os.path.join(directory, f"**/*{ext}")
         playlist_files.extend(glob.glob(pattern, recursive=True))
     
+    if include_text_files:
+        # Also check for text files that might be playlists
+        all_files = glob.glob(os.path.join(directory, "**/*"), recursive=True)
+        
+        # Extensions to skip
+        skip_extensions = {
+            '.py', '.pyc', '.pyo', '.js', '.json', '.xml', '.yaml', '.yml',
+            '.jpg', '.jpeg', '.png', '.gif', '.mp3', '.mp4', '.wav', '.flac',
+            '.exe', '.dll', '.so', '.dylib', '.zip', '.tar', '.gz',
+            '.pdf', '.doc', '.docx', '.db', '.log', '.bak', '.tmp'
+        }
+        
+        potential_text_playlists = []
+        for file_path in all_files:
+            if os.path.isfile(file_path):
+                ext = os.path.splitext(file_path)[1].lower()
+                basename = os.path.basename(file_path)
+                
+                # Skip if already in playlist files
+                if file_path in playlist_files:
+                    continue
+                    
+                # Skip known non-playlist extensions
+                if ext in skip_extensions:
+                    continue
+                    
+                # Skip hidden files
+                if basename.startswith('.'):
+                    continue
+                    
+                # Skip files in certain directories
+                if any(part in file_path.split(os.sep) for part in ['.git', '__pycache__', 'node_modules', '.venv', 'venv']):
+                    continue
+                
+                # Check if it could be a text playlist
+                if is_text_playlist_file(file_path):
+                    potential_text_playlists.append(file_path)
+        
+        if potential_text_playlists:
+            print(f"\n{Fore.YELLOW}Found {len(potential_text_playlists)} potential text playlist files:")
+            
+            # Show options
+            print(f"\n{Fore.CYAN}Options:")
+            print(f"1. Include all text files")
+            print(f"2. Select specific files") 
+            print(f"3. View all files (paginated)")
+            print(f"4. Skip all text files")
+            
+            choice = input(f"\n{Fore.CYAN}Enter your choice (1-4): ").strip()
+            
+            if choice == '1':
+                # Include all
+                playlist_files.extend(potential_text_playlists)
+                print(f"{Fore.GREEN}✅ Added all {len(potential_text_playlists)} text files")
+                
+            elif choice == '2':
+                # Select specific files
+                selected_files = select_specific_text_files(potential_text_playlists)
+                if selected_files:
+                    playlist_files.extend(selected_files)
+                    print(f"{Fore.GREEN}✅ Added {len(selected_files)} selected text files")
+                    
+            elif choice == '3':
+                # View all with pagination, then decide
+                view_all_text_files_paginated(potential_text_playlists)
+                
+                # After viewing, ask again
+                print(f"\n{Fore.CYAN}After viewing all files:")
+                print(f"1. Include all text files")
+                print(f"2. Select specific files")
+                print(f"3. Skip all text files")
+                
+                view_choice = input(f"\n{Fore.CYAN}Enter your choice (1-3): ").strip()
+                
+                if view_choice == '1':
+                    playlist_files.extend(potential_text_playlists)
+                    print(f"{Fore.GREEN}✅ Added all {len(potential_text_playlists)} text files")
+                elif view_choice == '2':
+                    selected_files = select_specific_text_files(potential_text_playlists)
+                    if selected_files:
+                        playlist_files.extend(selected_files)
+                        print(f"{Fore.GREEN}✅ Added {len(selected_files)} selected text files")
+                        
+            # choice '4' or any other choice skips the text files
+    
     return playlist_files
+
+def clear_processed_playlist_cache():
+    """Clear all processed playlist cache entries for the converter."""
+    from cache_utils import list_caches, clear_cache
+    
+    caches = list_caches()
+    converter_caches = [c for c in caches if c['name'].startswith('user_decision_') or 
+                       c['name'].startswith('playlist_processed_')]
+    
+    if not converter_caches:
+        print(f"{Fore.YELLOW}No converter cache entries found.")
+        return
+    
+    print(f"{Fore.CYAN}Found {len(converter_caches)} converter cache entries.")
+    for cache in converter_caches:
+        clear_cache(cache['name'])
+    print(f"{Fore.GREEN}✅ Cleared {len(converter_caches)} converter cache entries.")
+
+def process_playlist_file_auto_mode(sp, file_path, user_id, auto_threshold=85):
+    """Process a playlist file in fully autonomous mode - no user interaction."""
+    logger.info(f"[AUTO] Processing playlist: {file_path}")
+    
+    # Extract playlist name from file name
+    playlist_name = os.path.splitext(os.path.basename(file_path))[0]
+    
+    # Parse the playlist file
+    tracks = parse_playlist_file(file_path)
+    
+    if not tracks:
+        logger.warning(f"[AUTO] No tracks found in playlist: {file_path}")
+        return 0, 0, 0
+    
+    logger.info(f"[AUTO] Found {len(tracks)} tracks in playlist '{playlist_name}'")
+    
+    # Search for tracks on Spotify with learning patterns
+    spotify_tracks = []
+    skipped_tracks = []
+    
+    for track in tracks:
+        # Apply learning patterns first
+        learned_artist, learned_title = apply_learning_patterns(track['artist'], track['title'])
+        
+        # Search with learned patterns
+        match = search_track_on_spotify(sp, learned_artist, learned_title, track.get('album'))
+        
+        # If no match with learned patterns, try original
+        if not match and (learned_artist != track['artist'] or learned_title != track['title']):
+            match = search_track_on_spotify(sp, track['artist'], track['title'], track.get('album'))
+        
+        if match and match['score'] >= auto_threshold:
+            spotify_tracks.append(match)
+            # Save successful match for learning
+            save_user_decision(track, match, 'y')
+        else:
+            skipped_tracks.append(track)
+    
+    if not spotify_tracks:
+        logger.warning(f"[AUTO] No tracks matched above threshold {auto_threshold}. Skipping playlist.")
+        return 0, 0, len(tracks)
+    
+    # Create or update Spotify playlist WITHOUT user interaction
+    track_uris = [track['uri'] for track in spotify_tracks]
+    
+    # Get user playlists to check for existing ones
+    user_playlists = get_user_playlists(sp, user_id)
+    
+    # Find exact match only (no similar name prompting in auto mode)
+    existing_playlist = None
+    for playlist in user_playlists:
+        if playlist['name'] == playlist_name:
+            existing_playlist = playlist
+            break
+    
+    if existing_playlist:
+        # Update existing playlist
+        playlist_id = existing_playlist['id']
+        existing_tracks = get_playlist_tracks(sp, playlist_id)
+        tracks_to_add = [uri for uri in track_uris if uri not in existing_tracks]
+        
+        if tracks_to_add:
+            # Add tracks in batches
+            for i in range(0, len(tracks_to_add), 100):
+                batch = tracks_to_add[i:i+100]
+                sp.playlist_add_items(playlist_id, batch)
+            logger.info(f"[AUTO] ✅ Added {len(tracks_to_add)} new tracks to existing playlist '{playlist_name}'")
+        else:
+            logger.info(f"[AUTO] ✅ Playlist '{playlist_name}' already up to date")
+        
+        return len(spotify_tracks), len(skipped_tracks), len(tracks_to_add)
+    else:
+        # Create new playlist
+        playlist = sp.user_playlist_create(
+            user=user_id,
+            name=playlist_name,
+            public=False,
+            description=f"Auto-created from {os.path.basename(file_path)}"
+        )
+        
+        # Add tracks in batches
+        for i in range(0, len(track_uris), 100):
+            batch = track_uris[i:i+100]
+            sp.playlist_add_items(playlist['id'], batch)
+        
+        logger.info(f"[AUTO] ✅ Created new playlist '{playlist_name}' with {len(track_uris)} tracks")
+        return len(spotify_tracks), len(skipped_tracks), len(track_uris)
+
+def auto_create_or_update_playlist(sp, playlist_name, track_uris, user_id):
+    """Create or update playlist in auto mode without user prompts."""
+    # Get user playlists
+    user_playlists = get_user_playlists(sp, user_id)
+    
+    # Find exact match only
+    existing_playlist = None
+    for playlist in user_playlists:
+        if playlist['name'] == playlist_name:
+            existing_playlist = playlist
+            break
+    
+    if existing_playlist:
+        # Update existing playlist
+        playlist_id = existing_playlist['id']
+        existing_tracks = get_playlist_tracks(sp, playlist_id)
+        tracks_to_add = [uri for uri in track_uris if uri not in existing_tracks]
+        
+        if tracks_to_add:
+            # Add tracks in batches
+            for i in range(0, len(tracks_to_add), 100):
+                batch = tracks_to_add[i:i+100]
+                sp.playlist_add_items(playlist_id, batch)
+            
+            # Update cache
+            cache_key = f"playlist_tracks_{playlist_id}"
+            save_to_cache(existing_tracks + tracks_to_add, cache_key)
+            
+            return len(tracks_to_add)
+        return 0
+    else:
+        # Create new playlist
+        playlist = sp.user_playlist_create(
+            user=user_id,
+            name=playlist_name,
+            public=False,
+            description=f"Auto-created by Spotify Playlist Converter"
+        )
+        
+        # Add tracks in batches
+        for i in range(0, len(track_uris), 100):
+            batch = track_uris[i:i+100]
+            sp.playlist_add_items(playlist['id'], batch)
+        
+        # Update caches
+        cache_key = f"user_playlists_{user_id}"
+        current_playlists = get_user_playlists(sp, user_id)
+        current_playlists.append(playlist)
+        save_to_cache(current_playlists, cache_key)
+        
+        cache_key = f"playlist_tracks_{playlist['id']}"
+        save_to_cache(track_uris, cache_key)
+        
+        return len(track_uris)
+
+def find_missing_tracks_in_playlists(sp, file_path, user_id, suggest_threshold=70):
+    """Find tracks missing from Spotify playlists and suggest additions."""
+    playlist_name = os.path.splitext(os.path.basename(file_path))[0]
+    
+    # Parse local playlist
+    local_tracks = parse_playlist_file(file_path)
+    if not local_tracks:
+        return
+    
+    # Find matching Spotify playlist
+    user_playlists = get_user_playlists(sp, user_id)
+    spotify_playlist = None
+    
+    for playlist in user_playlists:
+        if playlist['name'] == playlist_name:
+            spotify_playlist = playlist
+            break
+    
+    if not spotify_playlist:
+        print(f"\n{Fore.YELLOW}No Spotify playlist found matching: {playlist_name}")
+        print(f"Local playlist has {len(local_tracks)} tracks that could be added.")
+        return
+    
+    # Get existing tracks in Spotify playlist
+    existing_track_uris = get_playlist_tracks(sp, spotify_playlist['id'])
+    existing_track_ids = set(uri.split(':')[-1] for uri in existing_track_uris)
+    
+    print(f"\n{Fore.CYAN}Analyzing playlist: {playlist_name}")
+    print(f"Local tracks: {len(local_tracks)}, Spotify tracks: {len(existing_track_uris)}")
+    
+    # Find missing tracks
+    missing_tracks = []
+    low_confidence_tracks = []
+    
+    for track in local_tracks:
+        match = search_track_on_spotify(sp, track['artist'], track['title'], track.get('album'))
+        
+        if match:
+            if match['id'] not in existing_track_ids:
+                if match['score'] >= suggest_threshold:
+                    missing_tracks.append((track, match))
+                else:
+                    low_confidence_tracks.append((track, match))
+    
+    if missing_tracks:
+        print(f"\n{Fore.GREEN}Found {len(missing_tracks)} missing tracks with confidence >= {suggest_threshold}:")
+        for i, (local, match) in enumerate(missing_tracks[:10], 1):
+            artists = ', '.join(match['artists'])
+            print(f"{i}. {artists} - {match['name']} (Score: {match['score']:.1f})")
+        if len(missing_tracks) > 10:
+            print(f"... and {len(missing_tracks) - 10} more")
+        
+        add_all = input(f"\n{Fore.CYAN}Add all {len(missing_tracks)} missing tracks? (y/n): ").lower().strip()
+        if add_all == 'y':
+            track_uris = [match['uri'] for _, match in missing_tracks]
+            for i in range(0, len(track_uris), 100):
+                batch = track_uris[i:i+100]
+                sp.playlist_add_items(spotify_playlist['id'], batch)
+            print(f"{Fore.GREEN}✅ Added {len(track_uris)} tracks to playlist")
+    else:
+        print(f"{Fore.GREEN}✅ No missing tracks found above threshold {suggest_threshold}")
+    
+    if low_confidence_tracks:
+        print(f"\n{Fore.YELLOW}Found {len(low_confidence_tracks)} potential matches below threshold:")
+        review = input("Review low confidence matches? (y/n): ").lower().strip()
+        if review == 'y':
+            added_count = 0
+            for local, match in low_confidence_tracks:
+                artists = ', '.join(match['artists'])
+                print(f"\nLocal: {local['artist']} - {local['title']}")
+                print(f"Match: {artists} - {match['name']} (Score: {match['score']:.1f})")
+                add = input("Add this track? (y/n): ").lower().strip()
+                if add == 'y':
+                    sp.playlist_add_items(spotify_playlist['id'], [match['uri']])
+                    added_count += 1
+            if added_count > 0:
+                print(f"{Fore.GREEN}✅ Added {added_count} additional tracks")
 
 def main():
     """Main function to run the script."""
@@ -1293,12 +2103,24 @@ def main():
     parser.add_argument("--batch", action="store_true", help="Batch mode: auto-accept high confidence matches")
     parser.add_argument("--auto-threshold", type=int, default=85, help="Auto-accept threshold for batch mode (default: 85)")
     parser.add_argument("--max-playlists", type=int, help="Maximum number of playlists to process")
+    
+    # New mode arguments
+    parser.add_argument("--auto-mode", action="store_true", help="Fully autonomous mode - no user interaction")
+    parser.add_argument("--missing-tracks-mode", action="store_true", help="Find and suggest missing tracks in playlists")
+    parser.add_argument("--suggest-threshold", type=int, default=70, help="Threshold for suggesting missing tracks (default: 70)")
+    parser.add_argument("--clear-cache", action="store_true", help="Clear processed playlist cache")
+    
     args = parser.parse_args()
     
     # Set up logging level
     if args.debug:
         logger.setLevel(logging.DEBUG)
         logger.debug("Debug logging enabled")
+    
+    # Handle cache clearing
+    if args.clear_cache:
+        clear_processed_playlist_cache()
+        return
     
     # Set minimum score
     min_score = args.min_score
@@ -1312,7 +2134,9 @@ def main():
     
     # Find playlist files
     logger.info(f"Searching for playlist files in: {directory}")
-    playlist_files = find_playlist_files(directory)
+    # In auto-mode, don't prompt for text files
+    include_text = not args.auto_mode
+    playlist_files = find_playlist_files(directory, include_text_files=include_text)
     
     if not playlist_files:
         logger.info(f"No playlist files found in {directory}")
@@ -1325,7 +2149,167 @@ def main():
         playlist_files = playlist_files[:args.max_playlists]
         logger.info(f"Limited to {len(playlist_files)} playlists")
     
-    # Interactive threshold selection (only if not in command line batch mode)
+    # Authenticate with Spotify
+    logger.info("Authenticating with Spotify...")
+    sp = authenticate_spotify()
+    
+    if not sp:
+        logger.error("Failed to authenticate with Spotify")
+        sys.exit(1)
+    
+    # Get user ID
+    user_info = sp.current_user()
+    user_id = user_info['id']
+    
+    # Handle different modes
+    if args.auto_mode:
+        # Fully autonomous mode
+        print(f"\n{Fore.CYAN}{'='*60}")
+        print(f"{Fore.CYAN}AUTO-SYNC MODE - FULLY AUTONOMOUS")
+        print(f"{Fore.CYAN}{'='*60}")
+        print(f"{Fore.WHITE}• Will auto-add tracks with confidence >= {args.auto_threshold}")
+        print(f"{Fore.WHITE}• Will create missing playlists automatically")
+        print(f"{Fore.WHITE}• Will update existing playlists without duplicates")
+        print(f"{Fore.WHITE}• Will apply learned matching patterns")
+        print(f"{Fore.WHITE}• No user interaction required")
+        print(f"{Fore.CYAN}{'='*60}\n")
+        
+        # Use batch processing for efficiency if many playlists
+        if len(playlist_files) > 10:
+            print(f"{Fore.CYAN}Using batch processing for {len(playlist_files)} playlists...")
+            
+            # Collect all unique tracks first
+            all_tracks = []
+            playlist_tracks_map = defaultdict(list)
+            
+            for file_path in playlist_files:
+                tracks = parse_playlist_file(file_path)
+                if tracks:
+                    for track in tracks:
+                        track['source_playlist'] = file_path
+                        all_tracks.append(track)
+                        playlist_tracks_map[file_path].append(track)
+            
+            # Deduplicate tracks
+            unique_tracks = {}
+            for track in all_tracks:
+                key = f"{track.get('artist', '').lower()}||{track.get('title', '').lower()}"
+                if key not in unique_tracks:
+                    unique_tracks[key] = track
+            
+            print(f"{Fore.WHITE}Found {len(unique_tracks)} unique tracks across all playlists")
+            
+            # Search all unique tracks with progress bar
+            track_matches = {}
+            with tqdm(total=len(unique_tracks), desc="Searching tracks") as pbar:
+                for key, track in unique_tracks.items():
+                    # Apply learning patterns
+                    learned_artist, learned_title = apply_learning_patterns(track['artist'], track['title'])
+                    
+                    match = search_track_on_spotify(sp, learned_artist, learned_title, track.get('album'))
+                    if not match and (learned_artist != track['artist'] or learned_title != track['title']):
+                        match = search_track_on_spotify(sp, track['artist'], track['title'], track.get('album'))
+                    
+                    if match and match['score'] >= args.auto_threshold:
+                        track_matches[key] = match
+                        save_user_decision(track, match, 'y')
+                    
+                    pbar.update(1)
+                    time.sleep(0.05)  # Rate limiting
+            
+            # Process each playlist with the matches
+            total_processed = 0
+            total_matches = 0
+            total_skipped = 0
+            total_added = 0
+            
+            for file_path in playlist_files:
+                playlist_name = os.path.splitext(os.path.basename(file_path))[0]
+                tracks = playlist_tracks_map[file_path]
+                
+                if not tracks:
+                    continue
+                
+                # Collect matches for this playlist
+                spotify_tracks = []
+                for track in tracks:
+                    key = f"{track.get('artist', '').lower()}||{track.get('title', '').lower()}"
+                    if key in track_matches:
+                        spotify_tracks.append(track_matches[key])
+                
+                if spotify_tracks:
+                    # Create/update playlist
+                    track_uris = [t['uri'] for t in spotify_tracks]
+                    tracks_added = auto_create_or_update_playlist(sp, playlist_name, track_uris, user_id)
+                    
+                    total_processed += 1
+                    total_matches += len(spotify_tracks)
+                    total_skipped += len(tracks) - len(spotify_tracks)
+                    total_added += tracks_added
+                    
+                    logger.info(f"[AUTO] {playlist_name}: {len(spotify_tracks)}/{len(tracks)} matched, {tracks_added} added")
+                else:
+                    total_processed += 1
+                    total_skipped += len(tracks)
+                    logger.info(f"[AUTO] {playlist_name}: No tracks matched threshold")
+        else:
+            # Standard processing for fewer playlists
+            total_processed = 0
+            total_matches = 0
+            total_skipped = 0
+            total_added = 0
+            
+            for i, file_path in enumerate(playlist_files, 1):
+                try:
+                    logger.info(f"\n[AUTO] Processing playlist {i}/{len(playlist_files)}")
+                    matches, skipped, added = process_playlist_file_auto_mode(sp, file_path, user_id, args.auto_threshold)
+                    total_processed += 1
+                    total_matches += matches
+                    total_skipped += skipped
+                    total_added += added
+                except Exception as e:
+                    logger.error(f"[AUTO] Error processing {file_path}: {e}")
+                    if args.debug:
+                        traceback.print_exc()
+        
+        # Print summary
+        print(f"\n{Fore.CYAN}{'='*50}")
+        print(f"{Fore.CYAN}AUTO-ADD COMPLETE")
+        print(f"{Fore.CYAN}{'='*50}")
+        print(f"{Fore.WHITE}Playlists processed: {total_processed}/{len(playlist_files)}")
+        print(f"{Fore.WHITE}Total tracks matched: {total_matches}")
+        print(f"{Fore.WHITE}Total tracks added: {total_added}")
+        print(f"{Fore.WHITE}Total tracks skipped: {total_skipped}")
+        
+        if total_processed > 0:
+            success_rate = (total_matches / (total_matches + total_skipped)) * 100 if (total_matches + total_skipped) > 0 else 0
+            print(f"{Fore.WHITE}Match rate: {success_rate:.1f}%")
+        
+        print(f"{Fore.GREEN}✅ Auto-add completed successfully!")
+        return
+    
+    elif args.missing_tracks_mode:
+        # Missing tracks mode
+        print(f"\n{Fore.CYAN}{'='*60}")
+        print(f"{Fore.CYAN}MISSING TRACKS ANALYSIS")
+        print(f"{Fore.CYAN}{'='*60}")
+        print(f"{Fore.WHITE}• Will find tracks in local playlists missing from Spotify")
+        print(f"{Fore.WHITE}• Will suggest additions above confidence >= {args.suggest_threshold}")
+        print(f"{Fore.CYAN}{'='*60}\n")
+        
+        for i, file_path in enumerate(playlist_files, 1):
+            try:
+                logger.info(f"\nAnalyzing playlist {i}/{len(playlist_files)}: {os.path.basename(file_path)}")
+                find_missing_tracks_in_playlists(sp, file_path, user_id, args.suggest_threshold)
+            except Exception as e:
+                logger.error(f"Error analyzing {file_path}: {e}")
+                if args.debug:
+                    traceback.print_exc()
+        
+        print(f"\n{Fore.GREEN}✅ Missing tracks analysis completed!")
+        return
+    
+    # Standard mode - interactive threshold selection (only if not in command line batch mode)
     if not args.batch:
         print("\n" + "="*60)
         print("CONFIDENCE THRESHOLD SELECTION")
@@ -1388,6 +2372,7 @@ def main():
         # Set up batch mode with dual thresholds
         args.batch = True
         args.auto_threshold = auto_threshold
+        args.manual_threshold = manual_threshold
         confidence_threshold = manual_threshold
         
         print(f"✅ Batch mode enabled:")
@@ -1399,6 +2384,8 @@ def main():
     else:
         # For batch mode or when no interactive selection, use command line threshold
         confidence_threshold = args.threshold
+        if not hasattr(args, 'manual_threshold'):
+            args.manual_threshold = confidence_threshold
     
     # Batch mode information
     if args.batch:
@@ -1429,18 +2416,20 @@ def main():
             traceback.print_exc()
     
     # Print summary
-    logger.info(f"\n" + "="*50)
-    logger.info(f"BATCH PROCESSING COMPLETE")
-    logger.info(f"="*50)
-    logger.info(f"Playlists processed: {total_processed}/{len(playlist_files)}")
-    logger.info(f"Total tracks matched: {total_matches}")
-    logger.info(f"Total tracks skipped: {total_skipped}")
+    print(f"\n{Fore.CYAN}{'='*50}")
+    print(f"{Fore.CYAN}PROCESSING COMPLETE")
+    print(f"{Fore.CYAN}{'='*50}")
+    print(f"{Fore.WHITE}Playlists processed: {total_processed}/{len(playlist_files)}")
+    print(f"{Fore.WHITE}Total tracks matched: {total_matches}")
+    if 'total_added' in locals():
+        print(f"{Fore.WHITE}Total tracks added: {total_added}")
+    print(f"{Fore.WHITE}Total tracks skipped: {total_skipped}")
     
     if total_processed > 0:
         success_rate = (total_matches / (total_matches + total_skipped)) * 100 if (total_matches + total_skipped) > 0 else 0
-        logger.info(f"Success rate: {success_rate:.1f}%")
+        print(f"{Fore.WHITE}Success rate: {success_rate:.1f}%")
     
-    logger.info("All playlists processed successfully!")
+    print(f"{Fore.GREEN}✅ All playlists processed successfully!")
 
 if __name__ == "__main__":
     main()

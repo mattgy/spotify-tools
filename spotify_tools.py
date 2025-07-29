@@ -44,6 +44,7 @@ PLAYLIST_MANAGER_SCRIPT = os.path.join(SCRIPT_DIR, "spotify_playlist_manager.py"
 REMOVE_DUPLICATES_SCRIPT = os.path.join(SCRIPT_DIR, "spotify_remove_duplicates.py")
 IDENTIFY_SKIPPED_SCRIPT = os.path.join(SCRIPT_DIR, "spotify_identify_skipped.py")
 PLAYLIST_DUPLICATE_SCANNER_SCRIPT = os.path.join(SCRIPT_DIR, "spotify_playlist_duplicate_scanner.py")
+PLAYLIST_RECONCILE_SCRIPT = os.path.join(SCRIPT_DIR, "spotify_playlist_reconcile.py")
 INSTALL_DEPENDENCIES_SCRIPT = os.path.join(SCRIPT_DIR, "install_dependencies.py")
 
 # Define config directory
@@ -410,6 +411,95 @@ def manage_caches():
         # Optimize cache storage
         optimize_cache_storage()
 
+def playlist_converter_menu():
+    """Sub-menu for playlist converter options."""
+    while True:
+        print_header("Playlist Converter & Management")
+        
+        print(f"{Fore.YELLOW}{Style.BRIGHT}PLAYLIST SYNC OPTIONS:")
+        print(f"{Fore.WHITE}1. Auto-sync only (add missing playlists & tracks automatically)")
+        print(f"{Fore.WHITE}2. Auto-sync + manual review (review matches below threshold)")
+        
+        print(f"\n{Fore.YELLOW}{Style.BRIGHT}CLEANUP OPTIONS:")
+        print(f"{Fore.WHITE}3. Clean up Spotify playlists to match local ones exactly")
+        print(f"{Fore.WHITE}4. Delete duplicate Spotify playlists (same name as local)")
+        
+        print(f"\n{Fore.YELLOW}{Style.BRIGHT}CACHE MANAGEMENT:")
+        print(f"{Fore.WHITE}5. Clear processed playlist cache")
+        
+        print(f"\n{Fore.WHITE}6. Back to main menu")
+        
+        choice = input(f"\n{Fore.CYAN}Enter your choice (1-6): ")
+        
+        if choice == "1":
+            # Auto-sync mode - fully autonomous
+            print_info("\nAuto-syncing playlists (autonomous mode)...")
+            print_info("This will create missing playlists and add missing tracks automatically.")
+            directory = input("Enter directory to search for playlists (press Enter for current directory): ")
+            threshold = input("Enter confidence threshold for auto-adding (70-100, default 85): ").strip()
+            
+            args = ["--auto-mode"]
+            if directory:
+                args.append(directory)
+            if threshold:
+                args.extend(["--auto-threshold", threshold])
+                
+            run_script(PLAYLIST_CONVERTER_SCRIPT, args)
+            
+        elif choice == "2":
+            # Auto-sync with manual review
+            print_info("\nAuto-syncing playlists with manual review...")
+            print_info("This will create missing playlists, auto-add high confidence tracks,")
+            print_info("and let you manually review medium confidence matches.")
+            directory = input("Enter directory to search for playlists (press Enter for current directory): ")
+            
+            args = []
+            if directory:
+                args.append(directory)
+                
+            run_script(PLAYLIST_CONVERTER_SCRIPT, args)
+            
+        elif choice == "3":
+            # Clean up Spotify playlists to match local ones
+            print_info("\nCleaning up Spotify playlists to match local ones exactly...")
+            directory = input("Enter directory containing local playlists (press Enter for current directory): ")
+            
+            args = ["--cleanup-mode"]
+            if directory:
+                args.append(directory)
+                
+            run_script(PLAYLIST_RECONCILE_SCRIPT, args)
+            
+        elif choice == "4":
+            # Delete duplicate playlists
+            print_info("\nDeleting duplicate Spotify playlists with same names as local files...")
+            directory = input("Enter directory containing local playlists (press Enter for current directory): ")
+            
+            args = ["--delete-duplicates-mode"]
+            if directory:
+                args.append(directory)
+                
+            run_script(PLAYLIST_RECONCILE_SCRIPT, args)
+            
+        elif choice == "5":
+            # Clear processed playlist cache
+            print_info("\nClearing processed playlist cache...")
+            confirm = input("This will reset all playlist processing history. Continue? (y/n): ").lower().strip()
+            
+            if confirm == 'y':
+                # Clear both converter and reconcile caches
+                run_script(PLAYLIST_CONVERTER_SCRIPT, ["--clear-cache"])
+                run_script(PLAYLIST_RECONCILE_SCRIPT, ["--clear-cache"])
+                print_success("All playlist processing caches cleared.")
+            else:
+                print_warning("Cache clearing cancelled.")
+            
+        elif choice == "6":
+            break
+        
+        else:
+            print_error("Invalid choice. Please try again.")
+
 def check_cache_age():
     """Check cache age and ask to clear old caches."""
     # Import cache utilities
@@ -557,15 +647,8 @@ def main():
         choice = input(f"\n{Fore.CYAN}Enter your choice (1-14): ")
         
         if choice == "1":
-            # Run the playlist converter script
-            print_info("\nConverting local playlists to Spotify playlists...")
-            directory = input("Enter directory to search for playlists (press Enter for current directory): ")
-            
-            args = []
-            if directory:
-                args.append(directory)
-                
-            run_script(PLAYLIST_CONVERTER_SCRIPT, args)
+            # Playlist converter sub-menu
+            playlist_converter_menu()
             
         elif choice == "2":
             # Run the like songs script

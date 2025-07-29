@@ -42,7 +42,9 @@ All scripts can be run independently:
 - Update CLAUDE.md with important workflow/architecture changes after major modifications
 
 ## Confidentiality and Communication Guidelines
-- Never mention Claude or another AI tool in the Git commit comments, README, or other documentation
+- **CRITICAL**: Never mention Claude, AI, or any AI tool in Git commit messages, README, or other documentation
+- **IMPORTANT**: Do not use phrases like "Generated with Claude Code" or "Co-Authored-By: Claude" in commits
+- Keep commit messages professional and focused on the technical changes only
 
 ## Recent Changes & Important Notes
 

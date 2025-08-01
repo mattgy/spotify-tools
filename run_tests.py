@@ -177,6 +177,7 @@ def run_in_venv():
             # Re-run this script with the venv Python
             env = os.environ.copy()
             env['SPOTIFY_TOOLS_TESTING'] = '1'  # Flag to prevent infinite recursion
+            env['SPOTIFY_TOOLS_TEST_MODE'] = '1'  # Prevent credential prompts
             try:
                 result = subprocess.run([venv_python, __file__], env=env)
                 sys.exit(result.returncode)
@@ -188,6 +189,9 @@ def run_in_venv():
 
 def main():
     """Run all tests."""
+    # Set test mode to prevent credential prompts
+    os.environ['SPOTIFY_TOOLS_TEST_MODE'] = '1'
+    
     # If we're not already in virtual environment, try to run in it
     if not os.environ.get('SPOTIFY_TOOLS_TESTING'):
         if run_in_venv():

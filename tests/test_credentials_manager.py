@@ -71,9 +71,9 @@ class TestCredentialsManager(unittest.TestCase):
     
     def test_get_spotify_credentials_missing(self):
         """Test behavior when Spotify credentials are missing."""
-        # Ensure no environment variables are set
-        env_vars_to_remove = ['SPOTIFY_CLIENT_ID', 'SPOTIFY_CLIENT_SECRET', 'SPOTIFY_REDIRECT_URI']
-        with patch.dict(os.environ, {}, clear=True):
+        # Ensure no environment variables are set but keep test mode
+        test_env = {'SPOTIFY_TOOLS_TEST_MODE': '1'}
+        with patch.dict(os.environ, test_env, clear=True):
             result = get_spotify_credentials()
             # Should return None values when credentials are unavailable in test environment
             self.assertEqual(result, (None, None, None))
@@ -98,7 +98,9 @@ class TestCredentialsManager(unittest.TestCase):
     
     def test_get_lastfm_api_key_missing(self):
         """Test behavior when Last.fm API key is missing."""
-        with patch.dict(os.environ, {}, clear=True):
+        # Keep test mode environment variable
+        test_env = {'SPOTIFY_TOOLS_TEST_MODE': '1'}
+        with patch.dict(os.environ, test_env, clear=True):
             api_key = get_lastfm_api_key()
             self.assertIsNone(api_key)
     

@@ -33,12 +33,18 @@ All scripts can be run independently:
 - Comprehensive test suite: `python3 run_tests.py`
 - Tests cover imports, syntax, functions, and core functionality
 - Run tests in virtual environment for full coverage
-- **Always run your test suite after making any significant changes.**
+- **CRITICAL**: Always run your test suite after making ANY changes, even small ones
+- **MANDATORY**: Fix ALL test failures before proceeding with additional changes
 - When making changes, look for opportunities to improve testing e.g. add unit tests, expand the test suite
+- Test Mode: Set `SPOTIFY_TOOLS_TEST_MODE=1` to avoid credential prompts during testing
+- Core test modules: cache_utils, credentials_manager, playlist_size_manager, spotify_playlist_converter
 
 ## Development Workflow
+- **TEST FIRST**: Run tests before and after every change using `SPOTIFY_TOOLS_TEST_MODE=1 python3 run_tests.py`
+- **MANDATORY**: All tests must pass before committing any changes
 - Ask whether I want to commit to Git/GitHub after each set of major changes, and automatically look for any sensitive information before committing.
 - Update CLAUDE.md with important workflow/architecture changes after major modifications
+- Never claim tests are passing without actually running them and verifying the results
 
 ## Confidentiality and Communication Guidelines
 - **CRITICAL**: Never mention Claude, AI, or any AI tool in Git commit messages, README, or other documentation

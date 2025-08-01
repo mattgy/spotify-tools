@@ -254,20 +254,31 @@ class PlaylistSizeManager:
                 print(f"{Fore.RED}Failed to delete: {failed_count} playlists{Style.RESET_ALL}")
             
             # Clear cache after deletion
-            cache_key_pattern = f"{CACHE_KEY_PREFIX}_{self.user_id}_"
             from cache_utils import list_caches, clear_cache
             
-            # Find and clear all matching caches
-            caches = list_caches()
+            # Clear main playlist cache and search-specific caches
+            main_playlist_cache = "user_playlists"
+            search_cache_pattern = f"{CACHE_KEY_PREFIX}_{self.user_id}_"
+            
             cleared_count = 0
+            
+            # Clear main playlist cache
+            try:
+                clear_cache(main_playlist_cache)
+                cleared_count += 1
+                print_info("Cleared main playlist cache")
+            except:
+                pass  # Cache might not exist
+            
+            # Clear search-specific caches
+            caches = list_caches()
             for cache in caches:
-                if cache['name'].startswith(cache_key_pattern):
+                if cache['name'].startswith(search_cache_pattern):
                     clear_cache(cache['name'])
                     cleared_count += 1
             
-            if cleared_count > 0:
-                print(f"Cleared {cleared_count} playlist search cache(s)")
-            # If no caches found, don't show any message (this is normal)
+            if cleared_count > 1:  # Only show if we cleared multiple caches
+                print_info(f"Cleared {cleared_count} playlist cache(s)")
             
         else:
             print_warning("Deletion cancelled.")

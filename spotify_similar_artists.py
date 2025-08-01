@@ -299,18 +299,22 @@ def main():
         print_info("Using default: 25 per page")
     
     # Ask for discovery breadth
-    breadth_input = input("Discovery breadth - more source artists (1=focused, 2=balanced, 3=wide): ").strip()
+    breadth_input = input("Discovery breadth - more source artists (1=focused, 2=balanced, 3=comprehensive): ").strip()
     try:
-        discovery_breadth = int(breadth_input) if breadth_input else 2
+        discovery_breadth = int(breadth_input) if breadth_input else 3
         discovery_breadth = min(max(discovery_breadth, 1), 3)
     except ValueError:
-        discovery_breadth = 2
+        discovery_breadth = 3
     
-    # Calculate sample size based on breadth
-    breadth_multipliers = {1: 15, 2: 25, 3: 40}  # Number of source artists to analyze
+    # Calculate sample size based on breadth - use much larger samples including ALL artists
+    breadth_multipliers = {1: 50, 2: 150, 3: 99999}  # 3 = use ALL followed artists
     sample_size = breadth_multipliers[discovery_breadth]
     
-    print_success(f"\n🎯 Configuration: {max_recommendations} recommendations, {page_size} per page, {sample_size} source artists")
+    print_success(f"\n🎯 Configuration: {max_recommendations} recommendations, {page_size} per page")
+    if discovery_breadth == 3:
+        print_info("🎵 Using ALL followed artists for comprehensive recommendations")
+    else:
+        print_info(f"🎵 Using up to {sample_size} most relevant followed artists")
     
     # Set up API clients
     print_info("\nSetting up Spotify client...")
@@ -432,10 +436,14 @@ def main():
     sampled_artists = [artist for artist, weight in artist_weights[:actual_sample_size]]
     
     # Get similar artists
-    print_info(f"\nFinding similar artists based on {actual_sample_size} of your most relevant followed artists...")
+    if actual_sample_size == len(artist_weights):
+        print_info(f"\n🔍 Analyzing ALL {actual_sample_size} followed artists for comprehensive recommendations...")
+        print_info("💡 This may take a while but will provide the most thorough results!")
+    else:
+        print_info(f"\n🔍 Analyzing {actual_sample_size} of your most relevant followed artists...")
     
     # Create progress bar
-    progress_bar = create_progress_bar(total=actual_sample_size, desc="Finding similar artists", unit="artist")
+    progress_bar = create_progress_bar(total=actual_sample_size, desc="Analyzing artists", unit="artist")
     
     all_similar_artists = []
     for artist in sampled_artists:

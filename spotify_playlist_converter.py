@@ -585,7 +585,7 @@ def extract_track_info_from_extinf_and_path(extinf_line, file_path):
 def extract_track_info_from_path(path):
     """
     Extract artist, album, and title information from a file path.
-    Handles various common path formats.
+    Handles various common path formats including underscore-separated names.
     """
     # Default values
     track_info = {
@@ -600,20 +600,67 @@ def extract_track_info_from_path(path):
     filename = os.path.basename(path)
     filename_no_ext = os.path.splitext(filename)[0]
     
-    # First, try to extract from the filename (common pattern: "Artist - Title.mp3")
-    parts = re.split(r' - ', filename_no_ext, maxsplit=1)
+    # Enhanced parsing for underscore-separated filenames
+    # Handle patterns like: "various_artists_-_ofo_the_black_company__allah_wakbarr.wav"
+    enhanced_filename = filename_no_ext
     
-    if len(parts) > 1:
-        # Remove track numbers from the beginning
-        artist = re.sub(r'^(\d+[\s\.\-_]+)', '', parts[0].strip())
-        title = parts[1].strip()
+    # Check for underscore-based format first
+    if '_-_' in enhanced_filename or '__' in enhanced_filename:
+        # Replace double underscores with separators and clean up
+        enhanced_filename = enhanced_filename.replace('__', ' - ')
+        enhanced_filename = enhanced_filename.replace('_-_', ' - ')
+        enhanced_filename = enhanced_filename.replace('_', ' ')
         
-        track_info['artist'] = artist
-        track_info['title'] = title
-    else:
-        # If no artist-title separator found, assume it's just the title
-        title = re.sub(r'^(\d+[\s\.\-_]+)', '', filename_no_ext.strip())
-        track_info['title'] = title
+        # Handle "various artists" at the beginning
+        if enhanced_filename.lower().startswith('various artists - '):
+            parts = enhanced_filename[17:].split(' - ', 1)  # Remove "various artists - "
+            if len(parts) >= 1:
+                if len(parts) == 2:
+                    track_info['artist'] = parts[0].strip()
+                    track_info['title'] = parts[1].strip()
+                else:
+                    # If only one part after "various artists", treat it as artist - title
+                    artist_title = parts[0].strip()
+                    if ' - ' in artist_title:
+                        artist, title = artist_title.split(' - ', 1)
+                        track_info['artist'] = artist.strip()
+                        track_info['title'] = title.strip()
+                    else:
+                        # Try to split on first space sequence as artist/title boundary
+                        words = artist_title.split()
+                        if len(words) >= 3:
+                            # Assume first 2-3 words are artist, rest is title
+                            track_info['artist'] = ' '.join(words[:2])
+                            track_info['title'] = ' '.join(words[2:])
+                        else:
+                            track_info['title'] = artist_title
+        else:
+            # Regular underscore format without "various artists"
+            enhanced_filename = enhanced_filename.replace('_', ' ')
+    
+    # If we haven't extracted info yet, try standard patterns
+    if not track_info['artist'] and not track_info['title']:
+        # Try standard dash separator
+        test_filename = enhanced_filename if enhanced_filename != filename_no_ext else filename_no_ext
+        parts = re.split(r' - ', test_filename, maxsplit=1)
+        
+        if len(parts) > 1:
+            # Remove track numbers from the beginning
+            artist = re.sub(r'^(\d+[\s\.\-_]+)', '', parts[0].strip())
+            title = parts[1].strip()
+            
+            track_info['artist'] = artist
+            track_info['title'] = title
+        else:
+            # If no artist-title separator found, assume it's just the title
+            title = re.sub(r'^(\d+[\s\.\-_]+)', '', test_filename.strip())
+            track_info['title'] = title
+    
+    # Clean up the extracted information
+    if track_info['artist']:
+        track_info['artist'] = ' '.join(track_info['artist'].split())  # Normalize whitespace
+    if track_info['title']:
+        track_info['title'] = ' '.join(track_info['title'].split())  # Normalize whitespace
     
     # Now try to extract album info from the directory structure
     # Common patterns:

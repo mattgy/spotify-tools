@@ -412,7 +412,7 @@ def manage_caches():
     
     # Import cache utilities
     sys.path.insert(0, SCRIPT_DIR)
-    from cache_utils import clear_cache, clean_deprecated_caches, optimize_cache_storage
+    from cache_utils import clear_cache, clean_deprecated_caches, optimize_cache_storage, easy_cache_cleanup
     
     # Display cache summary and get grouped cache types
     cache_types = _display_cache_summary()

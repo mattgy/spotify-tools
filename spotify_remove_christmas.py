@@ -45,8 +45,8 @@ SCOPES = [
     "user-read-private"
 ]
 
-# Cache expiration (in seconds)
-CACHE_EXPIRATION = 24 * 60 * 60  # 24 hours
+# Import cache expiration from constants
+from constants import DEFAULT_CACHE_EXPIRATION, STANDARD_CACHE_KEYS
 
 # Christmas-related keywords and phrases
 CHRISTMAS_KEYWORDS = [
@@ -78,8 +78,8 @@ def setup_spotify_client():
 def get_user_liked_songs(sp):
     """Get all user's liked songs."""
     # Try to load from cache
-    cache_key = "all_liked_songs"
-    cached_data = load_from_cache(cache_key, CACHE_EXPIRATION)
+    cache_key = STANDARD_CACHE_KEYS['liked_songs']
+    cached_data = load_from_cache(cache_key, DEFAULT_CACHE_EXPIRATION)
     
     if cached_data:
         print_success(f"Found {len(cached_data)} liked songs (from cache)")
@@ -298,7 +298,7 @@ def remove_songs_from_liked(sp, songs_to_remove):
     print_success(f"Successfully removed {removed_count} Christmas songs from your liked songs.")
     
     # Clear the liked songs cache
-    save_to_cache(None, "all_liked_songs", force_expire=True)
+    save_to_cache(None, STANDARD_CACHE_KEYS['liked_songs'], force_expire=True)
 
 def main():
     print_header("Remove Christmas Songs from Liked Songs")

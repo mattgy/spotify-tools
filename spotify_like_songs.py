@@ -38,8 +38,8 @@ SCOPES = [
     "user-follow-modify"
 ]
 
-# Cache expiration (in seconds)
-CACHE_EXPIRATION = 24 * 60 * 60  # 24 hours
+# Import cache expiration from constants
+from constants import DEFAULT_CACHE_EXPIRATION, STANDARD_CACHE_KEYS
 
 def setup_spotify_client():
     """Set up and return an authenticated Spotify client."""
@@ -54,7 +54,7 @@ def get_user_playlists(sp):
     from spotify_utils import fetch_user_playlists
     
     # Fetch all playlists with progress bar
-    all_playlists = fetch_user_playlists(sp, show_progress=True, cache_key=f"user_playlists_{sp.current_user()['id']}")
+    all_playlists = fetch_user_playlists(sp, show_progress=True, cache_key=STANDARD_CACHE_KEYS['user_playlists'], cache_expiration=DEFAULT_CACHE_EXPIRATION)
     
     # Filter to only include playlists created by the user
     user_id = sp.current_user()['id']
@@ -67,7 +67,7 @@ def get_tracks_from_playlists(sp, playlists):
     """Extract all unique tracks from the given playlists."""
     # Try to load from cache
     cache_key = "playlist_tracks"
-    cached_data = load_from_cache(cache_key, CACHE_EXPIRATION)
+    cached_data = load_from_cache(cache_key, DEFAULT_CACHE_EXPIRATION)
     
     if cached_data:
         print("Using cached track data")
@@ -154,7 +154,7 @@ def get_saved_tracks(sp):
     from spotify_utils import fetch_user_saved_tracks
     
     # Fetch saved tracks with progress bar - use same cache key as other scripts
-    saved_tracks_data = fetch_user_saved_tracks(sp, show_progress=True, cache_key="all_liked_songs", cache_expiration=CACHE_EXPIRATION)
+    saved_tracks_data = fetch_user_saved_tracks(sp, show_progress=True, cache_key=STANDARD_CACHE_KEYS['liked_songs'], cache_expiration=DEFAULT_CACHE_EXPIRATION)
     
     # Convert to set of track IDs for efficient lookup
     saved_tracks = {item['track']['id'] for item in saved_tracks_data if item['track']}

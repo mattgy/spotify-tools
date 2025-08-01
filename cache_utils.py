@@ -166,16 +166,79 @@ def clear_cache(cache_name=None):
         print_success(f"Cleared {cleared} cache files")
         return cleared > 0
 
+def easy_cache_cleanup():
+    """
+    Easy-to-use cache cleanup function that provides user-friendly options.
+    Returns the number of caches cleaned.
+    """
+    from colorama import Fore, Style
+    
+    print(f"\n{Fore.CYAN}{Style.BRIGHT}🧹 Cache Cleanup Options{Style.RESET_ALL}")
+    print("1. Clean deprecated/old caches (recommended)")
+    print("2. Clear all caches (fresh start)")
+    print("3. Show cache statistics")
+    print("4. Cancel")
+    
+    choice = input(f"\n{Fore.YELLOW}Select option (1-4): {Style.RESET_ALL}").strip()
+    
+    if choice == "1":
+        return clean_deprecated_caches()
+    elif choice == "2":
+        confirm = input(f"{Fore.RED}⚠️  This will delete ALL cached data. Continue? (y/N): {Style.RESET_ALL}").strip().lower()
+        if confirm == 'y':
+            return clear_cache()  # Clear all caches
+        else:
+            print("Cancelled")
+            return 0
+    elif choice == "3":
+        show_cache_stats()
+        return 0
+    else:
+        print("Cancelled")
+        return 0
+
+def show_cache_stats():
+    """Show detailed cache statistics."""
+    from colorama import Fore, Style 
+    import datetime
+    
+    caches = list_caches()
+    if not caches:
+        print(f"{Fore.YELLOW}No cache files found{Style.RESET_ALL}")
+        return
+    
+    total_size = sum(cache['size'] for cache in caches)
+    oldest = min(caches, key=lambda x: x['created'])
+    newest = max(caches, key=lambda x: x['created'])
+    
+    print(f"\n{Fore.CYAN}{Style.BRIGHT}📊 Cache Statistics{Style.RESET_ALL}")
+    print(f"Total cache files: {len(caches)}")
+    print(f"Total size: {total_size / 1024 / 1024:.2f} MB")
+    print(f"Oldest cache: {oldest['name']} ({datetime.datetime.fromtimestamp(oldest['created']).strftime('%Y-%m-%d %H:%M')})")
+    print(f"Newest cache: {newest['name']} ({datetime.datetime.fromtimestamp(newest['created']).strftime('%Y-%m-%d %H:%M')})")
+    
+    # Group by type
+    cache_types = {}
+    for cache in caches:
+        cache_type = cache['name'].split('_')[0]
+        if cache_type not in cache_types:
+            cache_types[cache_type] = []
+        cache_types[cache_type].append(cache)
+    
+    print(f"\n{Fore.GREEN}Cache breakdown by type:{Style.RESET_ALL}")
+    for cache_type, type_caches in sorted(cache_types.items()):
+        type_size = sum(c['size'] for c in type_caches)
+        print(f"  {cache_type}: {len(type_caches)} files ({type_size / 1024:.1f} KB)")
+
 def clean_deprecated_caches():
     """Clean up cache files that use deprecated naming conventions."""
     caches = list_caches()
     
     # Define deprecated cache patterns that should be cleaned up
     deprecated_patterns = [
-        # Old user-specific cache keys - now we use generic keys
-        'user_playlists_',  # Should be just 'user_playlists'
-        'saved_tracks',     # Should be 'liked_songs'
-        'playlist_tracks',  # Should be 'playlist_tracks_<id>' for specific playlists
+        # Old user-specific cache keys - now we use standardized keys
+        'user_playlists_',  # Should be just 'user_playlists' (but keep exact match)
+        'saved_tracks',     # Should be 'all_liked_songs'  
         'followed_artists_genres',
         'followed_artists_diversity',
         'followed_artists_backup',
@@ -185,11 +248,8 @@ def clean_deprecated_caches():
         'liked_songs_timeline',
         'liked_songs_backup',
         'liked_songs_for_skip_analysis',
-        'all_liked_songs',
-        'all_user_playlists',
+        'all_user_playlists', # Should be 'user_playlists'
         'recently_played_extended',
-        'top_artists',
-        'recently_played',
         'comprehensive_listening_profile',
         # Additional old patterns that might exist
         'artist_info_',  # Old pattern, now using better keys

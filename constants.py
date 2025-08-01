@@ -18,14 +18,31 @@ CACHE_DIR = os.path.join(CONFIG_DIR, "cache")
 BACKUP_DIR = os.path.join(CONFIG_DIR, "backups")
 CREDENTIALS_FILE = os.path.join(CONFIG_DIR, "credentials.json")
 
-# Cache expiration times (in seconds)
+# Cache expiration times (in seconds) - default to 30 days for consistency
+DEFAULT_CACHE_EXPIRATION = 30 * 24 * 60 * 60  # 30 days
+
 CACHE_EXPIRATION = {
-    'short': 60 * 60,                    # 1 hour
-    'medium': 24 * 60 * 60,              # 24 hours  
-    'long': 7 * 24 * 60 * 60,            # 7 days
-    'very_long': 30 * 24 * 60 * 60,      # 30 days
-    'personal': 3 * 24 * 60 * 60,        # 3 days (for personal taste data)
-    'external': 30 * 24 * 60 * 60        # 30 days (for external API data)
+    'short': 60 * 60,                    # 1 hour (for rapidly changing data)
+    'medium': 24 * 60 * 60,              # 24 hours (for daily data)
+    'long': 7 * 24 * 60 * 60,            # 7 days (for weekly data)
+    'default': DEFAULT_CACHE_EXPIRATION, # 30 days (standard across app)
+    'very_long': DEFAULT_CACHE_EXPIRATION, # 30 days (for consistency)
+    'personal': DEFAULT_CACHE_EXPIRATION,  # 30 days (user data should persist)
+    'external': DEFAULT_CACHE_EXPIRATION  # 30 days (external API data)
+}
+
+# Standardized cache keys for consistent reuse across the app
+STANDARD_CACHE_KEYS = {
+    'user_playlists': 'user_playlists',
+    'liked_songs': 'all_liked_songs',
+    'followed_artists': 'followed_artists',
+    'top_artists': 'top_artists',
+    'recently_played': 'recently_played',
+    'playlist_tracks': 'playlist_tracks_{playlist_id}',
+    'artist_details': 'artist_details_{artist_id}',
+    'track_search': 'track_search_{artist}_{album}_{title}',
+    'similar_artists': 'similar_artists_{artist_id}',
+    'ai_match': 'ai_match_{service}_{artist}_{title}_{album}'
 }
 
 # Spotify API scopes organized by purpose

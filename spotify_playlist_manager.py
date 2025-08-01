@@ -43,8 +43,8 @@ SPOTIFY_SCOPES = [
     "user-library-read"
 ]
 
-# Cache expiration (in seconds)
-CACHE_EXPIRATION = 60 * 60 * 24 * 7  # 7 days
+# Import cache from constants
+from constants import DEFAULT_CACHE_EXPIRATION, STANDARD_CACHE_KEYS
 
 def setup_spotify_client():
     """Set up and return an authenticated Spotify client."""
@@ -66,8 +66,8 @@ def setup_spotify_client():
 
 def get_all_user_playlists(sp):
     """Get all playlists for the current user."""
-    cache_key = "all_user_playlists"
-    cached_data = load_from_cache(cache_key, CACHE_EXPIRATION)
+    cache_key = STANDARD_CACHE_KEYS['user_playlists'] 
+    cached_data = load_from_cache(cache_key, DEFAULT_CACHE_EXPIRATION)
     
     if cached_data:
         print_info("Using cached playlist data...")

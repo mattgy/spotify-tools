@@ -37,10 +37,12 @@ from colorama import Fore, Style, init
 # Initialize colorama
 init(autoreset=True)
 
+# Import cache expiration from constants
+from constants import DEFAULT_CACHE_EXPIRATION, STANDARD_CACHE_KEYS
+
 # Constants
 PAGE_SIZE = 10  # Number of playlists to show per page
 CACHE_KEY_PREFIX = "playlist_size_search"
-CACHE_EXPIRATION = 3600  # 1 hour
 
 class PlaylistSizeManager:
     """Manages finding and deleting playlists based on track count."""
@@ -86,7 +88,7 @@ class PlaylistSizeManager:
         
         # Try to load from cache
         if use_cache:
-            cached_data = load_from_cache(cache_key, expiration=CACHE_EXPIRATION)
+            cached_data = load_from_cache(cache_key, expiration=DEFAULT_CACHE_EXPIRATION)
             if cached_data:
                 print_info("Using cached playlist data...")
                 return cached_data
@@ -257,7 +259,7 @@ class PlaylistSizeManager:
             from cache_utils import list_caches, clear_cache
             
             # Clear main playlist cache and search-specific caches
-            main_playlist_cache = "user_playlists"
+            main_playlist_cache = STANDARD_CACHE_KEYS['user_playlists']
             search_cache_pattern = f"{CACHE_KEY_PREFIX}_{self.user_id}_"
             
             cleared_count = 0

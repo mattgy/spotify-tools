@@ -44,8 +44,8 @@ SCOPES = [
     "user-follow-modify"
 ]
 
-# Cache expiration (in seconds)
-CACHE_EXPIRATION = 24 * 60 * 60  # 24 hours
+# Import cache expiration from constants
+from constants import DEFAULT_CACHE_EXPIRATION, STANDARD_CACHE_KEYS
 
 def setup_spotify_client():
     """Set up and return an authenticated Spotify client."""
@@ -62,7 +62,7 @@ def get_user_playlists(sp):
     from spotify_utils import fetch_user_playlists
     
     # Fetch all playlists
-    all_playlists = fetch_user_playlists(sp, show_progress=True, cache_key="user_playlists")
+    all_playlists = fetch_user_playlists(sp, show_progress=True, cache_key=STANDARD_CACHE_KEYS['user_playlists'], cache_expiration=DEFAULT_CACHE_EXPIRATION)
     
     # Filter for playlists created by the user
     user_id = sp.current_user()['id']
@@ -77,7 +77,7 @@ def get_artists_from_playlists(sp, playlists):
     
     # Try to load from cache first
     cache_key = "playlist_artists"
-    cached_data = load_from_cache(cache_key, CACHE_EXPIRATION)
+    cached_data = load_from_cache(cache_key, DEFAULT_CACHE_EXPIRATION)
     
     if cached_data:
         print("Using cached track data")
@@ -94,7 +94,7 @@ def get_artists_from_playlists(sp, playlists):
 def get_followed_artists(sp):
     """Get a list of artists the user is already following."""
     from spotify_utils import fetch_followed_artists
-    return fetch_followed_artists(sp, show_progress=True, cache_key="followed_artists")
+    return fetch_followed_artists(sp, show_progress=True, cache_key=STANDARD_CACHE_KEYS['followed_artists'], cache_expiration=DEFAULT_CACHE_EXPIRATION)
 
 def follow_artists(sp, artists, followed_artists):
     """Follow artists that the user isn't already following."""

@@ -47,7 +47,7 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, script_dir)
 
 # Import custom modules
-from credentials_manager import get_spotify_credentials
+from credentials_manager import get_spotify_credentials, get_ai_credentials
 from cache_utils import save_to_cache, load_from_cache
 from constants import CACHE_EXPIRATION, CONFIDENCE_THRESHOLDS, BATCH_SIZES
 

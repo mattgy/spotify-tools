@@ -661,8 +661,15 @@ def extract_artists_from_playlists(playlists, sp, show_progress=True, owner_filt
         user_profile = sp.current_user()
         owner_filter = user_profile['id']
     
-    # Filter playlists by owner
-    user_playlists = [p for p in playlists if p['owner']['id'] == owner_filter]
+    # Filter playlists by owner (with cache corruption protection)
+    user_playlists = []
+    for p in playlists:
+        # Handle cache corruption where playlist might be a string instead of dict
+        if isinstance(p, str):
+            print_warning(f"Skipping corrupted playlist data: {p}")
+            continue
+        if isinstance(p, dict) and p.get('owner', {}).get('id') == owner_filter:
+            user_playlists.append(p)
     
     if show_progress:
         print_info(f"Extracting artists from {len(user_playlists)} playlists...")
@@ -672,6 +679,20 @@ def extract_artists_from_playlists(playlists, sp, show_progress=True, owner_filt
     
     for playlist in user_playlists:
         try:
+            # Handle cache corruption where playlist might be a string instead of dict
+            if isinstance(playlist, str):
+                print_warning(f"Detected corrupted playlist data: {playlist}")
+                print_warning("Cache corruption detected. Please clear caches and try again.")
+                if show_progress:
+                    update_progress_bar(progress_bar, 1)
+                continue
+            
+            if not isinstance(playlist, dict) or 'id' not in playlist:
+                print_warning(f"Invalid playlist data: {playlist}")
+                if show_progress:
+                    update_progress_bar(progress_bar, 1)
+                continue
+            
             # Fetch tracks for this playlist
             tracks = fetch_playlist_tracks(sp, playlist['id'], show_progress=False)
             
@@ -679,6 +700,15 @@ def extract_artists_from_playlists(playlists, sp, show_progress=True, owner_filt
             for item in tracks:
                 if item and item.get('track') and item['track'].get('artists'):
                     for artist in item['track']['artists']:
+                        # Handle cache corruption where artist might be a string instead of dict
+                        if isinstance(artist, str):
+                            print_warning(f"Detected corrupted artist data in playlist {playlist.get('name', 'Unknown')}: {artist}")
+                            continue
+                        
+                        if not isinstance(artist, dict) or 'id' not in artist:
+                            print_warning(f"Invalid artist data in playlist {playlist.get('name', 'Unknown')}: {artist}")
+                            continue
+                            
                         if artist['id'] not in all_artists:
                             all_artists[artist['id']] = artist
             
@@ -686,7 +716,8 @@ def extract_artists_from_playlists(playlists, sp, show_progress=True, owner_filt
                 update_progress_bar(progress_bar, 1)
                 
         except Exception as e:
-            print_warning(f"Error processing playlist {playlist.get('name', 'Unknown')}: {e}")
+            playlist_name = playlist.get('name', 'Unknown') if isinstance(playlist, dict) else str(playlist)
+            print_warning(f"Error processing playlist {playlist_name}: {e}")
             if show_progress:
                 update_progress_bar(progress_bar, 1)
             continue

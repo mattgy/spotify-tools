@@ -26,7 +26,7 @@ sys.path.insert(0, script_dir)
 # Import custom modules
 from credentials_manager import get_spotify_credentials
 from cache_utils import save_to_cache, load_from_cache
-from spotify_utils import create_spotify_client, COMMON_SCOPES
+from spotify_utils import create_spotify_client, COMMON_SCOPES, print_success, print_error, print_warning, print_info
 from constants import BATCH_SIZES, CONFIDENCE_THRESHOLDS
 
 # Spotify API scopes needed for this script
@@ -230,6 +230,16 @@ def analyze_artist_frequency(tracks):
     
     for track in tracks:
         for artist in track['artists']:
+            # Handle cache corruption where artist might be a string instead of dict
+            if isinstance(artist, str):
+                print_warning(f"Detected corrupted artist data for track: {track.get('name', 'Unknown')}")
+                print_warning("Cache corruption detected. Please clear caches and try again.")
+                continue
+            
+            if not isinstance(artist, dict) or 'id' not in artist or 'name' not in artist:
+                print_warning(f"Invalid artist data for track: {track.get('name', 'Unknown')}")
+                continue
+                
             artist_id = artist['id']
             artist_name = artist['name']
             artist_counts[artist_id] += 1
@@ -500,9 +510,14 @@ def main():
     
     # Auto-follow artists based on liked tracks
     if liked_tracks and len(liked_tracks) > 0:
-        suggestions = suggest_artists_to_follow(sp, liked_tracks, min_songs=3)
-        if suggestions:
-            auto_follow_artists(sp, suggestions, auto_threshold=5)
+        try:
+            suggestions = suggest_artists_to_follow(sp, liked_tracks, min_songs=3)
+            if suggestions:
+                auto_follow_artists(sp, suggestions, auto_threshold=5)
+        except Exception as e:
+            print_error(f"Error analyzing artists for auto-follow: {e}")
+            print_warning("This may be due to cache corruption. Try clearing caches with menu option 9.")
+            print_info("The track liking operation completed successfully despite this error.")
 
 if __name__ == "__main__":
     main()

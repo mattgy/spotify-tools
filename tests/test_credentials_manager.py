@@ -74,9 +74,11 @@ class TestCredentialsManager(unittest.TestCase):
         # Ensure no environment variables are set but keep test mode
         test_env = {'SPOTIFY_TOOLS_TEST_MODE': '1'}
         with patch.dict(os.environ, test_env, clear=True):
-            result = get_spotify_credentials()
-            # Should return None values when credentials are unavailable in test environment
-            self.assertEqual(result, (None, None, None))
+            # Mock input to raise EOFError (which the function handles by returning None)
+            with patch('builtins.input', side_effect=EOFError):
+                result = get_spotify_credentials()
+                # Should return None values when credentials are unavailable in test environment
+                self.assertEqual(result, (None, None, None))
     
     def test_get_lastfm_api_key_with_file(self):
         """Test getting Last.fm API key when file exists."""
@@ -98,11 +100,13 @@ class TestCredentialsManager(unittest.TestCase):
     
     def test_get_lastfm_api_key_missing(self):
         """Test behavior when Last.fm API key is missing."""
-        # Keep test mode environment variable
+        # Keep test mode environment variable and mock input to return None (EOFError simulation)
         test_env = {'SPOTIFY_TOOLS_TEST_MODE': '1'}
         with patch.dict(os.environ, test_env, clear=True):
-            api_key = get_lastfm_api_key()
-            self.assertIsNone(api_key)
+            # Mock input to raise EOFError (which the function handles by returning None)
+            with patch('builtins.input', side_effect=EOFError):
+                api_key = get_lastfm_api_key()
+                self.assertIsNone(api_key)
     
     def test_credentials_file_priority_over_env(self):
         """Test that credentials file takes priority over environment variables."""

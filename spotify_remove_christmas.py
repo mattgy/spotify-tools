@@ -78,7 +78,7 @@ def setup_spotify_client():
 def get_user_liked_songs(sp):
     """Get all user's liked songs."""
     # Try to load from cache
-    cache_key = "liked_songs"
+    cache_key = "all_liked_songs"
     cached_data = load_from_cache(cache_key, CACHE_EXPIRATION)
     
     if cached_data:
@@ -298,7 +298,7 @@ def remove_songs_from_liked(sp, songs_to_remove):
     print_success(f"Successfully removed {removed_count} Christmas songs from your liked songs.")
     
     # Clear the liked songs cache
-    save_to_cache(None, "liked_songs", force_expire=True)
+    save_to_cache(None, "all_liked_songs", force_expire=True)
 
 def main():
     print_header("Remove Christmas Songs from Liked Songs")

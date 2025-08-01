@@ -53,7 +53,13 @@ class PlaylistSizeManager:
     def setup(self):
         """Set up Spotify client and get user information."""
         print_info("Setting up Spotify client...")
-        self.sp = create_spotify_client()
+        # Scopes needed for playlist management
+        scopes = [
+            "playlist-read-private",
+            "playlist-modify-private",
+            "playlist-modify-public"
+        ]
+        self.sp = create_spotify_client(scopes)
         
         # Get current user info
         try:

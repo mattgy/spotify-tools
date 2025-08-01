@@ -60,11 +60,9 @@ def test_all_imports():
         'spotify_follow_artists', 
         'spotify_like_songs',
         'spotify_similar_artists',
-        'spotify_analytics',
         'spotify_backup',
         'spotify_cleanup_artists',
         'spotify_remove_christmas',
-        'spotify_remove_duplicates',
         'spotify_identify_skipped',
         'spotify_playlist_manager',
         'spotify_playlist_converter',
@@ -107,11 +105,9 @@ def test_menu_script_functions():
         ('spotify_follow_artists', ['main']),
         ('spotify_like_songs', ['main']),
         ('spotify_similar_artists', ['main']),
-        ('spotify_analytics', ['main', 'SpotifyAnalytics']),
         ('spotify_backup', ['main']),
         ('spotify_cleanup_artists', ['main']),
         ('spotify_remove_christmas', ['main']),
-        ('spotify_remove_duplicates', ['main']),
         ('spotify_identify_skipped', ['main']),
         ('spotify_playlist_manager', ['main']),
         ('spotify_playlist_converter', ['main'])
@@ -228,7 +224,7 @@ def main():
         print("\n💡 Common issues:")
         print("   - Missing dependencies: Run 'python3 install_dependencies.py'")
         print("   - Virtual environment: Use './spotify_run.py' instead of direct execution")
-        print("   - API credentials: Set up credentials via menu option 12")
+        print("   - API credentials: Set up credentials via menu option 9")
     
     print("=" * 60)
     

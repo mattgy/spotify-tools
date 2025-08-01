@@ -21,12 +21,10 @@ All scripts can be run independently:
 - `python3 spotify_follow_artists.py`
 - `python3 spotify_like_songs.py`
 - `python3 spotify_similar_artists.py`
-- `python3 spotify_analytics.py`
 - `python3 spotify_backup.py`
 - `python3 spotify_playlist_converter.py`
 - `python3 spotify_cleanup_artists.py`
 - `python3 spotify_remove_christmas.py`
-- `python3 spotify_remove_duplicates.py`
 - `python3 spotify_identify_skipped.py`
 - `python3 spotify_playlist_manager.py`
 
@@ -64,27 +62,26 @@ All scripts can be run independently:
 - **FIXED**: Auto-sync mode now includes text playlist files automatically
 - **FIXED**: Delete duplicates no longer prompts twice for text files
 
-### Playlist Duplicate Scanner (Option 6) 
-- New standalone script for scanning user-created playlists
-- Exact duplicate matching using Spotify track IDs (safe, non-destructive)
-- Options for auto-removal or manual review by playlist
 
 ### Cache Corruption Fixes
 - Added defensive programming across multiple scripts for artist data corruption
 - Scripts now handle both proper artist objects and string IDs/names gracefully
 - Common pattern: type checking with isinstance() before accessing dict methods
-- Artist cleanup tool (option 8) now auto-detects and repairs corrupted cache
+- Artist cleanup tool (option 6) now auto-detects and repairs corrupted cache
 - When corruption detected, cache is cleared and user prompted to restart
 
-### Menu Structure Changes
-- Removed option 5 "Identify frequently skipped songs" (script still exists but not in menu)
-- Menu now has options 1-14 (was 1-15)
-- All subsequent options shifted down by 1 after removal
-- Added AI credential management to option 12 (Manage API credentials)
+### Menu Structure Changes - MAJOR UPDATE
+- Removed options 4, 5, and 9 from the menu:
+  - Option 4: "Remove duplicate songs from Liked Songs" (deleted script)
+  - Option 5: "Scan for duplicate tracks in your playlists" (deleted script)  
+  - Option 9: "Enhanced analytics & music insights" (deleted script)
+- Moved "Backup & export" from Analytics section to System Management
+- Menu now has options 1-11 (was 1-14)
+- API credential management is now option 9
 
 ### Cache Key Standardization
-- Option 2 now uses "all_liked_songs" cache key (same as option 4) for consistency
-- Eliminates redundant API calls when both scripts run in same session
+- Option 2 uses "all_liked_songs" cache key for consistency
+- Eliminates redundant API calls when scripts run in same session
 
 ### Cache System Improvements
 - Added cache key sanitization to prevent filesystem errors

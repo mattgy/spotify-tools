@@ -20,7 +20,7 @@ A comprehensive collection of Python utilities for managing your Spotify account
 3. **Set up Spotify credentials** (one-time):
    - Create a free Spotify app at [developer.spotify.com](https://developer.spotify.com/dashboard/)
    - Set redirect URI to: `http://127.0.0.1:8888/callback`
-   - Use menu option 12 to enter your Client ID and Client Secret
+   - Use menu option 9 to enter your Client ID and Client Secret
    - (Optional) Add AI service API keys for enhanced track matching
 
 **That's it!** The program handles Python virtual environment setup, dependency installation, and provides a user-friendly menu.
@@ -36,8 +36,6 @@ A comprehensive collection of Python utilities for managing your Spotify account
   - Incremental sync and parallel processing for efficiency
 - **Add Songs to Liked Songs**: Automatically like all songs from your created playlists (with optional Christmas filtering)
 - **Remove Christmas Songs**: Intelligent detection and removal of holiday music from your library
-- **Remove Duplicate Songs**: Find and remove duplicate tracks from your Liked Songs with smart matching
-- **Scan for Playlist Duplicates**: Find duplicate tracks within your playlists
 
 ### Artist Management
 - **Follow Playlist Artists**: Automatically follow all artists from your playlists
@@ -45,11 +43,6 @@ A comprehensive collection of Python utilities for managing your Spotify account
 - **Artist Cleanup**: Remove followed artists you don't listen to with bulk filtering options
 - **Auto-Follow Feature**: Automatically follow artists when you like multiple songs from them
 
-### Analytics & Insights
-- **Enhanced Music Analytics**: Comprehensive analysis of your music taste and listening patterns
-- **Geographic Heat Maps**: Visualize artist origins and discover music from different regions
-- **Skip Pattern Analysis**: Understand which songs and artists you tend to skip
-- **Music Personality Profiling**: Audio feature analysis to understand your preferences
 
 ### Backup & Migration
 - **Complete Library Backup**: Export only your created playlists, followed artists, and liked songs
@@ -70,23 +63,18 @@ PLAYLIST MANAGEMENT:
 1. Convert local playlists to Spotify playlists
 2. Add all songs from your created playlists to Liked Songs (with Christmas filtering)
 3. Remove Christmas songs from Liked Songs
-4. Remove duplicate songs from Liked Songs
-5. Identify frequently skipped songs in your library
 
 ARTIST MANAGEMENT:
-6. Follow all artists in your created playlists
-7. Find Artists to Follow That You Probably Like
-8. Remove followed artists that you probably don't like
-
-ANALYTICS & INSIGHTS:
-9. Enhanced analytics & music insights (with comprehensive progress tracking)
-10. Backup & export your music library (user-created content only)
+4. Follow all artists in your created playlists
+5. Find Artists to Follow That You Probably Like
+6. Remove followed artists that you probably don't like
 
 SYSTEM MANAGEMENT:
-11. Manage caches (with deprecated cache cleanup)
-12. Manage API credentials
-13. Reset environment (automated with real-time feedback)
-14. Exit
+7. Backup & export your music library (user-created content only)
+8. Manage caches (with deprecated cache cleanup)
+9. Manage API credentials
+10. Reset environment (automated with real-time feedback)
+11. Exit
 ```
 
 ## 🔧 Advanced Features
@@ -104,12 +92,6 @@ SYSTEM MANAGEMENT:
 - **Auto-follow suggestions**: Automatically suggest artists based on liked songs frequency
 - **Manual review options**: Full control over which artists to follow
 
-### Music Analytics Dashboard
-- **Audio feature analysis**: Danceability, energy, valence, acousticness profiling
-- **Genre distribution**: Comprehensive breakdown of your music preferences
-- **Geographic diversity**: Artist origin mapping and regional music discovery
-- **Temporal analysis**: Track how your taste evolves over time
-- **Listening pattern insights**: Understand your music consumption habits
 
 ### Enhanced Discovery Engine
 - **Multi-source recommendations**: Combines Spotify, Last.fm, and MusicBrainz data
@@ -140,12 +122,10 @@ Each feature can be run independently:
 - `spotify_follow_artists.py`: Follow playlist artists
 - `spotify_like_songs.py`: Like playlist songs (with auto-follow)
 - `spotify_similar_artists.py`: Enhanced artist discovery
-- `spotify_analytics.py`: Music analytics and insights
 - `spotify_backup.py`: Library backup and export
 - `spotify_playlist_converter.py`: Convert local playlists
 - `spotify_cleanup_artists.py`: Artist cleanup with bulk filtering
 - `spotify_remove_christmas.py`: Remove Christmas songs
-- `spotify_remove_duplicates.py`: Remove duplicate songs
 - `spotify_identify_skipped.py`: Identify frequently skipped songs
 - `spotify_playlist_manager.py`: Advanced playlist management
 
@@ -170,7 +150,7 @@ Individual test files are available in the `tests/` directory.
 
 ### Authentication Issues
 - Verify redirect URI matches exactly: `http://127.0.0.1:8888/callback`
-- Use menu option 12 to re-enter credentials
+- Use menu option 9 to re-enter credentials
 - Check that your Spotify app has the correct scopes
 
 ### Performance Issues
@@ -179,25 +159,16 @@ Individual test files are available in the `tests/` directory.
 - The system includes intelligent rate limiting to prevent API errors
 
 ### Environment Issues
-- Use menu option 13 to reset the Python environment
+- Use menu option 10 to reset the Python environment
 - Ensure Python 3.6+ is installed
 - Check that all dependencies are properly installed
 
 ### Common Error Solutions
-- **Module not found**: Run environment reset (option 13)
+- **Module not found**: Run environment reset (option 10)
 - **API rate limits**: Wait a few minutes and retry
-- **Authentication expired**: Re-run credential setup (option 12)
-- **Cache corruption**: Clear caches (option 11)
+- **Authentication expired**: Re-run credential setup (option 9)
+- **Cache corruption**: Clear caches (option 8)
 
-## 📊 Analytics Insights
-
-The analytics system provides deep insights into your music taste:
-
-- **Music Personality Classification**: Energy levels, mood preferences, style analysis
-- **Diversity Metrics**: Geographic and genre distribution statistics
-- **Listening Behavior**: Peak listening times, session patterns, skip analysis
-- **Recommendation Quality**: Track success rate of followed artists and liked songs
-- **Library Evolution**: How your taste changes over time
 
 ## 🔄 Data Export Options
 

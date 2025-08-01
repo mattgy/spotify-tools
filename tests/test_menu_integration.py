@@ -79,14 +79,6 @@ class TestMenuIntegration(unittest.TestCase):
         except ImportError as e:
             self.fail(f"Failed to import spotify_similar_artists: {e}")
     
-    def test_import_analytics(self):
-        """Test that spotify_analytics can be imported."""
-        try:
-            import spotify_analytics
-            self.assertTrue(hasattr(spotify_analytics, 'main'))
-            self.assertTrue(hasattr(spotify_analytics, 'SpotifyAnalytics'))
-        except ImportError as e:
-            self.fail(f"Failed to import spotify_analytics: {e}")
     
     def test_import_backup(self):
         """Test that spotify_backup can be imported."""
@@ -120,13 +112,6 @@ class TestMenuIntegration(unittest.TestCase):
         except ImportError as e:
             self.fail(f"Failed to import spotify_playlist_converter: {e}")
     
-    def test_import_remove_duplicates(self):
-        """Test that spotify_remove_duplicates can be imported."""
-        try:
-            import spotify_remove_duplicates
-            self.assertTrue(hasattr(spotify_remove_duplicates, 'main'))
-        except ImportError as e:
-            self.fail(f"Failed to import spotify_remove_duplicates: {e}")
     
     def test_import_identify_skipped(self):
         """Test that spotify_identify_skipped can be imported."""
@@ -325,13 +310,11 @@ class TestMenuFunctionality(unittest.TestCase):
             'spotify_follow_artists.py',
             'spotify_like_songs.py', 
             'spotify_similar_artists.py',
-            'spotify_analytics.py',
             'spotify_playlist_converter.py',
             'spotify_cleanup_artists.py',
             'spotify_backup.py',
             'spotify_remove_christmas.py',
             'spotify_playlist_manager.py',
-            'spotify_remove_duplicates.py',
             'spotify_identify_skipped.py'
         ]
         
@@ -379,12 +362,10 @@ class TestIndividualScripts(unittest.TestCase):
             'spotify_follow_artists.py',
             'spotify_like_songs.py',
             'spotify_similar_artists.py',
-            'spotify_analytics.py',
             'spotify_playlist_converter.py',
             'spotify_cleanup_artists.py',
             'spotify_backup.py',
             'spotify_remove_christmas.py',
-            'spotify_remove_duplicates.py',
             'spotify_identify_skipped.py',
             'spotify_playlist_manager.py'
         ]

@@ -31,12 +31,10 @@ class TestMenuStructure(unittest.TestCase):
             'spotify_follow_artists.py',  # Menu option 6
             'spotify_like_songs.py',      # Menu option 2
             'spotify_similar_artists.py', # Menu option 7
-            'spotify_analytics.py',       # Menu option 9
             'spotify_playlist_converter.py', # Menu option 1
-            'spotify_cleanup_artists.py', # Menu option 8
-            'spotify_backup.py',          # Menu option 10
+            'spotify_cleanup_artists.py', # Menu option 6
+            'spotify_backup.py',          # Menu option 7
             'spotify_remove_christmas.py', # Menu option 3
-            'spotify_remove_duplicates.py', # Menu option 4
             'spotify_identify_skipped.py', # Menu option 5
             'spotify_playlist_manager.py', # Additional feature
             'cache_utils.py',             # Utility
@@ -64,11 +62,9 @@ class TestMenuStructure(unittest.TestCase):
             'spotify_follow_artists.py',
             'spotify_like_songs.py',
             'spotify_similar_artists.py',
-            'spotify_analytics.py',
             'spotify_cleanup_artists.py',
             'spotify_backup.py',
             'spotify_remove_christmas.py',
-            'spotify_remove_duplicates.py',
             'spotify_identify_skipped.py',
             'cache_utils.py',
             'credentials_manager.py',
@@ -180,11 +176,9 @@ class TestMenuFunctionality(unittest.TestCase):
             'spotify_follow_artists.py',
             'spotify_like_songs.py',
             'spotify_similar_artists.py',
-            'spotify_analytics.py',
             'spotify_cleanup_artists.py',
             'spotify_backup.py',
             'spotify_remove_christmas.py',
-            'spotify_remove_duplicates.py',
             'spotify_identify_skipped.py',
             'spotify_playlist_manager.py',
         ]

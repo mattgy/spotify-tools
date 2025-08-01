@@ -132,8 +132,10 @@ class TestCredentialsManager(unittest.TestCase):
         # Mock user input for credentials
         test_inputs = ['test_client_id', 'test_client_secret', '']
         
-        with patch('builtins.input', side_effect=test_inputs):
-            get_spotify_credentials()
+        # Temporarily disable test mode for this test to allow credential creation
+        with patch.dict(os.environ, {'SPOTIFY_TOOLS_TEST_MODE': ''}, clear=False):
+            with patch('builtins.input', side_effect=test_inputs):
+                get_spotify_credentials()
         
         # Check that credentials file exists
         self.assertTrue(os.path.exists(self.test_credentials_file))

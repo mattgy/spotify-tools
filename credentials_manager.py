@@ -37,6 +37,10 @@ def get_spotify_credentials():
         redirect_uri = os.environ.get("SPOTIFY_REDIRECT_URI", "http://127.0.0.1:8888/callback")
         
         if not client_id or not client_secret:
+            # Check if we're in test mode
+            if os.environ.get('SPOTIFY_TOOLS_TEST_MODE'):
+                return (None, None, None)
+            
             # Prompt for credentials
             print("Spotify API credentials not found.")
             print("Please enter your Spotify API credentials:")
@@ -173,6 +177,10 @@ def get_lastfm_api_key():
             api_key = os.environ.get("LASTFM_API_KEY", "")
             
             if not api_key:
+                # Check if we're in test mode
+                if os.environ.get('SPOTIFY_TOOLS_TEST_MODE'):
+                    return None
+                
                 print("Last.fm API key not found.")
                 print("Please enter your Last.fm API key:")
                 
@@ -203,6 +211,10 @@ def get_lastfm_api_key():
         api_key = os.environ.get("LASTFM_API_KEY", "")
         
         if not api_key:
+            # Check if we're in test mode
+            if os.environ.get('SPOTIFY_TOOLS_TEST_MODE'):
+                return None
+            
             # Prompt for API key
             print("Please enter your Last.fm API key:")
             

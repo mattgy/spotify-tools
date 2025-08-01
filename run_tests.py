@@ -192,6 +192,31 @@ def main():
     # Set test mode to prevent credential prompts
     os.environ['SPOTIFY_TOOLS_TEST_MODE'] = '1'
     
+    # Also mock input globally to catch any remaining prompts
+    import builtins
+    original_input = builtins.input
+    original_print = builtins.print
+    
+    def mock_input(prompt=""):
+        return "test_value"  # Just return a test value without printing
+    
+    def mock_print(*args, **kwargs):
+        # Suppress credential-related print statements during tests
+        message = ' '.join(str(arg) for arg in args)
+        if any(phrase in message for phrase in [
+            "API credentials not found", 
+            "Please enter your", 
+            "Client ID:", 
+            "Client Secret:", 
+            "API Key:",
+            "Redirect URI"
+        ]):
+            return  # Suppress these prints
+        original_print(*args, **kwargs)
+    
+    builtins.input = mock_input
+    builtins.print = mock_print
+    
     # If we're not already in virtual environment, try to run in it
     if not os.environ.get('SPOTIFY_TOOLS_TESTING'):
         if run_in_venv():
@@ -233,6 +258,13 @@ def main():
         print("   - API credentials: Set up credentials via menu option 9")
     
     print("=" * 60)
+    
+    # Restore original functions
+    try:
+        builtins.input = original_input
+        builtins.print = original_print
+    except:
+        pass
     
     # Exit with appropriate code
     sys.exit(0 if all_tests_passed else 1)

@@ -129,6 +129,15 @@ class TestMenuIntegration(unittest.TestCase):
         except ImportError as e:
             self.fail(f"Failed to import spotify_playlist_manager: {e}")
     
+    def test_import_playlist_size_manager(self):
+        """Test that spotify_playlist_size_manager can be imported."""
+        try:
+            import spotify_playlist_size_manager
+            self.assertTrue(hasattr(spotify_playlist_size_manager, 'main'))
+            self.assertTrue(hasattr(spotify_playlist_size_manager, 'PlaylistSizeManager'))
+        except ImportError as e:
+            self.fail(f"Failed to import spotify_playlist_size_manager: {e}")
+    
     def test_run_script_function(self):
         """Test that run_script function works."""
         import spotify_tools
@@ -315,6 +324,7 @@ class TestMenuFunctionality(unittest.TestCase):
             'spotify_backup.py',
             'spotify_remove_christmas.py',
             'spotify_playlist_manager.py',
+            'spotify_playlist_size_manager.py',
             'spotify_identify_skipped.py'
         ]
         
@@ -367,7 +377,8 @@ class TestIndividualScripts(unittest.TestCase):
             'spotify_backup.py',
             'spotify_remove_christmas.py',
             'spotify_identify_skipped.py',
-            'spotify_playlist_manager.py'
+            'spotify_playlist_manager.py',
+            'spotify_playlist_size_manager.py'
         ]
         
         for script_name in scripts_to_test:

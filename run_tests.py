@@ -66,6 +66,7 @@ def test_all_imports():
         'spotify_identify_skipped',
         'spotify_playlist_manager',
         'spotify_playlist_converter',
+        'spotify_playlist_size_manager',
         'cache_utils',
         'credentials_manager',
         'constants',
@@ -110,7 +111,8 @@ def test_menu_script_functions():
         ('spotify_remove_christmas', ['main']),
         ('spotify_identify_skipped', ['main']),
         ('spotify_playlist_manager', ['main']),
-        ('spotify_playlist_converter', ['main'])
+        ('spotify_playlist_converter', ['main']),
+        ('spotify_playlist_size_manager', ['main', 'PlaylistSizeManager'])
     ]
     
     print("\nTesting script functions...")

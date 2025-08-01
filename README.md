@@ -20,7 +20,7 @@ A comprehensive collection of Python utilities for managing your Spotify account
 3. **Set up Spotify credentials** (one-time):
    - Create a free Spotify app at [developer.spotify.com](https://developer.spotify.com/dashboard/)
    - Set redirect URI to: `http://127.0.0.1:8888/callback`
-   - Use menu option 9 to enter your Client ID and Client Secret
+   - Use menu option 10 to enter your Client ID and Client Secret
    - (Optional) Add AI service API keys for enhanced track matching
 
 **That's it!** The program handles Python virtual environment setup, dependency installation, and provides a user-friendly menu.
@@ -36,6 +36,7 @@ A comprehensive collection of Python utilities for managing your Spotify account
   - Incremental sync and parallel processing for efficiency
 - **Add Songs to Liked Songs**: Automatically like all songs from your created playlists (with optional Christmas filtering)
 - **Remove Christmas Songs**: Intelligent detection and removal of holiday music from your library
+- **Manage Playlists by Size**: Find and delete playlists with X or fewer tracks, with pagination and bulk operations
 
 ### Artist Management
 - **Follow Playlist Artists**: Automatically follow all artists from your playlists
@@ -63,18 +64,19 @@ PLAYLIST MANAGEMENT:
 1. Convert local playlists to Spotify playlists
 2. Add all songs from your created playlists to Liked Songs (with Christmas filtering)
 3. Remove Christmas songs from Liked Songs
+4. Find and manage playlists by track count
 
 ARTIST MANAGEMENT:
-4. Follow all artists in your created playlists
-5. Find Artists to Follow That You Probably Like
-6. Remove followed artists that you probably don't like
+5. Follow all artists in your created playlists
+6. Find Artists to Follow That You Probably Like
+7. Remove followed artists that you probably don't like
 
 SYSTEM MANAGEMENT:
-7. Backup & export your music library (user-created content only)
-8. Manage caches (with deprecated cache cleanup)
-9. Manage API credentials
-10. Reset environment (automated with real-time feedback)
-11. Exit
+8. Backup & export your music library (user-created content only)
+9. Manage caches (with deprecated cache cleanup)
+10. Manage API credentials
+11. Reset environment (automated with real-time feedback)
+12. Exit
 ```
 
 ## 🔧 Advanced Features
@@ -98,6 +100,13 @@ SYSTEM MANAGEMENT:
 - **Intelligent scoring**: Weighted recommendations based on your listening history
 - **Geographic exploration**: Discover artists from underrepresented regions
 - **Genre diversification**: Expand beyond your current preferences
+
+### Playlist Size Management
+- **Find small playlists**: Search for playlists with X or fewer tracks
+- **Paginated display**: Browse through results with easy navigation
+- **Bulk selection**: Select multiple playlists for deletion
+- **Safe deletion**: Confirmation required before removing playlists
+- **Cache support**: Fast retrieval of previously searched results
 
 ## ⚙️ Configuration
 
@@ -128,6 +137,7 @@ Each feature can be run independently:
 - `spotify_remove_christmas.py`: Remove Christmas songs
 - `spotify_identify_skipped.py`: Identify frequently skipped songs
 - `spotify_playlist_manager.py`: Advanced playlist management
+- `spotify_playlist_size_manager.py`: Find and manage playlists by track count
 
 ## 🧪 Testing
 
@@ -150,7 +160,7 @@ Individual test files are available in the `tests/` directory.
 
 ### Authentication Issues
 - Verify redirect URI matches exactly: `http://127.0.0.1:8888/callback`
-- Use menu option 9 to re-enter credentials
+- Use menu option 10 to re-enter credentials
 - Check that your Spotify app has the correct scopes
 
 ### Performance Issues
@@ -159,15 +169,15 @@ Individual test files are available in the `tests/` directory.
 - The system includes intelligent rate limiting to prevent API errors
 
 ### Environment Issues
-- Use menu option 10 to reset the Python environment
+- Use menu option 11 to reset the Python environment
 - Ensure Python 3.6+ is installed
 - Check that all dependencies are properly installed
 
 ### Common Error Solutions
-- **Module not found**: Run environment reset (option 10)
+- **Module not found**: Run environment reset (option 11)
 - **API rate limits**: Wait a few minutes and retry
-- **Authentication expired**: Re-run credential setup (option 9)
-- **Cache corruption**: Clear caches (option 8)
+- **Authentication expired**: Re-run credential setup (option 10)
+- **Cache corruption**: Clear caches (option 9)
 
 
 ## 🔄 Data Export Options

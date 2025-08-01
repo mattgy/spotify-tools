@@ -27,6 +27,7 @@ All scripts can be run independently:
 - `python3 spotify_remove_christmas.py`
 - `python3 spotify_identify_skipped.py`
 - `python3 spotify_playlist_manager.py`
+- `python3 spotify_playlist_size_manager.py`
 
 ### Testing
 - Comprehensive test suite: `python3 run_tests.py`
@@ -67,7 +68,7 @@ All scripts can be run independently:
 - Added defensive programming across multiple scripts for artist data corruption
 - Scripts now handle both proper artist objects and string IDs/names gracefully
 - Common pattern: type checking with isinstance() before accessing dict methods
-- Artist cleanup tool (option 6) now auto-detects and repairs corrupted cache
+- Artist cleanup tool (option 7) now auto-detects and repairs corrupted cache
 - When corruption detected, cache is cleared and user prompted to restart
 
 ### Menu Structure Changes - MAJOR UPDATE
@@ -75,9 +76,18 @@ All scripts can be run independently:
   - Option 4: "Remove duplicate songs from Liked Songs" (deleted script)
   - Option 5: "Scan for duplicate tracks in your playlists" (deleted script)  
   - Option 9: "Enhanced analytics & music insights" (deleted script)
+- Added new option 4: "Find and manage playlists by track count"
 - Moved "Backup & export" from Analytics section to System Management
-- Menu now has options 1-11 (was 1-14)
-- API credential management is now option 9
+- Menu now has options 1-12 (was 1-14)
+- API credential management is now option 10
+
+### Playlist Size Manager (Option 4) - NEW FEATURE
+- Searches for playlists with X or fewer tracks (user-specified threshold)
+- Displays results with pagination (10 playlists per page)
+- Allows bulk selection and deletion of playlists
+- Requires explicit confirmation (type 'DELETE') before removing playlists
+- Caches search results for 1 hour to improve performance
+- Only shows and manages user-created playlists (not followed playlists)
 
 ### Cache Key Standardization
 - Option 2 uses "all_liked_songs" cache key for consistency

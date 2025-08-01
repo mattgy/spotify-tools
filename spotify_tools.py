@@ -43,6 +43,7 @@ CHRISTMAS_CLEANUP_SCRIPT = os.path.join(SCRIPT_DIR, "spotify_remove_christmas.py
 PLAYLIST_MANAGER_SCRIPT = os.path.join(SCRIPT_DIR, "spotify_playlist_manager.py")
 IDENTIFY_SKIPPED_SCRIPT = os.path.join(SCRIPT_DIR, "spotify_identify_skipped.py")
 PLAYLIST_RECONCILE_SCRIPT = os.path.join(SCRIPT_DIR, "spotify_playlist_reconcile.py")
+PLAYLIST_SIZE_MANAGER_SCRIPT = os.path.join(SCRIPT_DIR, "spotify_playlist_size_manager.py")
 INSTALL_DEPENDENCIES_SCRIPT = os.path.join(SCRIPT_DIR, "install_dependencies.py")
 
 # Define config directory
@@ -661,22 +662,23 @@ def main():
         print(f"{Fore.WHITE}1. Convert local playlists to Spotify playlists")
         print(f"{Fore.WHITE}2. Add all songs from your created playlists to Liked Songs")
         print(f"{Fore.WHITE}3. Remove Christmas songs from Liked Songs")
+        print(f"{Fore.WHITE}4. Find and manage playlists by track count")
         
         # Artist Management
         print(f"\n{Fore.YELLOW}{Style.BRIGHT}ARTIST MANAGEMENT:")
-        print(f"{Fore.WHITE}4. Follow all artists in your created playlists")
-        print(f"{Fore.WHITE}5. Find Artists to Follow That You Probably Like")
-        print(f"{Fore.WHITE}6. Remove followed artists that you probably don't like")
+        print(f"{Fore.WHITE}5. Follow all artists in your created playlists")
+        print(f"{Fore.WHITE}6. Find Artists to Follow That You Probably Like")
+        print(f"{Fore.WHITE}7. Remove followed artists that you probably don't like")
         
         # System Management
         print(f"\n{Fore.YELLOW}{Style.BRIGHT}SYSTEM MANAGEMENT:")
-        print(f"{Fore.WHITE}7. Backup & export your music library")
-        print(f"{Fore.WHITE}8. Manage caches")
-        print(f"{Fore.WHITE}9. Manage API credentials")
-        print(f"{Fore.WHITE}10. Reset environment (reinstall dependencies)")
-        print(f"{Fore.WHITE}11. Exit")
+        print(f"{Fore.WHITE}8. Backup & export your music library")
+        print(f"{Fore.WHITE}9. Manage caches")
+        print(f"{Fore.WHITE}10. Manage API credentials")
+        print(f"{Fore.WHITE}11. Reset environment (reinstall dependencies)")
+        print(f"{Fore.WHITE}12. Exit")
         
-        choice = input(f"\n{Fore.CYAN}Enter your choice (1-11): ")
+        choice = input(f"\n{Fore.CYAN}Enter your choice (1-12): ")
         
         if choice == "1":
             # Playlist converter sub-menu
@@ -693,38 +695,43 @@ def main():
             run_script(CHRISTMAS_CLEANUP_SCRIPT)
             
         elif choice == "4":
+            # Run the playlist size manager script
+            print_info("\nManaging playlists by track count...")
+            run_script(PLAYLIST_SIZE_MANAGER_SCRIPT)
+            
+        elif choice == "5":
             # Run the follow artists script
             print_info("\nRunning follow artists functionality...")
             run_script(FOLLOW_ARTISTS_SCRIPT)
             
-        elif choice == "5":
+        elif choice == "6":
             # Run the similar artists script
             print_info("\nFinding artists to follow that you probably like...")
             run_script(SIMILAR_ARTISTS_SCRIPT)
             
-        elif choice == "6":
+        elif choice == "7":
             # Run the artist cleanup script
             print_info("\nRemoving followed artists that you probably don't like...")
             run_script(CLEANUP_ARTISTS_SCRIPT)
             
-        elif choice == "7":
+        elif choice == "8":
             # Run the backup script
             print_info("\nRunning backup & export functionality...")
             run_script(BACKUP_SCRIPT)
             
-        elif choice == "8":
+        elif choice == "9":
             # Manage caches
             manage_caches()
             
-        elif choice == "9":
+        elif choice == "10":
             # Manage API credentials
             manage_api_credentials()
             
-        elif choice == "10":
+        elif choice == "11":
             # Reset environment
             reset_environment()
             
-        elif choice == "11":
+        elif choice == "12":
             print_success("Exiting...")
             break
         

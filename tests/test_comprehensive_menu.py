@@ -35,8 +35,9 @@ class TestMenuStructure(unittest.TestCase):
             'spotify_cleanup_artists.py', # Menu option 6
             'spotify_backup.py',          # Menu option 7
             'spotify_remove_christmas.py', # Menu option 3
-            'spotify_identify_skipped.py', # Menu option 5
+            'spotify_identify_skipped.py', # Additional feature
             'spotify_playlist_manager.py', # Additional feature
+            'spotify_playlist_size_manager.py', # Menu option 4
             'cache_utils.py',             # Utility
             'credentials_manager.py',     # Utility
             'constants.py',               # Constants
@@ -66,6 +67,7 @@ class TestMenuStructure(unittest.TestCase):
             'spotify_backup.py',
             'spotify_remove_christmas.py',
             'spotify_identify_skipped.py',
+            'spotify_playlist_size_manager.py',
             'cache_utils.py',
             'credentials_manager.py',
             'constants.py',
@@ -181,6 +183,7 @@ class TestMenuFunctionality(unittest.TestCase):
             'spotify_remove_christmas.py',
             'spotify_identify_skipped.py',
             'spotify_playlist_manager.py',
+            'spotify_playlist_size_manager.py',
         ]
         
         scripts_without_main = []

@@ -200,7 +200,7 @@ def easy_cache_cleanup():
 def show_cache_stats():
     """Show detailed cache statistics."""
     from colorama import Fore, Style 
-    import datetime
+    from datetime import datetime
     
     caches = list_caches()
     if not caches:
@@ -208,14 +208,15 @@ def show_cache_stats():
         return
     
     total_size = sum(cache['size'] for cache in caches)
-    oldest = min(caches, key=lambda x: x['created'])
-    newest = max(caches, key=lambda x: x['created'])
+    # Use 'mtime' which is the actual key in the cache structure
+    oldest = min(caches, key=lambda x: x['mtime'])
+    newest = max(caches, key=lambda x: x['mtime'])
     
     print(f"\n{Fore.CYAN}{Style.BRIGHT}📊 Cache Statistics{Style.RESET_ALL}")
     print(f"Total cache files: {len(caches)}")
     print(f"Total size: {total_size / 1024 / 1024:.2f} MB")
-    print(f"Oldest cache: {oldest['name']} ({datetime.datetime.fromtimestamp(oldest['created']).strftime('%Y-%m-%d %H:%M')})")
-    print(f"Newest cache: {newest['name']} ({datetime.datetime.fromtimestamp(newest['created']).strftime('%Y-%m-%d %H:%M')})")
+    print(f"Oldest cache: {oldest['name']} ({datetime.fromtimestamp(oldest['mtime']).strftime('%Y-%m-%d %H:%M')})")
+    print(f"Newest cache: {newest['name']} ({datetime.fromtimestamp(newest['mtime']).strftime('%Y-%m-%d %H:%M')})")
     
     # Group by type
     cache_types = {}

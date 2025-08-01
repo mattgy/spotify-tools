@@ -216,7 +216,7 @@ def get_lastfm_api_key():
         try:
             with open(CREDENTIALS_FILE, "r") as f:
                 credentials = json.load(f)
-        except:
+        except (FileNotFoundError, json.JSONDecodeError):
             credentials = {}
         
         credentials["LASTFM_API_KEY"] = api_key
@@ -246,7 +246,7 @@ def save_credentials(credentials_dict):
     try:
         with open(CREDENTIALS_FILE, "r") as f:
             existing_credentials = json.load(f)
-    except:
+    except (FileNotFoundError, json.JSONDecodeError):
         existing_credentials = {}
     
     # Update with new credentials

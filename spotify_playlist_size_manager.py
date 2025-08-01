@@ -43,6 +43,7 @@ from constants import DEFAULT_CACHE_EXPIRATION, STANDARD_CACHE_KEYS
 # Constants
 PAGE_SIZE = 10  # Number of playlists to show per page
 CACHE_KEY_PREFIX = "playlist_size_search"
+CACHE_EXPIRATION = DEFAULT_CACHE_EXPIRATION  # For backward compatibility with tests
 
 class PlaylistSizeManager:
     """Manages finding and deleting playlists based on track count."""
@@ -256,31 +257,17 @@ class PlaylistSizeManager:
                 print(f"{Fore.RED}Failed to delete: {failed_count} playlists{Style.RESET_ALL}")
             
             # Clear cache after deletion
-            from cache_utils import list_caches, clear_cache
+            from cache_utils import clear_cache
             
-            # Clear main playlist cache and search-specific caches
+            # Clear main playlist cache (this is the most critical for consistency)
             main_playlist_cache = STANDARD_CACHE_KEYS['user_playlists']
-            search_cache_pattern = f"{CACHE_KEY_PREFIX}_{self.user_id}_"
-            
-            cleared_count = 0
-            
-            # Clear main playlist cache
             try:
                 clear_cache(main_playlist_cache)
-                cleared_count += 1
-                print_info("Cleared main playlist cache")
-            except:
+                print_info("Cleared playlist cache")
+            except (FileNotFoundError, KeyError):
                 pass  # Cache might not exist
             
-            # Clear search-specific caches
-            caches = list_caches()
-            for cache in caches:
-                if cache['name'].startswith(search_cache_pattern):
-                    clear_cache(cache['name'])
-                    cleared_count += 1
-            
-            if cleared_count > 1:  # Only show if we cleared multiple caches
-                print_info(f"Cleared {cleared_count} playlist cache(s)")
+            # Note: Search-specific caches will expire naturally and don't need immediate clearing
             
         else:
             print_warning("Deletion cancelled.")

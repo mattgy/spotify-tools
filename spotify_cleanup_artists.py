@@ -67,7 +67,7 @@ def display_artists_paginated(artists, title="Artists"):
         
         print_header(f"{title} - Page {current_page}/{total_pages}")
         print(f"Showing {start_idx + 1}-{end_idx} of {len(artists)} artists")
-        print(f"{Fore.CYAN}Score = Relevance based on popularity & followers | Pop = Spotify popularity | Followers = API count")
+        print(f"{Fore.CYAN}Score = Relevance (includes playlist bonus) | Pop = Spotify popularity | PL = Playlist appearances")
         print(f"{Fore.CYAN}⚠️ = Low followers but high popularity | Monthly listeners NOT available via API\n")
         
         for i, artist in enumerate(page_artists, start_idx + 1):
@@ -81,10 +81,12 @@ def display_artists_paginated(artists, title="Artists"):
             if artist['followers'] < 100 and artist['popularity'] > 30:
                 warning = f" {Fore.MAGENTA}⚠️"
             
-            # Show simplified scoring information
-            print(f"{i:3d}. {Fore.WHITE}{artist['name']:<40} " + 
+            # Show simplified scoring information with playlist data
+            playlist_info = f"PL: {artist.get('playlist_appearances', 0)}" if 'playlist_appearances' in artist else "PL: N/A"
+            print(f"{i:3d}. {Fore.WHITE}{artist['name']:<35} " + 
                   f"{Fore.YELLOW}Pop: {artist['popularity']:2d}/100  " +
-                  f"{Fore.GREEN}Followers: {follower_display:>10s}  " +
+                  f"{Fore.MAGENTA}{playlist_info}  " +
+                  f"{Fore.GREEN}Followers: {follower_display:>8s}  " +
                   f"{Fore.CYAN}Score: {artist['relevance_score']:5.1f}{warning}")
         
         print(f"\n{Fore.WHITE}Navigation:")
@@ -239,8 +241,9 @@ def identify_inactive_artists(followed_artists, top_artists, recently_played):
         print_info("Cache cleared. Please restart the script to fetch fresh artist data.")
         return []
     
-    # Create a set of active artist IDs
+    # Create a set of active artist IDs and track playlist appearances
     active_artist_ids = set()
+    playlist_artist_counts = {}  # artist_id -> number of playlists they appear in
     
     # Add top artists from all time ranges
     total_top_artists = 0
@@ -257,6 +260,63 @@ def identify_inactive_artists(followed_artists, top_artists, recently_played):
                 recent_artist_count += 1
             active_artist_ids.add(artist["id"])
     
+    # IMPORTANT: Check user-created playlists for artist appearances
+    print_info("Analyzing your playlists for artist preferences...")
+    try:
+        from spotify_utils import fetch_user_playlists, extract_artists_from_playlists
+        from constants import STANDARD_CACHE_KEYS, DEFAULT_CACHE_EXPIRATION
+        
+        # Get Spotify client from the module scope (assuming sp is available)
+        # We need to get this from the calling context
+        import inspect
+        frame = inspect.currentframe().f_back
+        sp = frame.f_locals.get('sp') or frame.f_globals.get('sp')
+        
+        if sp:
+            # Get user playlists
+            user_playlists = fetch_user_playlists(sp, show_progress=False, 
+                                                cache_key=STANDARD_CACHE_KEYS['user_playlists'], 
+                                                cache_expiration=DEFAULT_CACHE_EXPIRATION)
+            
+            # Extract artists from user's playlists
+            user_id = sp.current_user()['id']
+            user_created_playlists = [p for p in user_playlists if p['owner']['id'] == user_id]
+            
+            if user_created_playlists:
+                playlist_artists = extract_artists_from_playlists(user_created_playlists, sp, show_progress=False)
+                
+                # Count how many playlists each artist appears in
+                for playlist in user_created_playlists:
+                    try:
+                        from spotify_utils import fetch_playlist_tracks
+                        tracks = fetch_playlist_tracks(sp, playlist['id'], show_progress=False)
+                        playlist_artist_ids = set()
+                        
+                        for track_item in tracks:
+                            if track_item and track_item.get('track') and track_item['track'].get('artists'):
+                                for artist in track_item['track']['artists']:
+                                    artist_id = artist.get('id')
+                                    if artist_id and artist_id not in playlist_artist_ids:
+                                        playlist_artist_ids.add(artist_id)
+                                        playlist_artist_counts[artist_id] = playlist_artist_counts.get(artist_id, 0) + 1
+                    except Exception as e:
+                        print_warning(f"Error processing playlist {playlist.get('name', 'Unknown')}: {e}")
+                        continue
+                
+                # Add artists that appear in multiple playlists to active artists
+                playlist_favorites = 0
+                for artist_id, count in playlist_artist_counts.items():
+                    if count >= 2:  # Appears in 2+ playlists = probably liked
+                        if artist_id not in active_artist_ids:
+                            playlist_favorites += 1
+                        active_artist_ids.add(artist_id)
+                
+                print_info(f"  • From playlists: {playlist_favorites} additional artists (appear in 2+ playlists)")
+                
+    except Exception as e:
+        print_warning(f"Could not analyze playlists: {e}")
+        print_info("Continuing without playlist analysis...")
+    
     print_info(f"Active artists found: {len(active_artist_ids)} total")
     print_info(f"  • From top artists: {total_top_artists} entries across time ranges")
     print_info(f"  • From recently played: {recent_artist_count} additional artists")
@@ -271,6 +331,7 @@ def identify_inactive_artists(followed_artists, top_artists, recently_played):
             # Calculate simplified relevance score
             popularity = artist["popularity"]
             followers = artist["followers"]["total"]
+            artist_id = artist["id"]
             
             import math
             
@@ -284,6 +345,13 @@ def identify_inactive_artists(followed_artists, top_artists, recently_played):
             # Add protection for well-known artists that might have lower follower counts
             base_score = (popularity * 0.7) + (follower_score * 0.3)
             
+            # IMPORTANT: Apply playlist bonus - if artist appears in user playlists, boost score significantly
+            playlist_appearances = playlist_artist_counts.get(artist_id, 0)
+            playlist_bonus = 0
+            if playlist_appearances > 0:
+                # Even 1 playlist appearance should provide significant protection
+                playlist_bonus = min(40, playlist_appearances * 25)  # 25 points per playlist, max 40
+                
             # Apply conservative adjustment for potentially well-known artists
             # Don't suggest removal of artists with high popularity even if followers are low
             if popularity >= 50:  # Popular artists should be protected
@@ -293,6 +361,9 @@ def identify_inactive_artists(followed_artists, top_artists, recently_played):
             else:
                 relevance_score = base_score
             
+            # Add playlist bonus after other calculations
+            relevance_score += playlist_bonus
+            
             # Create artist record with simplified scoring
             artist_record = {
                 "id": artist["id"],
@@ -301,6 +372,8 @@ def identify_inactive_artists(followed_artists, top_artists, recently_played):
                 "followers": followers,
                 "genres": artist.get("genres", []),
                 "follower_score": follower_score,
+                "playlist_appearances": playlist_appearances,
+                "playlist_bonus": playlist_bonus,
                 "relevance_score": relevance_score,
                 "final_score": relevance_score,
                 "artist_importance_score": relevance_score  # For backward compatibility

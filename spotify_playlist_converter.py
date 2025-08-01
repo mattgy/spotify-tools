@@ -585,7 +585,8 @@ def extract_track_info_from_extinf_and_path(extinf_line, file_path):
 def extract_track_info_from_path(path):
     """
     Extract artist, album, and title information from a file path.
-    Handles various common path formats including underscore-separated names.
+    Handles various common path formats including underscore-separated names,
+    Windows paths, and complex track numbering patterns.
     """
     # Default values
     track_info = {
@@ -596,13 +597,67 @@ def extract_track_info_from_path(path):
         'original_line': path  # Store the original path
     }
     
-    # Get just the filename without extension
-    filename = os.path.basename(path)
+    # Get just the filename without extension (handle both Unix and Windows paths)
+    filename = path.replace('\\', '/').split('/')[-1]  # Get last part after normalizing separators
     filename_no_ext = os.path.splitext(filename)[0]
     
-    # Enhanced parsing for underscore-separated filenames
-    # Handle patterns like: "various_artists_-_ofo_the_black_company__allah_wakbarr.wav"
+    # Enhanced parsing for various filename formats
     enhanced_filename = filename_no_ext
+    
+    # Handle directory information first (for cases like "M:\Turntables Electronics\Joshua Idehen\Routes\Joshua Idehen-03-Northern Line.mp3")
+    path_parts = path.replace('\\', '/').split('/')  # Normalize path separators
+    if len(path_parts) >= 3:
+        # Try to extract artist from directory structure
+        potential_artist = None
+        potential_album = None
+        
+        # Look for artist in the path (prioritize matches that appear in filename)
+        best_match = None
+        best_score = 0
+        
+        for i in range(2, min(5, len(path_parts))):  # Check last 2-4 directory levels
+            dir_name = path_parts[-i]
+            if dir_name and not re.match(r'^[A-Z]:$', dir_name):  # Skip drive letters
+                normalized_dir = dir_name.lower().replace(' ', '').replace('_', '').replace('-', '')
+                normalized_filename = filename_no_ext.lower().replace(' ', '').replace('_', '').replace('-', '')
+                
+                score = 0
+                
+                # Higher score if filename starts with this directory name
+                if normalized_filename.startswith(normalized_dir):
+                    score = 100
+                # Medium score if directory name appears anywhere in filename
+                elif normalized_dir in normalized_filename:
+                    score = 50
+                # Low score for any directory in path structure
+                else:
+                    score = 10
+                
+                # Prefer longer matches (more specific)
+                score += len(normalized_dir)
+                
+                if score > best_score:
+                    best_score = score
+                    best_match = dir_name
+                    potential_album = path_parts[-2] if len(path_parts) >= 2 else None
+        
+        if best_match:
+            potential_artist = best_match
+        
+        # Store potential matches for later use
+        if potential_artist:
+            track_info['artist'] = potential_artist
+        if potential_album and potential_album != potential_artist:
+            track_info['album'] = potential_album
+    
+    # Enhanced track number removal patterns
+    enhanced_track_patterns = [
+        r'^(\d+[\s\.\-_]+)',  # Basic: "01 - ", "1. ", "01_"
+        r'^(\d+\.?\d*[\s\.\-_]+)',  # Decimal: "1.1 - ", "1.5_"
+        r'(?:^|\s)(\d+[\s\.\-_]*-[\s\.\-_]*)',  # "Joshua Idehen-03-Northern Line" -> "Joshua Idehen - Northern Line"
+        r'(\s-\s\d+[\s\.\-_]*-\s)',  # " - 03 - " -> " - "
+        r'(\d{2,3}[\s\.\-_]+)',  # Track numbers at start: "003 - "
+    ]
     
     # Check for underscore-based format first
     if '_-_' in enhanced_filename or '__' in enhanced_filename:
@@ -638,23 +693,33 @@ def extract_track_info_from_path(path):
             # Regular underscore format without "various artists"
             enhanced_filename = enhanced_filename.replace('_', ' ')
     
+    # Handle artist name appearing multiple times in filename (e.g., "Joshua Idehen-03-Northern Line" with Joshua Idehen as artist)
+    if track_info['artist'] and track_info['artist'].lower() in enhanced_filename.lower():
+        # Remove redundant artist name from filename for cleaner parsing
+        artist_pattern = re.escape(track_info['artist'])
+        # Remove artist name if it appears at the beginning
+        enhanced_filename = re.sub(f'^{artist_pattern}[-_\\s]*', '', enhanced_filename, flags=re.IGNORECASE)
+    
+    # Apply enhanced track number removal
+    for pattern in enhanced_track_patterns:
+        enhanced_filename = re.sub(pattern, '', enhanced_filename).strip()
+        if enhanced_filename.startswith('- '):
+            enhanced_filename = enhanced_filename[2:].strip()
+    
     # If we haven't extracted info yet, try standard patterns
-    if not track_info['artist'] and not track_info['title']:
+    if not track_info['title']:  # We might have artist from directory parsing
         # Try standard dash separator
-        test_filename = enhanced_filename if enhanced_filename != filename_no_ext else filename_no_ext
-        parts = re.split(r' - ', test_filename, maxsplit=1)
+        test_filename = enhanced_filename
+        parts = re.split(r'\s*-\s*', test_filename, maxsplit=1)
         
         if len(parts) > 1:
-            # Remove track numbers from the beginning
-            artist = re.sub(r'^(\d+[\s\.\-_]+)', '', parts[0].strip())
-            title = parts[1].strip()
-            
-            track_info['artist'] = artist
-            track_info['title'] = title
+            # If we don't have an artist yet, use the first part
+            if not track_info['artist']:
+                track_info['artist'] = parts[0].strip()
+            track_info['title'] = parts[1].strip()
         else:
-            # If no artist-title separator found, assume it's just the title
-            title = re.sub(r'^(\d+[\s\.\-_]+)', '', test_filename.strip())
-            track_info['title'] = title
+            # If no artist-title separator found, use the whole thing as title
+            track_info['title'] = test_filename.strip()
     
     # Clean up the extracted information
     if track_info['artist']:
@@ -978,16 +1043,32 @@ def parse_playlist_file(file_path):
             return []
 
 def normalize_string(s):
-    """Normalize string for better matching."""
+    """
+    Normalize string for better matching.
+    Preserves non-English characters while cleaning up formatting.
+    """
     if not s:
         return ""
-    # Remove special characters, convert to lowercase
-    s = re.sub(r'[^\w\s]', '', s.lower())
-    # Remove common words that might interfere with matching
-    common_words = ['the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'feat', 'featuring', 'ft']
-    words = s.split()
-    words = [w for w in words if w not in common_words]
-    return ' '.join(words).strip()
+    
+    # Convert to lowercase but preserve Unicode characters
+    s = s.lower()
+    
+    # Remove extra whitespace and normalize spaces
+    s = re.sub(r'\s+', ' ', s).strip()
+    
+    # Remove punctuation but keep letters, numbers, spaces, and Unicode characters
+    # This preserves Chinese, Arabic, Cyrillic, etc. characters
+    s = re.sub(r'[^\w\s\u4e00-\u9fff\u0600-\u06ff\u0400-\u04ff]', '', s)
+    
+    # Remove common English words that might interfere with matching
+    # Only remove if the string contains mostly English text
+    if re.search(r'[a-z]', s):  # Contains English letters
+        common_words = ['the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'feat', 'featuring', 'ft']
+        words = s.split()
+        words = [w for w in words if w not in common_words]
+        s = ' '.join(words)
+    
+    return s.strip()
 
 def normalize_for_variations(text):
     """Apply common variations normalization."""
@@ -1226,8 +1307,15 @@ def search_track_on_spotify(sp, artist, title, album=None):
     clean_title = normalize_for_variations(title) if title else "none"
     clean_album = normalize_for_variations(album) if album else "none"
     
-    # Create cache key
+    # Create cache key (properly encode for filesystem safety)
     cache_key = f"track_search_{clean_artist}_{clean_album}_{clean_title}".replace(" ", "_").lower()
+    # Handle non-ASCII characters in cache key
+    try:
+        import urllib.parse
+        cache_key = urllib.parse.quote(cache_key.encode('utf-8'), safe='_-')
+    except:
+        # Fallback: replace non-ASCII characters with underscore
+        cache_key = re.sub(r'[^\w\-_]', '_', cache_key)
     
     # Also check for variation cache keys (e.g., with/without "feat." vs "featuring")
     variation_keys = []
@@ -1245,10 +1333,16 @@ def search_track_on_spotify(sp, artist, title, album=None):
         logger.debug(f"Using cached result for '{artist} - {title}'")
         return cached_result
     
-    # Clean up the title and artist
+    # Clean up the title and artist while preserving Unicode characters
     # Remove common file extensions and numbering
     title = re.sub(r'\.mp3$|\.flac$|\.wav$|\.m4a$|\.ogg$|\.wma$|\.aac$|\.opus$', '', title, flags=re.IGNORECASE)
     title = remove_track_numbers(title)
+    
+    # Ensure proper Unicode handling
+    if isinstance(title, bytes):
+        title = title.decode('utf-8', errors='ignore')
+    if isinstance(artist, bytes):
+        artist = artist.decode('utf-8', errors='ignore')
     
     # Handle cases where artist might be in the title
     if not artist and " - " in title:
@@ -1390,6 +1484,19 @@ def search_track_on_spotify(sp, artist, title, album=None):
             process_search_results(results8, artist, title, album, candidates, weight=0.95)
         except Exception as e:
             logger.error(f"Error in search strategy 8: {e}")
+    
+    # Strategy 8a: Try removing parenthetical content as backup
+    # For cases like "Ada - The Jazz Singer (Re-Imagined By Ada)" -> try "Ada - The Jazz Singer"
+    simple_title = re.sub(r'\s*[\(\[].*?[\)\]]\s*', '', title).strip()
+    if simple_title != title and simple_title:
+        query8a = f"artist:\"{artist}\" track:\"{simple_title}\"" if artist else f"\"{simple_title}\""
+        logger.debug(f"Strategy 8a (simplified title): {query8a}")
+        try:
+            results8a = sp.search(q=query8a, type='track', limit=10)
+            # Give these results a higher weight since simplified titles often match better
+            process_search_results(results8a, artist, simple_title, album, candidates, weight=1.1)
+        except Exception as e:
+            logger.error(f"Error in search strategy 8a: {e}")
     
     # Strategy 8b: Try swapping artist and title (common in some playlists)
     if artist and title and ' - ' not in artist:  # Only swap if artist doesn't contain ' - '

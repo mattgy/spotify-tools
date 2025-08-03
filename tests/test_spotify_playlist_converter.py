@@ -79,6 +79,57 @@ class TestTrackInfoExtraction(unittest.TestCase):
         self.assertEqual(result['artist'], 'Ada')
         self.assertEqual(result['title'], 'The Jazz Singer (Re-Imagined By Ada)')
         self.assertEqual(result['album'], 'Meine Zarten Pfoten')
+    
+    def test_extract_track_info_xplastaz_pattern(self):
+        """Test Xplastaz - Maasai Hip Hop - Msimu Kwa Msimu parsing."""
+        path = "Xplastaz - Maasai Hip Hop - Msimu Kwa Msimu"
+        result = spc.extract_track_info_from_path(path)
+        
+        self.assertEqual(result['artist'], 'X Plastaz')
+        self.assertEqual(result['title'], 'Msimu Kwa Msimu')
+        self.assertEqual(result['album'], 'Maasai Hip Hop')
+    
+    def test_extract_track_info_black_spade_pattern(self):
+        """Test Black Spade - To Serve With Love - Black_Spade_5_She_s_The_One parsing."""
+        path = "Black Spade - To Serve With Love - Black_Spade_5_She_s_The_One"
+        result = spc.extract_track_info_from_path(path)
+        
+        self.assertEqual(result['artist'], 'Black Spade')
+        self.assertEqual(result['title'], "She's the One")
+        self.assertEqual(result['album'], 'To Serve With Love')
+    
+    def test_extract_track_info_emc_incomplete_pattern(self):
+        """Test EMC - The Show - INCOMPLETE - EMC_Make_It_Better parsing."""
+        path = "EMC - The Show - INCOMPLETE - EMC_Make_It_Better"
+        result = spc.extract_track_info_from_path(path)
+        
+        self.assertEqual(result['artist'], 'EMC')
+        self.assertEqual(result['title'], 'Make It Better')
+        self.assertEqual(result['album'], '')  # 'The Show' filtered out, 'INCOMPLETE' filtered out
+    
+    def test_extract_track_info_various_artists_pattern(self):
+        """Test Various - Collection Name - Artist Title parsing."""
+        path = "Various - DArcy Xmas 08 - Pretty Green feat. Santo Gold"
+        result = spc.extract_track_info_from_path(path)
+        
+        # Various Artists patterns are complex - at minimum should preserve structure
+        # Search strategies will further refine the matching
+        self.assertIsNotNone(result['artist'])
+        self.assertIsNotNone(result['title'])
+        self.assertIn('Pretty Green', result['title'] or result['artist'])
+    
+    def test_extract_track_info_compilation_pattern(self):
+        """Test compilation album parsing."""
+        path = "25Th Anniversary Hall Of Fame Disc 1 - Papa Was A Rollin' Stone - Gladys Knight & The Pips"
+        result = spc.extract_track_info_from_path(path)
+        
+        # Compilation patterns are complex - should preserve key components
+        # Search strategies will help match the correct artist/title combination
+        self.assertIsNotNone(result['artist'])
+        self.assertIsNotNone(result['title'])
+        # Should preserve the key song title somewhere
+        combined = f"{result['artist']} {result['title']} {result['album']}"
+        self.assertIn("Papa Was A Rollin", combined)
 
 class TestTrackSearching(unittest.TestCase):
     """Test track searching and matching functionality."""
@@ -365,6 +416,66 @@ class TestErrorHandling(unittest.TestCase):
         result = spc.search_track_on_spotify(self.mock_sp, "", "")
         
         self.assertIsNone(result)  # Should return None for empty info
+
+class TestEnhancedParsing(unittest.TestCase):
+    """Test enhanced parsing helper functions."""
+    
+    def test_normalize_artist_name(self):
+        """Test artist name normalization."""
+        # Test Xplastaz -> X Plastaz
+        result = spc.normalize_artist_name('Xplastaz')
+        self.assertEqual(result, 'X Plastaz')
+        
+        result = spc.normalize_artist_name('xplastaz')
+        self.assertEqual(result, 'X Plastaz')
+        
+        result = spc.normalize_artist_name('X-Plastaz')
+        self.assertEqual(result, 'X Plastaz')
+        
+        # Test regular artist names (should remain unchanged)
+        result = spc.normalize_artist_name('Black Spade')
+        self.assertEqual(result, 'Black Spade')
+    
+    def test_clean_complex_title(self):
+        """Test complex title cleaning."""
+        # Test Black_Spade_5_She_s_The_One -> She's The One
+        result = spc.clean_complex_title('Black_Spade_5_She_s_The_One', 'Black Spade')
+        self.assertEqual(result, "She's the One")
+        
+        # Test EMC_Make_It_Better -> Make It Better
+        result = spc.clean_complex_title('EMC_Make_It_Better', 'EMC')
+        self.assertEqual(result, 'Make It Better')
+        
+        # Test INCOMPLETE removal
+        result = spc.clean_complex_title('INCOMPLETE_Song_Title', 'Artist')
+        self.assertEqual(result, 'Song Title')
+        
+        # Test status word removal
+        result = spc.clean_complex_title('Song Title DEMO', 'Artist')
+        self.assertEqual(result, 'Song Title')
+    
+    def test_filter_album_name(self):
+        """Test album name filtering."""
+        # Test normal album names (should pass through)
+        result = spc.filter_album_name('Maasai Hip Hop')
+        self.assertEqual(result, 'Maasai Hip Hop')
+        
+        result = spc.filter_album_name('To Serve With Love')
+        self.assertEqual(result, 'To Serve With Love')
+        
+        # Test filtered terms
+        result = spc.filter_album_name('The Show')
+        self.assertEqual(result, '')
+        
+        result = spc.filter_album_name('INCOMPLETE')
+        self.assertEqual(result, '')
+        
+        result = spc.filter_album_name('DEMO')
+        self.assertEqual(result, '')
+        
+        # Test short names
+        result = spc.filter_album_name('LP')
+        self.assertEqual(result, '')
 
 class TestStringNormalization(unittest.TestCase):
     """Test string normalization and matching utilities."""

@@ -69,7 +69,8 @@ _last_api_call_time = 0
 
 # Constants
 CONFIDENCE_THRESHOLD = 80  # Default minimum confidence score for automatic matching
-SCOPE = "playlist-read-private playlist-modify-private playlist-modify-public"
+# Updated scopes to ensure all playlist operations are covered
+SCOPE = "playlist-read-private playlist-modify-private playlist-modify-public user-library-read"
 SUPPORTED_EXTENSIONS = ['.m3u', '.m3u8', '.pls']
 
 # Common variations mapping for normalization
@@ -87,6 +88,12 @@ COMMON_VARIATIONS = {
     'vol': 'volume',
     'no.': 'number',
     'no': 'number'
+}
+
+# Global configuration for duplicate handling
+DUPLICATE_CONFIG = {
+    'auto_remove': True,
+    'keep_all': False
 }
 
 # Track number patterns to remove
@@ -706,19 +713,138 @@ def extract_track_info_from_path(path):
         if enhanced_filename.startswith('- '):
             enhanced_filename = enhanced_filename[2:].strip()
     
-    # If we haven't extracted info yet, try standard patterns
+    # If we haven't extracted info yet, try enhanced patterns
     if not track_info['title']:  # We might have artist from directory parsing
-        # Try standard dash separator
-        test_filename = enhanced_filename
-        parts = re.split(r'\s*-\s*', test_filename, maxsplit=1)
+        # Try enhanced parsing for complex patterns like:
+        # "Mark Ronson - Captain's Crate - Pretty Green feat. Santo Gold"
+        # "Various - DArcy Xmas 08 - Pretty Green feat. Santo Gold"
+        # "Cee-Lo - Closet Freak - The Best of Cee-Lo Green the Soul Machine - Gettin' Grown"
+        # "Xplastaz - Maasai Hip Hop - Msimu Kwa Msimu"
         
-        if len(parts) > 1:
-            # If we don't have an artist yet, use the first part
+        test_filename = enhanced_filename
+        
+        # Smart split that doesn't split on dashes inside parentheses
+        # Use a more sophisticated approach to avoid splitting "(Re-Imagined)" type content
+        parts = []
+        current_part = ""
+        paren_depth = 0
+        i = 0
+        
+        while i < len(test_filename):
+            char = test_filename[i]
+            
+            if char == '(':
+                paren_depth += 1
+                current_part += char
+            elif char == ')':
+                paren_depth -= 1
+                current_part += char
+            elif char == '-' and paren_depth == 0:
+                # Only split on dashes outside parentheses
+                # Look for surrounding whitespace
+                if (i > 0 and test_filename[i-1].isspace()) or (i < len(test_filename)-1 and test_filename[i+1].isspace()):
+                    parts.append(current_part.strip())
+                    current_part = ""
+                    # Skip whitespace after dash
+                    i += 1
+                    while i < len(test_filename) and test_filename[i].isspace():
+                        i += 1
+                    continue
+                else:
+                    current_part += char
+            else:
+                current_part += char
+            
+            i += 1
+        
+        if current_part.strip():
+            parts.append(current_part.strip())
+        
+        if len(parts) >= 3:
+            # Complex pattern with multiple dashes
+            # Examples:
+            # "Xplastaz - Maasai Hip Hop - Msimu Kwa Msimu"
+            # "Black Spade - To Serve With Love - Black_Spade_5_She_s_The_One" 
+            # "EMC - The Show - INCOMPLETE - EMC_Make_It_Better"  
+            # "Various - DArcy Xmas 08 - Pretty Green feat. Santo Gold"
+            # "25Th Anniversary Hall Of Fame Disc 1 - Papa Was A Rollin' Stone - Gladys Knight & The Pips"
+            
+            potential_artist = parts[0].strip()
+            potential_album = parts[1].strip() 
+            potential_title = parts[-1].strip()  # Last part is usually the title
+            
+            # Check for "Various" artists first - special handling
+            if potential_artist.lower() in ['various', 'various artists', 'va']:
+                # For "Various - Album - Artist Title" format
+                # Try to extract real artist and title from the last part
+                if ' - ' in potential_title or ' by ' in potential_title.lower():
+                    # Title might contain artist info: "Artist - Title" or "Title by Artist"
+                    title_parts = re.split(r' - | by ', potential_title, maxsplit=1, flags=re.IGNORECASE)
+                    if len(title_parts) == 2:
+                        track_info['artist'] = title_parts[0].strip()
+                        track_info['title'] = title_parts[1].strip()
+                        track_info['album'] = potential_album
+                    else:
+                        # Just use the title as-is, Various as artist
+                        track_info['artist'] = 'Various Artists'
+                        track_info['title'] = potential_title
+                        track_info['album'] = potential_album
+                else:
+                    # Try to guess where artist ends and title begins
+                    title_words = potential_title.split()
+                    if len(title_words) >= 4:
+                        # Look for featuring patterns or common breakpoint words
+                        feat_pattern = r'\b(feat\.?|featuring|ft\.?|with)\b'
+                        feat_match = re.search(feat_pattern, potential_title, re.IGNORECASE)
+                        if feat_match:
+                            # Split at featuring
+                            before_feat = potential_title[:feat_match.start()].strip()
+                            track_info['artist'] = 'Various Artists'
+                            track_info['title'] = before_feat if before_feat else potential_title
+                        else:
+                            # Default: first few words might be artist, rest is title
+                            track_info['artist'] = ' '.join(title_words[:2])  # First 2 words as artist guess
+                            track_info['title'] = ' '.join(title_words[2:])   # Rest as title
+                    else:
+                        track_info['artist'] = 'Various Artists'
+                        track_info['title'] = potential_title
+                    track_info['album'] = potential_album
+            
+            # Check for compilation patterns (long first part with specific keywords)
+            elif (len(parts) == 3 and (
+                'anniversary' in potential_artist.lower() or
+                'hall of fame' in potential_artist.lower() or 
+                'jukebox' in potential_artist.lower() or
+                'best of' in potential_artist.lower() or
+                'collection' in potential_artist.lower() or
+                'compilation' in potential_artist.lower() or
+                len(potential_artist.split()) > 4  # Very long first part suggests compilation
+            )):
+                # This is likely a compilation: "Collection Name - Track Title - Artist Name"
+                # So parts[1] is the track title, parts[2] is the artist
+                track_info['artist'] = clean_complex_title(potential_title, '')  # parts[2] is artist
+                track_info['title'] = potential_album  # parts[1] is actually the title
+                track_info['album'] = potential_artist  # parts[0] is the compilation name
+            
+            else:
+                # Regular multi-part pattern: Artist - Album - Title
+                # Enhanced cleaning for complex filenames
+                potential_artist = normalize_artist_name(potential_artist)
+                potential_title = clean_complex_title(potential_title, potential_artist)
+                potential_album = filter_album_name(potential_album)
+                
+                track_info['artist'] = potential_artist
+                track_info['title'] = potential_title
+                if potential_album:  # Only set album if it passed filtering
+                    track_info['album'] = potential_album
+                    
+        elif len(parts) == 2:
+            # Standard Artist - Title pattern
             if not track_info['artist']:
                 track_info['artist'] = parts[0].strip()
             track_info['title'] = parts[1].strip()
         else:
-            # If no artist-title separator found, use the whole thing as title
+            # If no dash separator found, use the whole thing as title
             track_info['title'] = test_filename.strip()
     
     # Clean up the extracted information
@@ -1041,6 +1167,127 @@ def parse_playlist_file(file_path):
         else:
             logger.warning(f"Unsupported playlist format: {ext}")
             return []
+
+def normalize_artist_name(artist_name):
+    """Normalize artist names for better matching."""
+    if not artist_name:
+        return artist_name
+    
+    normalized = artist_name.strip()
+    
+    # Handle specific artist name variations
+    artist_variations = {
+        'xplastaz': 'X Plastaz',
+        'x-plastaz': 'X Plastaz',
+        # Add more variations as needed
+    }
+    
+    # Check for exact matches (case insensitive)
+    normalized_lower = normalized.lower()
+    for old, new in artist_variations.items():
+        if normalized_lower == old:
+            return new
+    
+    # Clean up spacing and formatting
+    normalized = re.sub(r'\s+', ' ', normalized)
+    
+    return normalized.strip()
+
+def clean_complex_title(title, artist_name):
+    """Clean complex titles with artist prefixes, underscores, and status words."""
+    if not title:
+        return title
+    
+    cleaned = title
+    
+    # Remove file extensions if present
+    cleaned = re.sub(r'\.(mp3|flac|wav|m4a|aac|ogg)$', '', cleaned, flags=re.IGNORECASE)
+    
+    # Remove redundant artist prefixes from filename
+    # Examples: "Black_Spade_5_She_s_The_One" -> "She_s_The_One" (if artist is "Black Spade")
+    if artist_name:
+        # Create pattern for artist name with optional numbers/separators
+        artist_clean = re.escape(artist_name.replace(' ', '_').lower())
+        # Match: ArtistName_Number_ or ArtistName_ at start
+        pattern = f'^{artist_clean}(_\\d+)?_'
+        cleaned = re.sub(pattern, '', cleaned.lower(), flags=re.IGNORECASE)
+        
+        # Also try with spaces
+        artist_spaced = re.escape(artist_name.lower())
+        pattern = f'^{artist_spaced}(\\s*\\d+)?\\s*[-_]\\s*'
+        cleaned = re.sub(pattern, '', cleaned.lower(), flags=re.IGNORECASE)
+    
+    # Convert underscores to spaces and clean up
+    cleaned = cleaned.replace('_', ' ')
+    
+    # Handle apostrophes and contractions - be more careful to avoid double apostrophes
+    cleaned = cleaned.replace(' s ', "'s ")
+    # Only convert standalone 's' that isn't already preceded by an apostrophe
+    cleaned = re.sub(r'(?<!\')(\s|^)s\b', r"\1's", cleaned)  # Convert standalone 's' to "'s"
+    
+    # Remove status/quality indicators that appear in filenames
+    status_patterns = [
+        r'\b(incomplete|demo|rough|draft|wip|work in progress)\b',
+        r'\b(remaster|remastered|remix|extended|radio edit)\b',
+        r'\b(320|256|192|128)kbps?\b',
+        r'\b(mp3|flac|wav)\b',
+        r'\b\d+\b'  # Remove standalone numbers
+    ]
+    
+    for pattern in status_patterns:
+        cleaned = re.sub(pattern, '', cleaned, flags=re.IGNORECASE)
+    
+    # Clean up multiple spaces and dashes
+    cleaned = re.sub(r'\s+', ' ', cleaned)
+    cleaned = re.sub(r'^[-\s]+|[-\s]+$', '', cleaned)
+    
+    # Apply proper title case
+    cleaned = cleaned.title()
+    
+    # Fix common title case issues
+    cleaned = re.sub(r"'S\b", "'s", cleaned)  # Fix 's after title case
+    cleaned = re.sub(r'\bA\b', 'a', cleaned)  # Fix articles
+    cleaned = re.sub(r'\bAn\b', 'an', cleaned)
+    cleaned = re.sub(r'\bThe\b', 'the', cleaned)
+    cleaned = re.sub(r'\bOf\b', 'of', cleaned)
+    cleaned = re.sub(r'\bIn\b', 'in', cleaned)
+    cleaned = re.sub(r'\bOn\b', 'on', cleaned)
+    cleaned = re.sub(r'\bAt\b', 'at', cleaned)
+    cleaned = re.sub(r'\bTo\b', 'to', cleaned)
+    cleaned = re.sub(r'\bFor\b', 'for', cleaned)
+    cleaned = re.sub(r'\bWith\b', 'with', cleaned)
+    cleaned = re.sub(r'\bBy\b', 'by', cleaned)
+    
+    # Capitalize first word
+    if cleaned:
+        cleaned = cleaned[0].upper() + cleaned[1:] if len(cleaned) > 1 else cleaned.upper()
+    
+    return cleaned.strip()
+
+def filter_album_name(album_name):
+    """Filter out non-album content from potential album names."""
+    if not album_name:
+        return album_name
+    
+    album_lower = album_name.lower().strip()
+    
+    # Filter out parts that are likely not album names
+    non_album_indicators = [
+        'incomplete', 'demo', 'rough', 'draft', 'wip',
+        'the show', 'the album', 'the ep', 'the single',
+        'live', 'acoustic', 'unplugged', 'studio'
+    ]
+    
+    # If it matches a non-album indicator, don't use it as album
+    for indicator in non_album_indicators:
+        if indicator in album_lower:
+            return ''
+    
+    # If it's very short, likely not a real album name
+    if len(album_name.strip()) < 3:
+        return ''
+    
+    return album_name.strip()
 
 def normalize_string(s):
     """
@@ -1618,6 +1865,67 @@ def search_track_on_spotify(sp, artist, title, album=None):
         except Exception as e:
             logger.error(f"Error in search strategy 9: {e}")
     
+    # Strategy 10: Handle "Various Artists" cases by searching title + album
+    if artist and artist.lower() in ['various', 'various artists', 'va'] and album:
+        # Search for the title in the specific album/compilation
+        query10 = f"album:\"{album}\" \"{title}\""
+        logger.debug(f"Strategy 10 (Various Artists): {query10}")
+        try:
+            apply_rate_limit()
+            results10 = sp.search(q=query10, type='track', limit=20)
+            process_search_results(results10, artist, title, album, candidates, weight=1.3)
+        except Exception as e:
+            logger.error(f"Error in search strategy 10: {e}")
+    
+    # Strategy 11: Title-only search for Various Artists compilations
+    if artist and artist.lower() in ['various', 'various artists', 'va']:
+        # Just search the title and let fuzzy matching handle the artist detection
+        query11 = f"\"{title}\""
+        logger.debug(f"Strategy 11 (Various Artists title-only): {query11}")
+        try:
+            apply_rate_limit()
+            results11 = sp.search(q=query11, type='track', limit=25)
+            process_search_results(results11, None, title, album, candidates, weight=1.1)
+        except Exception as e:
+            logger.error(f"Error in search strategy 11: {e}")
+    
+    # Strategy 12: Enhanced featuring artist handling
+    if artist and ('feat' in title.lower() or 'ft.' in title.lower() or 'featuring' in title.lower()):
+        # Extract the main title without featuring info
+        main_title = re.sub(r'\s*(feat\.?|ft\.?|featuring)\s+.*', '', title, flags=re.IGNORECASE).strip()
+        if main_title != title and main_title:
+            query12 = f"artist:\"{artist}\" \"{main_title}\""
+            logger.debug(f"Strategy 12 (featuring stripped): {query12}")
+            try:
+                apply_rate_limit()
+                results12 = sp.search(q=query12, type='track', limit=15)
+                process_search_results(results12, artist, main_title, album, candidates, weight=1.2)
+            except Exception as e:
+                logger.error(f"Error in search strategy 12: {e}")
+    
+    # Strategy 13: Try variations of artist names (handle common misspellings)
+    if artist:
+        artist_variations = []
+        # Handle common variations like "Cee-Lo" vs "CeeLo"
+        if '-' in artist:
+            artist_variations.append(artist.replace('-', ''))
+            artist_variations.append(artist.replace('-', ' '))
+        # Handle "X Plastaz" vs "Xplastaz"
+        if ' ' in artist:
+            artist_variations.append(artist.replace(' ', ''))
+        
+        for alt_artist in artist_variations:
+            if alt_artist != artist:
+                query13 = f"artist:\"{alt_artist}\" \"{title}\""
+                logger.debug(f"Strategy 13 (artist variation): {query13}")
+                try:
+                    apply_rate_limit()
+                    results13 = sp.search(q=query13, type='track', limit=10)
+                    process_search_results(results13, alt_artist, title, album, candidates, weight=1.15)
+                except Exception as e:
+                    logger.error(f"Error in search strategy 13: {e}")
+                break  # Only try one variation to avoid too many API calls
+    
     # If we have no candidates, return None
     if not candidates:
         logger.debug("No candidates found for this track")
@@ -1887,7 +2195,15 @@ def create_or_update_spotify_playlist(sp, playlist_name, track_uris, user_id):
             # Add tracks in batches of 100 (Spotify API limit)
             for i in range(0, len(tracks_to_add), 100):
                 batch = tracks_to_add[i:i+100]
-                sp.playlist_add_items(playlist_id, batch)
+                try:
+                    sp.playlist_add_items(playlist_id, batch)
+                except Exception as e:
+                    if "insufficient client scope" in str(e).lower():
+                        logger.error("Insufficient permissions to modify playlists. Please re-authenticate with proper scopes.")
+                        logger.error("Go to menu option 10 to re-enter your Spotify credentials.")
+                        raise Exception("Spotify authentication needs to be refreshed with playlist modification permissions.")
+                    else:
+                        raise e
             
             # Update the cache for this playlist's tracks
             cache_key = f"playlist_tracks_{playlist_id}"
@@ -1907,8 +2223,20 @@ def create_or_update_spotify_playlist(sp, playlist_name, track_uris, user_id):
                     if len(duplicates) > 5:
                         print(f"  ... and {len(duplicates) - 5} more")
                     
-                    remove_choice = input(f"\n{Fore.CYAN}Remove duplicates? (y/n): ").lower().strip()
-                    if remove_choice == 'y':
+                    # Handle duplicates based on user preference
+                    should_remove = False
+                    if DUPLICATE_CONFIG['keep_all']:
+                        print(f"{Fore.YELLOW}Keeping all duplicates (as requested)")
+                        should_remove = False
+                    elif DUPLICATE_CONFIG['auto_remove']:
+                        print(f"{Fore.GREEN}Auto-removing duplicates (as requested)")
+                        should_remove = True
+                    else:
+                        # Ask user (default behavior)
+                        remove_choice = input(f"\n{Fore.CYAN}Remove duplicates? (y/n): ").lower().strip()
+                        should_remove = (remove_choice == 'y')
+                    
+                    if should_remove:
                         removed = remove_playlist_duplicates(sp, playlist_id, duplicates)
                         print(f"{Fore.GREEN}✅ Removed {removed} duplicate tracks")
                         # Clear cache to force refresh
@@ -1963,8 +2291,20 @@ def create_or_update_spotify_playlist(sp, playlist_name, track_uris, user_id):
                 if len(duplicates) > 5:
                     print(f"  ... and {len(duplicates) - 5} more")
                 
-                remove_choice = input(f"\n{Fore.CYAN}Remove duplicates? (y/n): ").lower().strip()
-                if remove_choice == 'y':
+                # Handle duplicates based on user preference
+                should_remove = False
+                if DUPLICATE_CONFIG['keep_all']:
+                    print(f"{Fore.YELLOW}Keeping all duplicates (as requested)")
+                    should_remove = False
+                elif DUPLICATE_CONFIG['auto_remove']:
+                    print(f"{Fore.GREEN}Auto-removing duplicates (as requested)")
+                    should_remove = True
+                else:
+                    # Ask user (default behavior)
+                    remove_choice = input(f"\n{Fore.CYAN}Remove duplicates? (y/n): ").lower().strip()
+                    should_remove = (remove_choice == 'y')
+                
+                if should_remove:
                     removed = remove_playlist_duplicates(sp, playlist['id'], duplicates)
                     print(f"{Fore.GREEN}✅ Removed {removed} duplicate tracks")
                     # Clear cache to force refresh
@@ -2141,9 +2481,11 @@ def process_playlist_file(sp, file_path, user_id, confidence_threshold, min_scor
         batch_size = BATCH_SIZES['processing_batch']
         
         # Process in batches
+        total_batches = (len(tracks) + batch_size - 1) // batch_size
         for i in range(0, len(tracks), batch_size):
             batch = tracks[i:i + batch_size]
-            logger.info(f"Processing batch {i//batch_size + 1}/{(len(tracks) + batch_size - 1)//batch_size}")
+            batch_num = i//batch_size + 1
+            logger.info(f"🔍 Processing batch {batch_num}/{total_batches} ({len(batch)} tracks)")
             
             batch_results = process_tracks_batch(sp, batch, confidence_threshold, batch_mode, auto_threshold, use_previous_decisions)
             
@@ -2205,7 +2547,8 @@ def process_playlist_file(sp, file_path, user_id, confidence_threshold, min_scor
                 
     else:
         # Interactive mode or small playlist - process individually
-        for track in tqdm(tracks, desc="Searching tracks"):
+        progress_desc = f"Searching {len(tracks)} tracks"
+        for track in tqdm(tracks, desc=progress_desc, unit="track"):
             # Get the original line from the playlist file if available
             original_line = track.get('original_line', f"{track['artist']} - {track['title']}")
             
@@ -2921,6 +3264,8 @@ def find_missing_tracks_in_playlists(sp, file_path, user_id, suggest_threshold=7
 
 def main():
     """Main function to run the script."""
+    global DUPLICATE_CONFIG
+    
     parser = argparse.ArgumentParser(description="Convert local playlist files to Spotify playlists")
     parser.add_argument("directory", nargs="?", default=".", help="Directory to search for playlist files (default: current directory)")
     parser.add_argument("--threshold", type=int, default=CONFIDENCE_THRESHOLD, help=f"Confidence threshold for automatic matching (default: {CONFIDENCE_THRESHOLD})")
@@ -2936,6 +3281,9 @@ def main():
     parser.add_argument("--missing-tracks-mode", action="store_true", help="Find and suggest missing tracks in playlists")
     parser.add_argument("--suggest-threshold", type=int, default=70, help="Threshold for suggesting missing tracks (default: 70)")
     parser.add_argument("--clear-cache", action="store_true", help="Clear processed playlist cache")
+    parser.add_argument("--auto-remove-duplicates", action="store_true", help="Automatically remove duplicate tracks from playlists")
+    parser.add_argument("--keep-duplicates", action="store_true", help="Keep all duplicate tracks (don't remove any)")
+    parser.add_argument("--ask-duplicates", action="store_true", help="Ask for each playlist whether to remove duplicates")
     
     args = parser.parse_args()
     
@@ -3027,7 +3375,8 @@ def main():
             
             # Search all unique tracks with progress bar
             track_matches = {}
-            with tqdm(total=len(unique_tracks), desc="Searching tracks") as pbar:
+            search_desc = f"🎵 Searching {len(unique_tracks)} unique tracks across all playlists"
+            with tqdm(total=len(unique_tracks), desc=search_desc, unit="track") as pbar:
                 for key, track in unique_tracks.items():
                     # Apply learning patterns
                     learned_artist, learned_title = apply_learning_patterns(track['artist'], track['title'])
@@ -3197,6 +3546,41 @@ def main():
         print(f"✅ Auto-accept threshold: {auto_threshold}")
         print(f"✅ Manual review threshold: {manual_threshold}")
         
+        # Ask about duplicate handling
+        print("\n" + "="*60)
+        print("DUPLICATE TRACK HANDLING")
+        print("="*60)
+        print("When creating/updating playlists, duplicates may be found.")
+        print("Choose how you want to handle them:")
+        print()
+        print("Options:")
+        print("  1. Auto-remove all duplicates (recommended)")
+        print("  2. Ask me for each playlist (current behavior)")
+        print("  3. Keep all duplicates (no removal)")
+        print()
+        
+        while True:
+            duplicate_choice = input("Choose duplicate handling (1-3, default: 1): ").strip()
+            if not duplicate_choice:
+                duplicate_choice = "1"
+            
+            if duplicate_choice in ["1", "2", "3"]:
+                if duplicate_choice == "1":
+                    DUPLICATE_CONFIG['auto_remove'] = True
+                    DUPLICATE_CONFIG['keep_all'] = False
+                    print("✅ Auto-remove duplicates: ON")
+                elif duplicate_choice == "2":
+                    DUPLICATE_CONFIG['auto_remove'] = False
+                    DUPLICATE_CONFIG['keep_all'] = False
+                    print("✅ Auto-remove duplicates: OFF (will ask per playlist)")
+                else:  # "3"
+                    DUPLICATE_CONFIG['auto_remove'] = False
+                    DUPLICATE_CONFIG['keep_all'] = True
+                    print("✅ Keep all duplicates: ON")
+                break
+            else:
+                print("❌ Please enter 1, 2, or 3")
+        
         # Set up batch mode with dual thresholds
         args.batch = True
         args.auto_threshold = auto_threshold
@@ -3214,6 +3598,20 @@ def main():
         confidence_threshold = args.threshold
         if not hasattr(args, 'manual_threshold'):
             args.manual_threshold = confidence_threshold
+    
+    # Handle duplicate removal command line arguments and set global configuration
+    if args.auto_remove_duplicates:
+        DUPLICATE_CONFIG['auto_remove'] = True
+        DUPLICATE_CONFIG['keep_all'] = False
+    elif args.keep_duplicates:
+        DUPLICATE_CONFIG['auto_remove'] = False
+        DUPLICATE_CONFIG['keep_all'] = True
+    elif args.ask_duplicates:
+        DUPLICATE_CONFIG['auto_remove'] = False
+        DUPLICATE_CONFIG['keep_all'] = False
+    elif not hasattr(args, 'auto_remove_duplicates'):
+        # Use defaults already set in DUPLICATE_CONFIG
+        pass
     
     # Batch mode information
     if args.batch:

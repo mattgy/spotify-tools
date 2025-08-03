@@ -220,8 +220,32 @@ def get_playlist_tracks(sp, playlist_id):
 
 def is_christmas_song(track):
     """Check if a track is Christmas-related based on title, artist, or album."""
+    # Handle corrupted cache data
+    if not isinstance(track, dict):
+        return False
+    
+    # Safely get track information with defaults
+    track_name = track.get('name', '')
+    track_artists = track.get('artists', [])
+    track_album = track.get('album', '')
+    
+    # Handle case where artists might be strings instead of list
+    if isinstance(track_artists, str):
+        artists_text = track_artists
+    elif isinstance(track_artists, list):
+        # Handle mixed data types in artists list
+        artist_names = []
+        for artist in track_artists:
+            if isinstance(artist, str):
+                artist_names.append(artist)
+            elif isinstance(artist, dict) and 'name' in artist:
+                artist_names.append(artist['name'])
+        artists_text = ' '.join(artist_names)
+    else:
+        artists_text = ''
+    
     # Combine all text to search
-    search_text = f"{track['name']} {' '.join(track['artists'])} {track['album']}".lower()
+    search_text = f"{track_name} {artists_text} {track_album}".lower()
     
     # Check for Christmas keywords
     for keyword in CHRISTMAS_KEYWORDS:
@@ -243,12 +267,29 @@ def identify_christmas_songs(liked_songs, christmas_playlists, sp):
         for playlist in christmas_playlists:
             tracks = get_playlist_tracks(sp, playlist['id'])
             for track in tracks:
-                playlist_track_ids.add(track['id'])
+                # Handle corrupted cache data - skip tracks missing required fields
+                if not isinstance(track, dict) or 'id' not in track:
+                    print_warning(f"Skipping corrupted playlist track data: {type(track)}")
+                    continue
+                    
+                track_id = track.get('id')
+                if track_id:
+                    playlist_track_ids.add(track_id)
     
     # Check each liked song
     for track in liked_songs:
+        # Handle corrupted cache data - skip tracks missing required fields
+        if not isinstance(track, dict) or 'id' not in track:
+            print_warning(f"Skipping corrupted track data: {type(track)}")
+            continue
+            
+        track_id = track.get('id')
+        if not track_id:
+            print_warning("Skipping track with missing ID")
+            continue
+        
         # Check if it's in a Christmas playlist
-        if track['id'] in playlist_track_ids:
+        if track_id in playlist_track_ids:
             track['reason'] = 'Found in Christmas playlist'
             christmas_songs.append(track)
         # Check if it contains Christmas keywords
@@ -316,7 +357,14 @@ def main():
     christmas_playlists = get_christmas_playlists(sp)
     
     # Identify Christmas songs
-    christmas_songs = identify_christmas_songs(liked_songs, christmas_playlists, sp)
+    try:
+        christmas_songs = identify_christmas_songs(liked_songs, christmas_playlists, sp)
+    except (KeyError, TypeError, AttributeError) as e:
+        print_error(f"Cache corruption detected: {e}")
+        print_warning("This may be due to corrupted cache data.")
+        print_info("The corrupted cache should be automatically cleaned up.")
+        print_info("Try running the script again, or use menu option 9 to manage caches.")
+        return
     
     if not christmas_songs:
         print_success("No Christmas songs found in your liked songs!")

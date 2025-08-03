@@ -111,15 +111,37 @@ def get_user_liked_songs(sp):
         # Extract track information
         for item in results['items']:
             track = item['track']
-            if track:  # Make sure track is not None
+            if not track:  # Skip null tracks
+                continue
+                
+            # Skip tracks without valid IDs (podcasts, local files, unavailable tracks)
+            if not track.get('id'):
+                continue
+                
+            # Skip tracks with missing required fields
+            if not track.get('name') or not track.get('artists') or not track.get('album'):
+                continue
+                
+            # Ensure artists is a list and has at least one entry
+            if not isinstance(track['artists'], list) or len(track['artists']) == 0:
+                continue
+                
+            try:
                 track_info = {
                     'id': track['id'],
                     'name': track['name'],
-                    'artists': [artist['name'] for artist in track['artists']],
-                    'album': track['album']['name'],
-                    'added_at': item['added_at']
+                    'artists': [artist['name'] for artist in track['artists'] if artist and artist.get('name')],
+                    'album': track['album']['name'] if track['album'] else 'Unknown Album',
+                    'added_at': item.get('added_at', '')
                 }
-                liked_songs.append(track_info)
+                
+                # Only add if we have at least one valid artist
+                if track_info['artists']:
+                    liked_songs.append(track_info)
+                    
+            except (KeyError, TypeError, AttributeError) as e:
+                # Skip tracks with malformed data
+                continue
         
         # Update progress bar
         update_progress_bar(progress_bar, len(results['items']))
@@ -279,21 +301,22 @@ def identify_christmas_songs(liked_songs, christmas_playlists, sp):
                     print_warning(f"Skipping playlist track with missing ID: {track.get('name', 'Unknown')}")
     
     # Check each liked song
+    skipped_count = 0
     for track in liked_songs:
         # Handle corrupted cache data - skip tracks missing required fields
         if not isinstance(track, dict):
-            print_warning(f"Skipping non-dict track data: {type(track)}")
+            skipped_count += 1
             continue
             
-        # Check for required fields - be more specific about what's missing
+        # Check for required fields - silently skip problematic tracks
         track_id = track.get('id')
         if not track_id:
-            print_warning(f"Skipping track with missing/empty ID: {track.get('name', 'Unknown')}")
+            skipped_count += 1
             continue
             
         # Ensure other required fields exist for Christmas detection
-        if 'name' not in track:
-            print_warning(f"Skipping track {track_id} with missing name field")
+        if not track.get('name'):
+            skipped_count += 1
             continue
         
         # Check if it's in a Christmas playlist
@@ -304,6 +327,19 @@ def identify_christmas_songs(liked_songs, christmas_playlists, sp):
         elif is_christmas_song(track):
             track['reason'] = 'Contains Christmas keywords'
             christmas_songs.append(track)
+    
+    # Inform user about skipped tracks if there were many
+    if skipped_count > 0:
+        if skipped_count > 10:
+            print_info(f"Skipped {skipped_count} tracks with missing/invalid data (podcasts, local files, etc.)")
+            # If we skipped a lot of tracks, the cache might be corrupted - clear it
+            if skipped_count > 50:
+                print_warning("Many tracks had invalid data - clearing liked songs cache for next run")
+                from cache_utils import save_to_cache
+                from constants import STANDARD_CACHE_KEYS
+                save_to_cache(None, STANDARD_CACHE_KEYS['liked_songs'], force_expire=True)
+        elif skipped_count > 0:
+            print_info(f"Skipped {skipped_count} tracks with missing data")
     
     return christmas_songs
 

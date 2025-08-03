@@ -236,7 +236,22 @@ def find_extra_tracks_in_spotify_playlist(sp, spotify_playlist_id, local_tracks)
     
     for i in range(0, len(spotify_track_uris), batch_size):
         batch_uris = spotify_track_uris[i:i + batch_size]
-        track_ids = [uri.split(':')[-1] for uri in batch_uris]
+        
+        # Handle both URI strings and dict objects (defensive programming)
+        track_ids = []
+        for uri in batch_uris:
+            if isinstance(uri, str):
+                # URI string format: "spotify:track:id"
+                track_ids.append(uri.split(':')[-1])
+            elif isinstance(uri, dict) and 'uri' in uri:
+                # Dict format with 'uri' key
+                track_ids.append(uri['uri'].split(':')[-1])
+            elif isinstance(uri, dict) and 'id' in uri:
+                # Dict format with 'id' key
+                track_ids.append(uri['id'])
+            else:
+                logger.warning(f"Unexpected track URI format: {type(uri)} - {uri}")
+                continue
         
         try:
             tracks_info = sp.tracks(track_ids)
@@ -278,7 +293,22 @@ def find_extra_tracks_in_spotify_playlist_with_threshold(sp, spotify_playlist_id
     
     for i in range(0, len(spotify_track_uris), batch_size):
         batch_uris = spotify_track_uris[i:i + batch_size]
-        track_ids = [uri.split(':')[-1] for uri in batch_uris]
+        
+        # Handle both URI strings and dict objects (defensive programming)
+        track_ids = []
+        for uri in batch_uris:
+            if isinstance(uri, str):
+                # URI string format: "spotify:track:id"
+                track_ids.append(uri.split(':')[-1])
+            elif isinstance(uri, dict) and 'uri' in uri:
+                # Dict format with 'uri' key
+                track_ids.append(uri['uri'].split(':')[-1])
+            elif isinstance(uri, dict) and 'id' in uri:
+                # Dict format with 'id' key
+                track_ids.append(uri['id'])
+            else:
+                logger.warning(f"Unexpected track URI format: {type(uri)} - {uri}")
+                continue
         
         try:
             tracks_info = sp.tracks(track_ids)

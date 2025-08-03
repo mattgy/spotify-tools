@@ -52,6 +52,7 @@ class PlaylistSizeManager:
         """Initialize the playlist size manager."""
         self.sp = None
         self.user_id = None
+        self.deleted_playlist_ids = set()  # Track deleted playlists in this session
         
     def setup(self):
         """Set up Spotify client and get user information."""
@@ -92,6 +93,8 @@ class PlaylistSizeManager:
             cached_data = load_from_cache(cache_key, expiration=DEFAULT_CACHE_EXPIRATION)
             if cached_data:
                 print_info("Using cached playlist data...")
+                # Filter out playlists that were deleted in this session
+                cached_data = [p for p in cached_data if p['id'] not in self.deleted_playlist_ids]
                 return cached_data
         
         print_info("Fetching your playlists...")
@@ -120,11 +123,15 @@ class PlaylistSizeManager:
                 }
                 matching_playlists.append(playlist_info)
         
+        # Filter out playlists that were deleted in this session
+        matching_playlists = [p for p in matching_playlists if p['id'] not in self.deleted_playlist_ids]
+        
         # Sort by track count (ascending) then by name
         matching_playlists.sort(key=lambda x: (x['track_count'], x['name'].lower()))
         
-        # Save to cache
-        if use_cache:
+        # Save to cache (but don't cache the filtered list to avoid session state in cache)
+        if use_cache and not self.deleted_playlist_ids:
+            # Only cache if we haven't deleted anything in this session
             save_to_cache(matching_playlists, cache_key)
         
         return matching_playlists
@@ -246,6 +253,8 @@ class PlaylistSizeManager:
                 try:
                     self.sp.current_user_unfollow_playlist(playlist['id'])
                     print_success(f"Deleted: {playlist['name']}")
+                    # Track this playlist as deleted in this session
+                    self.deleted_playlist_ids.add(playlist['id'])
                     deleted_count += 1
                     time.sleep(0.5)  # Rate limiting
                 except Exception as e:
@@ -316,6 +325,9 @@ class PlaylistSizeManager:
                 self.delete_playlists(selected_playlists)
             
             # Ask if user wants to search again
+            if self.deleted_playlist_ids:
+                print_info(f"Note: {len(self.deleted_playlist_ids)} deleted playlist(s) will be excluded from future searches in this session.")
+            
             again = input("\nSearch for more playlists? (y/n): ").strip().lower()
             if again != 'y':
                 break

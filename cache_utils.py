@@ -35,6 +35,18 @@ def sanitize_cache_key(cache_key):
         sanitized = sanitized[:100] + '_' + middle_hash + '_' + sanitized[-100:]
     return sanitized
 
+def log_cache_corruption(cache_key, error_message):
+    """Log cache corruption events for monitoring and debugging."""
+    corruption_log_file = os.path.join(CACHE_DIR, "corruption_log.txt")
+    
+    try:
+        with open(corruption_log_file, "a") as f:
+            timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+            f.write(f"{timestamp} - Cache: {cache_key} - Error: {error_message}\n")
+    except Exception:
+        # If we can't log, don't crash - just continue silently
+        pass
+
 def save_to_cache(data, cache_key, force_expire=False):
     """Save data to cache."""
     # Create cache directory if it doesn't exist
@@ -73,8 +85,17 @@ def save_to_cache(data, cache_key, force_expire=False):
         print_warning(f"Error saving to cache {cache_key}: {e}")
         return False
 
-def load_from_cache(cache_key, expiration=None):
-    """Load data from cache if it exists and is not expired."""
+def load_from_cache(cache_key, expiration=None, auto_recreate=True):
+    """Load data from cache if it exists and is not expired.
+    
+    Args:
+        cache_key: The cache key to load
+        expiration: Optional expiration time in seconds
+        auto_recreate: If True, automatically delete corrupted cache files
+        
+    Returns:
+        Cached data if valid, None otherwise
+    """
     # Sanitize cache key for filesystem safety
     safe_cache_key = sanitize_cache_key(cache_key)
     
@@ -90,6 +111,10 @@ def load_from_cache(cache_key, expiration=None):
         with open(cache_file, "r") as f:
             cache_data = json.load(f)
         
+        # Validate cache structure
+        if not isinstance(cache_data, dict) or "data" not in cache_data:
+            raise ValueError("Invalid cache structure")
+        
         # Check if cache is expired
         if expiration is not None:
             timestamp = cache_data.get("timestamp", 0)
@@ -101,7 +126,24 @@ def load_from_cache(cache_key, expiration=None):
         
         # Return data
         return cache_data.get("data")
+    except (json.JSONDecodeError, ValueError, IOError) as e:
+        # Cache is corrupted
+        print_warning(f"Corrupted cache detected for {cache_key}: {e}")
+        
+        if auto_recreate:
+            try:
+                os.remove(cache_file)
+                print_info(f"Removed corrupted cache file: {cache_key}")
+                print_info("Cache will be recreated on next access")
+                
+                # Log corruption event for monitoring
+                log_cache_corruption(cache_key, str(e))
+            except Exception as remove_error:
+                print_error(f"Failed to remove corrupted cache {cache_key}: {remove_error}")
+        
+        return None
     except Exception as e:
+        # Other unexpected errors
         print_warning(f"Error loading from cache {cache_key}: {e}")
         return None
 

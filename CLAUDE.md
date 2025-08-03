@@ -70,14 +70,20 @@ All scripts can be run independently:
 - **FIXED**: Delete duplicates no longer prompts twice for text files
 
 
-### Cache Corruption Fixes
+### Cache Corruption Fixes & Auto-Recreation
 - Added defensive programming across multiple scripts for artist data corruption
 - Scripts now handle both proper artist objects and string IDs/names gracefully
 - Common pattern: type checking with isinstance() before accessing dict methods
 - Artist cleanup tool (option 7) now auto-detects and repairs corrupted cache
-- When corruption detected, cache is cleared and user prompted to restart
+- **NEW**: Automatic cache recreation - corrupted cache files are automatically detected and removed
+- **NEW**: Cache corruption events are logged to corruption_log.txt for monitoring
+- **NEW**: Comprehensive test suite covers all cache corruption scenarios and auto-recreation
+- When corruption detected, cache is automatically removed and will be recreated on next access
 
 ### Menu Structure Changes - MAJOR UPDATE
+- **LATEST**: Removed section headers ("PLAYLIST MANAGEMENT:", "ARTIST MANAGEMENT:", "SYSTEM MANAGEMENT:")
+- Menu now presents a clean, organized list without visual section dividers
+- Items are grouped logically: playlist tools (1-4), artist tools (5-7), system tools (8-12)
 - Removed options 4, 5, and 9 from the menu:
   - Option 4: "Remove duplicate songs from Liked Songs" (deleted script)
   - Option 5: "Scan for duplicate tracks in your playlists" (deleted script)  

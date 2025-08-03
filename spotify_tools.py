@@ -657,21 +657,18 @@ def main():
     while True:
         print_header("Matt Y's Spotify Tools")
         
-        # Playlist Management
-        print(f"{Fore.YELLOW}{Style.BRIGHT}PLAYLIST MANAGEMENT:")
+        # Group 1: Playlist Management
         print(f"{Fore.WHITE}1. Convert local playlists to Spotify playlists")
         print(f"{Fore.WHITE}2. Add all songs from your created playlists to Liked Songs")
         print(f"{Fore.WHITE}3. Remove Christmas songs from Liked Songs")
         print(f"{Fore.WHITE}4. Find and manage playlists by track count")
         
-        # Artist Management
-        print(f"\n{Fore.YELLOW}{Style.BRIGHT}ARTIST MANAGEMENT:")
+        # Group 2: Artist Management  
         print(f"{Fore.WHITE}5. Follow all artists in your created playlists")
         print(f"{Fore.WHITE}6. Find Artists to Follow That You Probably Like")
         print(f"{Fore.WHITE}7. Remove followed artists that you probably don't like")
         
-        # System Management
-        print(f"\n{Fore.YELLOW}{Style.BRIGHT}SYSTEM MANAGEMENT:")
+        # Group 3: System & Data Management
         print(f"{Fore.WHITE}8. Backup & export your music library")
         print(f"{Fore.WHITE}9. Manage caches")
         print(f"{Fore.WHITE}10. Manage API credentials")

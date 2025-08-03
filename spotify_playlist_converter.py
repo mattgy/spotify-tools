@@ -27,7 +27,7 @@ from thefuzz import fuzz, process
 import time
 import logging
 import json
-from tqdm import tqdm
+from tqdm_utils import create_progress_bar, update_progress_bar, close_progress_bar
 import traceback
 from datetime import datetime, timedelta
 import colorama

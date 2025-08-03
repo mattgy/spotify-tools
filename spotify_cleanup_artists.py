@@ -303,46 +303,32 @@ def identify_inactive_artists(followed_artists, top_artists, recently_played):
             user_created_playlists = [p for p in valid_playlists if p['owner']['id'] == user_id]
             
             if user_created_playlists:
-                playlist_artists = extract_artists_from_playlists(user_created_playlists, sp, show_progress=False)
+                # Use optimized centralized function for artist frequency analysis
+                from spotify_utils import get_playlist_artist_frequency
                 
-                # Count how many playlists each artist appears in
-                for playlist in user_created_playlists:
-                    try:
-                        # Additional safety check for playlist structure
-                        if not isinstance(playlist, dict) or 'id' not in playlist:
-                            print_warning(f"Skipping invalid playlist data: {type(playlist)}")
-                            continue
-                            
-                        from spotify_utils import fetch_playlist_tracks
-                        tracks = fetch_playlist_tracks(sp, playlist['id'], show_progress=False)
-                        playlist_artist_ids = set()
-                        
-                        for track_item in tracks:
-                            if track_item and track_item.get('track') and track_item['track'].get('artists'):
-                                for artist in track_item['track']['artists']:
-                                    artist_id = artist.get('id')
-                                    if artist_id and artist_id not in playlist_artist_ids:
-                                        playlist_artist_ids.add(artist_id)
-                                        playlist_artist_counts[artist_id] = playlist_artist_counts.get(artist_id, 0) + 1
-                    except Exception as e:
-                        # Use safe method to get playlist name
-                        playlist_name = "Unknown"
-                        if isinstance(playlist, dict) and 'name' in playlist:
-                            playlist_name = playlist['name']
-                        elif isinstance(playlist, str):
-                            playlist_name = playlist[:50]  # Truncate if it's a long string
-                        print_warning(f"Error processing playlist {playlist_name}: {e}")
-                        continue
+                playlist_ids = [p['id'] for p in user_created_playlists if isinstance(p, dict) and 'id' in p]
                 
-                # Add artists that appear in multiple playlists to active artists
-                playlist_favorites = 0
-                for artist_id, count in playlist_artist_counts.items():
-                    if count >= 2:  # Appears in 2+ playlists = probably liked
-                        if artist_id not in active_artist_ids:
-                            playlist_favorites += 1
-                        active_artist_ids.add(artist_id)
-                
-                print_info(f"  • From playlists: {playlist_favorites} additional artists (appear in 2+ playlists)")
+                if playlist_ids:
+                    artist_frequency = get_playlist_artist_frequency(
+                        sp, 
+                        playlist_ids, 
+                        show_progress=False,
+                        cache_key="cleanup_playlist_artist_frequency",
+                        cache_expiration=DEFAULT_CACHE_EXPIRATION
+                    )
+                    
+                    # Add artists that appear in multiple playlists to active artists
+                    playlist_favorites = 0
+                    for artist_id, frequency_data in artist_frequency.items():
+                        count = frequency_data['count']
+                        if count >= 2:  # Appears in 2+ playlists = probably liked
+                            if artist_id not in active_artist_ids:
+                                playlist_favorites += 1
+                            active_artist_ids.add(artist_id)
+                    
+                    print_info(f"  • From playlists: {playlist_favorites} additional artists (appear in 2+ playlists)")
+                else:
+                    print_warning("No valid playlist IDs found for analysis")
                 
     except Exception as e:
         print_warning(f"Could not analyze playlists: {e}")

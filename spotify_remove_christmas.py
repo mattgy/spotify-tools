@@ -25,7 +25,10 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, script_dir)
 
 # Import custom modules
-from spotify_utils import create_spotify_client, print_success, print_error, print_info
+from spotify_utils import (
+    create_spotify_client, print_success, print_error, print_info,
+    fetch_user_saved_tracks, fetch_user_playlists, fetch_playlist_tracks
+)
 from cache_utils import load_from_cache, save_to_cache
 from tqdm_utils import create_progress_bar, update_progress_bar, close_progress_bar
 
@@ -76,125 +79,76 @@ def setup_spotify_client():
         sys.exit(1)
 
 def get_user_liked_songs(sp):
-    """Get all user's liked songs."""
-    # Try to load from cache
-    cache_key = STANDARD_CACHE_KEYS['liked_songs']
-    cached_data = load_from_cache(cache_key, DEFAULT_CACHE_EXPIRATION)
+    """Get all user's liked songs using centralized fetch function."""
+    # Use the centralized function which handles caching, progress, and rate limiting
+    tracks = fetch_user_saved_tracks(
+        sp, 
+        show_progress=True, 
+        cache_key=STANDARD_CACHE_KEYS['liked_songs'],
+        cache_expiration=DEFAULT_CACHE_EXPIRATION
+    )
     
-    if cached_data:
-        print_success(f"Found {len(cached_data)} liked songs (from cache)")
-        return cached_data
-    
-    print_info("Fetching your liked songs...")
-    
+    # Transform to expected format for this script
     liked_songs = []
-    offset = 0
-    limit = 50
-    
-    # First request to get total count
-    results = sp.current_user_saved_tracks(limit=1)
-    total_tracks = results['total']
-    
-    if total_tracks == 0:
-        print_warning("You don't have any liked songs.")
-        return []
-    
-    # Create progress bar
-    progress_bar = create_progress_bar(total=total_tracks, desc="Fetching liked songs", unit="song")
-    
-    while True:
-        results = sp.current_user_saved_tracks(limit=limit, offset=offset)
-        
-        if not results['items']:
-            break
-        
-        # Extract track information
-        for item in results['items']:
-            track = item['track']
-            if not track:  # Skip null tracks
-                continue
+    for item in tracks:
+        track = item.get('track')
+        if not track:
+            continue
+            
+        # Skip tracks without valid IDs (podcasts, local files, unavailable tracks)
+        if not track.get('id'):
+            continue
+            
+        # Skip tracks with missing required fields
+        if not track.get('name') or not track.get('artists') or not track.get('album'):
+            continue
+            
+        # Ensure artists is a list and has at least one entry
+        if not isinstance(track['artists'], list) or len(track['artists']) == 0:
+            continue
+            
+        try:
+            track_info = {
+                'id': track['id'],
+                'name': track['name'],
+                'artists': [artist['name'] for artist in track['artists'] if artist and artist.get('name')],
+                'album': track['album']['name'] if track['album'] else 'Unknown Album',
+                'added_at': item.get('added_at', '')
+            }
+            
+            # Only add if we have at least one valid artist
+            if track_info['artists']:
+                liked_songs.append(track_info)
                 
-            # Skip tracks without valid IDs (podcasts, local files, unavailable tracks)
-            if not track.get('id'):
-                continue
-                
-            # Skip tracks with missing required fields
-            if not track.get('name') or not track.get('artists') or not track.get('album'):
-                continue
-                
-            # Ensure artists is a list and has at least one entry
-            if not isinstance(track['artists'], list) or len(track['artists']) == 0:
-                continue
-                
-            try:
-                track_info = {
-                    'id': track['id'],
-                    'name': track['name'],
-                    'artists': [artist['name'] for artist in track['artists'] if artist and artist.get('name')],
-                    'album': track['album']['name'] if track['album'] else 'Unknown Album',
-                    'added_at': item.get('added_at', '')
-                }
-                
-                # Only add if we have at least one valid artist
-                if track_info['artists']:
-                    liked_songs.append(track_info)
-                    
-            except (KeyError, TypeError, AttributeError) as e:
-                # Skip tracks with malformed data
-                continue
-        
-        # Update progress bar
-        update_progress_bar(progress_bar, len(results['items']))
-        
-        offset += len(results['items'])
-        
-        if len(results['items']) < limit:
-            break
-        
-        # Add a small delay to avoid hitting rate limits
-        time.sleep(0.1)
+        except (KeyError, TypeError, AttributeError) as e:
+            # Skip tracks with malformed data
+            continue
     
-    # Close progress bar
-    close_progress_bar(progress_bar)
-    
-    print_success(f"Found {len(liked_songs)} liked songs")
-    
-    # Cache the results
-    save_to_cache(liked_songs, cache_key)
-    
+    print_success(f"Processed {len(liked_songs)} valid liked songs")
     return liked_songs
 
 def get_christmas_playlists(sp):
-    """Get user's Christmas-related playlists."""
+    """Get user's Christmas-related playlists using centralized fetch function."""
     print_info("Scanning your playlists for Christmas-related ones...")
-    
-    playlists = []
-    offset = 0
-    limit = 50
     
     user = sp.current_user()
     user_id = user['id']
     
-    while True:
-        results = sp.current_user_playlists(limit=limit, offset=offset)
-        
-        if not results['items']:
-            break
-        
-        # Filter for user's own playlists that might be Christmas-related
-        for playlist in results['items']:
-            if playlist['owner']['id'] == user_id:
-                playlist_name = playlist['name'].lower()
-                if any(keyword in playlist_name for keyword in ['christmas', 'xmas', 'holiday', 'winter']):
-                    playlists.append(playlist)
-        
-        offset += len(results['items'])
-        
-        if len(results['items']) < limit:
-            break
-        
-        # Add a small delay to avoid hitting rate limits
-        time.sleep(0.1)
+    # Use centralized function to get all playlists
+    all_playlists = fetch_user_playlists(
+        sp,
+        show_progress=False,  # Don't show progress for this scan
+        cache_key="user_playlists",
+        cache_expiration=DEFAULT_CACHE_EXPIRATION
+    )
+    
+    # Filter for user's own playlists that might be Christmas-related
+    playlists = []
+    for playlist in all_playlists:
+        if playlist['owner']['id'] == user_id:
+            playlist_name = playlist['name'].lower()
+            if any(keyword in playlist_name for keyword in ['christmas', 'xmas', 'holiday', 'winter']):
+                playlists.append(playlist)
     
     if playlists:
         print_success(f"Found {len(playlists)} Christmas-related playlists:")
@@ -206,37 +160,28 @@ def get_christmas_playlists(sp):
     return playlists
 
 def get_playlist_tracks(sp, playlist_id):
-    """Get all tracks from a playlist."""
-    tracks = []
-    offset = 0
-    limit = 100
+    """Get all tracks from a playlist using centralized fetch function."""
+    # Use centralized function which handles caching, progress, and rate limiting
+    playlist_items = fetch_playlist_tracks(
+        sp,
+        playlist_id,
+        show_progress=False,  # Don't show progress for individual playlists
+        cache_key=f"playlist_tracks_{playlist_id}",
+        cache_expiration=DEFAULT_CACHE_EXPIRATION
+    )
     
-    while True:
-        results = sp.playlist_items(
-            playlist_id,
-            fields='items(track(id,name,artists,album)),total',
-            limit=limit,
-            offset=offset
-        )
-        
-        # Extract track info
-        for item in results['items']:
-            if item['track'] and item['track']['id']:
-                track_info = {
-                    'id': item['track']['id'],
-                    'name': item['track']['name'],
-                    'artists': [artist['name'] for artist in item['track']['artists']],
-                    'album': item['track']['album']['name']
-                }
-                tracks.append(track_info)
-        
-        offset += limit
-        
-        if len(results['items']) < limit:
-            break
-        
-        # Add a small delay to avoid hitting rate limits
-        time.sleep(0.1)
+    # Transform to expected format for this script
+    tracks = []
+    for item in playlist_items:
+        if item and item.get('track') and item['track'].get('id'):
+            track = item['track']
+            track_info = {
+                'id': track['id'],
+                'name': track['name'],
+                'artists': [artist['name'] for artist in track.get('artists', [])],
+                'album': track['album']['name'] if track.get('album') else 'Unknown Album'
+            }
+            tracks.append(track_info)
     
     return tracks
 
@@ -368,9 +313,6 @@ def remove_songs_from_liked(sp, songs_to_remove):
             
             # Update progress bar
             update_progress_bar(progress_bar, len(batch))
-            
-            # Add a small delay to avoid hitting rate limits
-            time.sleep(0.5)
             
         except Exception as e:
             print_error(f"Error removing batch of songs: {e}")

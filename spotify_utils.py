@@ -728,6 +728,320 @@ def extract_artists_from_playlists(playlists, sp, show_progress=True, owner_filt
     
     return list(all_artists.values())
 
+def batch_get_artist_details(sp, artist_ids, show_progress=True, cache_key_prefix="artist_details", cache_expiration=None):
+    """
+    Get detailed information for multiple artists efficiently using Spotify's bulk endpoint.
+    
+    Args:
+        sp: Spotify client
+        artist_ids: List of artist IDs (max 50 per API call)
+        show_progress: Whether to show progress bar
+        cache_key_prefix: Prefix for cache keys
+        cache_expiration: Cache expiration in seconds
+    
+    Returns:
+        Dictionary mapping artist IDs to artist detail objects
+    """
+    from cache_utils import save_to_cache, load_from_cache
+    from constants import CACHE_EXPIRATION
+    from tqdm_utils import create_progress_bar, update_progress_bar, close_progress_bar
+    
+    if cache_expiration is None:
+        cache_expiration = CACHE_EXPIRATION.get('long', 7 * 24 * 60 * 60)  # 7 days for artist data
+    
+    # Check cache for each artist
+    cached_artists = {}
+    uncached_ids = []
+    
+    for artist_id in artist_ids:
+        cache_key = f"{cache_key_prefix}_{artist_id}"
+        cached_data = load_from_cache(cache_key, cache_expiration)
+        if cached_data:
+            cached_artists[artist_id] = cached_data
+        else:
+            uncached_ids.append(artist_id)
+    
+    if show_progress and uncached_ids:
+        print_info(f"Fetching details for {len(uncached_ids)} artists ({len(cached_artists)} from cache)")
+        progress_bar = create_progress_bar(total=len(uncached_ids), desc="Fetching artist details", unit="artist")
+    
+    # Fetch uncached artists in batches of 50 (Spotify API limit)
+    batch_size = 50
+    fetched_artists = {}
+    
+    for i in range(0, len(uncached_ids), batch_size):
+        batch_ids = uncached_ids[i:i + batch_size]
+        
+        try:
+            # Use Spotify's bulk artists endpoint
+            artists_data = sp.artists(batch_ids)
+            
+            for artist in artists_data.get('artists', []):
+                if artist:  # Skip None artists (deleted/unavailable)
+                    artist_id = artist['id']
+                    fetched_artists[artist_id] = artist
+                    
+                    # Cache individual artist
+                    cache_key = f"{cache_key_prefix}_{artist_id}"
+                    save_to_cache(artist, cache_key)
+            
+            if show_progress and uncached_ids:
+                update_progress_bar(progress_bar, len(batch_ids))
+            
+            time.sleep(0.1)  # Rate limiting
+            
+        except Exception as e:
+            print_warning(f"Error fetching artist batch: {e}")
+            if show_progress and uncached_ids:
+                update_progress_bar(progress_bar, len(batch_ids))
+    
+    if show_progress and uncached_ids:
+        close_progress_bar(progress_bar)
+    
+    # Combine cached and fetched results
+    all_artists = {**cached_artists, **fetched_artists}
+    
+    if show_progress:
+        print_success(f"Retrieved details for {len(all_artists)} artists")
+    
+    return all_artists
+
+def batch_search_tracks(sp, search_queries, show_progress=True, cache_key_prefix="track_search", cache_expiration=None):
+    """
+    Perform multiple track searches efficiently with caching and rate limiting.
+    
+    Args:
+        sp: Spotify client
+        search_queries: List of search query strings
+        show_progress: Whether to show progress bar
+        cache_key_prefix: Prefix for cache keys
+        cache_expiration: Cache expiration in seconds
+    
+    Returns:
+        Dictionary mapping queries to search results
+    """
+    from cache_utils import save_to_cache, load_from_cache
+    from constants import CACHE_EXPIRATION
+    from tqdm_utils import create_progress_bar, update_progress_bar, close_progress_bar
+    
+    if cache_expiration is None:
+        cache_expiration = CACHE_EXPIRATION.get('short', 60 * 60)  # 1 hour for search results
+    
+    # Check cache for each query
+    cached_results = {}
+    uncached_queries = []
+    
+    for query in search_queries:
+        # Create safe cache key
+        import hashlib
+        safe_query = hashlib.md5(query.encode()).hexdigest()[:16]
+        cache_key = f"{cache_key_prefix}_{safe_query}"
+        
+        cached_data = load_from_cache(cache_key, cache_expiration)
+        if cached_data:
+            cached_results[query] = cached_data
+        else:
+            uncached_queries.append(query)
+    
+    if show_progress and uncached_queries:
+        print_info(f"Performing {len(uncached_queries)} track searches ({len(cached_results)} from cache)")
+        progress_bar = create_progress_bar(total=len(uncached_queries), desc="Searching tracks", unit="search")
+    
+    # Perform uncached searches
+    search_results = {}
+    
+    for query in uncached_queries:
+        try:
+            # Use higher limit for better results per call
+            results = sp.search(q=query, type='track', limit=50)
+            search_results[query] = results
+            
+            # Cache result
+            import hashlib
+            safe_query = hashlib.md5(query.encode()).hexdigest()[:16]
+            cache_key = f"{cache_key_prefix}_{safe_query}"
+            save_to_cache(results, cache_key)
+            
+            if show_progress:
+                update_progress_bar(progress_bar, 1)
+            
+            time.sleep(0.1)  # Rate limiting
+            
+        except Exception as e:
+            print_warning(f"Error searching for '{query[:50]}...': {e}")
+            search_results[query] = {'tracks': {'items': []}}
+            if show_progress:
+                update_progress_bar(progress_bar, 1)
+    
+    if show_progress and uncached_queries:
+        close_progress_bar(progress_bar)
+    
+    # Combine cached and fresh results
+    all_results = {**cached_results, **search_results}
+    
+    return all_results
+
+def get_playlist_artist_frequency(sp, playlist_ids, show_progress=True, cache_key="playlist_artist_frequency", cache_expiration=None):
+    """
+    Efficiently calculate artist frequency across multiple playlists with optimized caching.
+    
+    Args:
+        sp: Spotify client
+        playlist_ids: List of playlist IDs to analyze
+        show_progress: Whether to show progress bar
+        cache_key: Cache key for storing results
+        cache_expiration: Cache expiration in seconds
+    
+    Returns:
+        Dictionary mapping artist IDs to frequency counts and playlist appearances
+    """
+    from cache_utils import save_to_cache, load_from_cache
+    from constants import CACHE_EXPIRATION
+    from tqdm_utils import create_progress_bar, update_progress_bar, close_progress_bar
+    from collections import defaultdict
+    
+    if cache_expiration is None:
+        cache_expiration = CACHE_EXPIRATION.get('medium', 24 * 60 * 60)  # 24 hours
+    
+    # Try cache first
+    cached_data = load_from_cache(cache_key, cache_expiration)
+    if cached_data:
+        if show_progress:
+            print_info("Using cached artist frequency data")
+        return cached_data
+    
+    if show_progress:
+        print_info(f"Analyzing artist frequency across {len(playlist_ids)} playlists...")
+        progress_bar = create_progress_bar(total=len(playlist_ids), desc="Analyzing playlists", unit="playlist")
+    
+    artist_frequency = defaultdict(lambda: {'count': 0, 'playlists': []})
+    
+    for playlist_id in playlist_ids:
+        try:
+            # Use centralized function for fetching tracks
+            tracks = fetch_playlist_tracks(
+                sp, 
+                playlist_id, 
+                show_progress=False,
+                cache_key=f"playlist_tracks_{playlist_id}",
+                cache_expiration=cache_expiration
+            )
+            
+            # Track unique artists per playlist to avoid double-counting
+            playlist_artists = set()
+            
+            for track_item in tracks:
+                if track_item and track_item.get('track') and track_item['track'].get('artists'):
+                    for artist in track_item['track']['artists']:
+                        artist_id = artist.get('id')
+                        if artist_id and artist_id not in playlist_artists:
+                            playlist_artists.add(artist_id)
+                            artist_frequency[artist_id]['count'] += 1
+                            artist_frequency[artist_id]['playlists'].append(playlist_id)
+            
+            if show_progress:
+                update_progress_bar(progress_bar, 1)
+                
+        except Exception as e:
+            print_warning(f"Error processing playlist {playlist_id}: {e}")
+            if show_progress:
+                update_progress_bar(progress_bar, 1)
+            continue
+    
+    if show_progress:
+        close_progress_bar(progress_bar)
+        print_success(f"Analyzed {len(artist_frequency)} unique artists across all playlists")
+    
+    # Convert to regular dict for caching
+    result = dict(artist_frequency)
+    
+    # Cache results
+    save_to_cache(result, cache_key)
+    
+    return result
+
+def optimized_track_search_strategies(sp, artist, title, album=None, max_strategies=5):
+    """
+    Optimized track search using fewer, more effective strategies with higher limits.
+    
+    Args:
+        sp: Spotify client
+        artist: Artist name
+        title: Track title
+        album: Album name (optional)
+        max_strategies: Maximum number of search strategies to try
+    
+    Returns:
+        Best matching track or None
+    """
+    from cache_utils import save_to_cache, load_from_cache
+    import hashlib
+    
+    # Create cache key
+    cache_key = f"optimized_track_search_{hashlib.md5(f'{artist}_{title}_{album}'.encode()).hexdigest()[:16]}"
+    cached_result = load_from_cache(cache_key, 7 * 24 * 60 * 60)  # 7 days
+    
+    if cached_result:
+        return cached_result
+    
+    # Optimized search strategies (fewer, more effective)
+    strategies = []
+    
+    if artist and album and title:
+        strategies.append(f'artist:"{artist}" album:"{album}" track:"{title}"')
+    
+    if artist and title:
+        strategies.append(f'artist:"{artist}" track:"{title}"')
+        strategies.append(f'"{artist}" "{title}"')
+    
+    if album and title:
+        strategies.append(f'album:"{album}" track:"{title}"')
+    
+    # Simple fallback
+    strategies.append(f'"{artist} {title}"')
+    
+    # Limit to max_strategies
+    strategies = strategies[:max_strategies]
+    
+    # Use batch search for all strategies
+    search_results = batch_search_tracks(sp, strategies, show_progress=False, cache_expiration=60*60)
+    
+    # Find best match across all strategies
+    best_match = None
+    best_score = 0
+    
+    for strategy, results in search_results.items():
+        tracks = results.get('tracks', {}).get('items', [])
+        
+        for track in tracks:
+            # Simple scoring based on name matching
+            track_artists = [a['name'].lower() for a in track.get('artists', [])]
+            track_name = track.get('name', '').lower()
+            
+            score = 0
+            if artist.lower() in ' '.join(track_artists):
+                score += 50
+            if title.lower() in track_name:
+                score += 40
+            if album and album.lower() in track.get('album', {}).get('name', '').lower():
+                score += 10
+            
+            if score > best_score:
+                best_score = score
+                best_match = {
+                    'id': track['id'],
+                    'name': track['name'],
+                    'artists': [artist['name'] for artist in track['artists']],
+                    'album': track['album']['name'],
+                    'uri': track['uri'],
+                    'score': score
+                }
+    
+    # Cache result
+    save_to_cache(best_match, cache_key)
+    
+    return best_match
+
 if __name__ == "__main__":
     print("Spotify Utils Test")
     print("This module provides shared utilities for Spotify API operations.")

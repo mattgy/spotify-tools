@@ -26,7 +26,10 @@ sys.path.insert(0, script_dir)
 # Import custom modules
 from credentials_manager import get_spotify_credentials
 from cache_utils import save_to_cache, load_from_cache
-from spotify_utils import create_spotify_client, COMMON_SCOPES, print_success, print_error, print_warning, print_info
+from spotify_utils import (
+    create_spotify_client, COMMON_SCOPES, print_success, print_error, print_warning, print_info,
+    fetch_user_playlists, fetch_user_saved_tracks, fetch_playlist_tracks, fetch_followed_artists
+)
 from constants import BATCH_SIZES, CONFIDENCE_THRESHOLDS
 
 # Spotify API scopes needed for this script
@@ -64,7 +67,7 @@ def get_user_playlists(sp):
     return user_playlists
 
 def get_tracks_from_playlists(sp, playlists):
-    """Extract all unique tracks from the given playlists."""
+    """Extract all unique tracks from the given playlists using centralized functions."""
     # Try to load from cache
     cache_key = "playlist_tracks"
     cached_data = load_from_cache(cache_key, DEFAULT_CACHE_EXPIRATION)
@@ -91,44 +94,31 @@ def get_tracks_from_playlists(sp, playlists):
         playlist_id = playlist['id']
         playlist_name = playlist['name']
         
-        # Get all tracks in the playlist
-        playlist_tracks = []
-        offset = 0
-        limit = 100  # Maximum allowed by Spotify API
-        
-        while True:
-            results = sp.playlist_items(
-                playlist_id,
-                fields='items(track(id,name,artists(name),album(name))),total',
-                limit=limit,
-                offset=offset
-            )
-            
-            playlist_tracks.extend(results['items'])
-            
-            if len(results['items']) < limit:
-                break
-            
-            offset += limit
-            
-            # Add a small delay to avoid hitting rate limits
-            time.sleep(0.1)
+        # Use centralized function to get playlist tracks
+        playlist_items = fetch_playlist_tracks(
+            sp,
+            playlist_id,
+            show_progress=False,  # Don't show individual progress per playlist
+            cache_key=f"playlist_tracks_{playlist_id}",
+            cache_expiration=DEFAULT_CACHE_EXPIRATION
+        )
         
         # Process tracks in this playlist
-        for item in playlist_tracks:
+        for item in playlist_items:
             # Skip null tracks or episodes
-            if not item['track'] or item['track']['id'] is None:
+            if not item.get('track') or not item['track'].get('id'):
                 continue
             
-            track_id = item['track']['id']
+            track = item['track']
+            track_id = track['id']
             
             # Store track info if we haven't seen it before
             if track_id not in tracks:
                 tracks[track_id] = {
                     'id': track_id,
-                    'name': item['track']['name'],
-                    'artists': [artist['name'] for artist in item['track']['artists']],
-                    'album': item['track']['album']['name']
+                    'name': track['name'],
+                    'artists': [artist['name'] for artist in track.get('artists', [])],
+                    'album': track['album']['name'] if track.get('album') else 'Unknown Album'
                 }
             
             # Record that this track appears in this playlist
@@ -141,9 +131,9 @@ def get_tracks_from_playlists(sp, playlists):
     close_progress_bar(progress_bar)
     
     # Add playlist info to each track
-    for track_id, playlists in track_playlists.items():
+    for track_id, playlists_list in track_playlists.items():
         if track_id in tracks:
-            tracks[track_id]['playlists'] = playlists
+            tracks[track_id]['playlists'] = playlists_list
     
     print(f"Found {len(tracks)} unique tracks across all playlists")
     
@@ -201,8 +191,7 @@ def like_tracks(sp, tracks, saved_tracks):
             # Update progress bar
             update_progress_bar(progress_bar, len(batch))
             
-            # Add a small delay to avoid hitting rate limits
-            time.sleep(0.5)
+            # SafeSpotifyClient handles rate limiting automatically
         except Exception as e:
             print(f"Error liking tracks: {e}")
             print("Continuing with next batch...")
@@ -247,33 +236,17 @@ def analyze_artist_frequency(tracks):
     return artist_counts, artist_tracks
 
 def get_followed_artists(sp):
-    """Get list of currently followed artists."""
-    cache_key = "followed_artists_for_autofollow"
-    cached_data = load_from_cache(cache_key, 3600)  # Cache for 1 hour
+    """Get list of currently followed artists using centralized fetch function."""
+    # Use centralized function which handles caching, progress, and rate limiting
+    followed_artists_data = fetch_followed_artists(
+        sp,
+        show_progress=False,
+        cache_key="followed_artists_for_autofollow",
+        cache_expiration=3600  # Cache for 1 hour
+    )
     
-    if cached_data:
-        return set(cached_data)
-    
-    followed_artists = set()
-    
-    try:
-        results = sp.current_user_followed_artists(limit=50)
-        
-        while results:
-            for artist in results['artists']['items']:
-                followed_artists.add(artist['id'])
-            
-            if results['artists']['next']:
-                results = sp.next(results['artists'])
-                time.sleep(0.1)
-            else:
-                break
-        
-        # Cache the results
-        save_to_cache(list(followed_artists), cache_key)
-        
-    except Exception as e:
-        print(f"Error fetching followed artists: {e}")
+    # Convert to set of artist IDs for efficient lookup
+    followed_artists = {artist['id'] for artist in followed_artists_data}
     
     return followed_artists
 
@@ -288,24 +261,36 @@ def suggest_artists_to_follow(sp, liked_tracks, min_songs=3):
     followed_artists = get_followed_artists(sp)
     
     # Find artists with multiple songs that aren't followed
-    suggestions = []
+    candidate_artist_ids = [artist_id for artist_id, count in artist_counts.items() 
+                           if count >= min_songs and artist_id not in followed_artists]
     
-    for artist_id, count in artist_counts.items():
-        if count >= min_songs and artist_id not in followed_artists:
-            # Get artist details
-            try:
-                artist = sp.artist(artist_id)
-                suggestions.append({
-                    'id': artist_id,
-                    'name': artist['name'],
-                    'song_count': count,
-                    'popularity': artist['popularity'],
-                    'genres': artist['genres'],
-                    'tracks': artist_tracks[artist_id]
-                })
-            except Exception as e:
-                print(f"Error getting artist details for {artist_id}: {e}")
-                continue
+    if not candidate_artist_ids:
+        return []
+    
+    # Use batch function to get artist details efficiently
+    from spotify_utils import batch_get_artist_details
+    
+    artist_details = batch_get_artist_details(
+        sp, 
+        candidate_artist_ids, 
+        show_progress=True, 
+        cache_key_prefix="follow_suggestion_artist_details",
+        cache_expiration=7 * 24 * 60 * 60  # 7 days
+    )
+    
+    # Build suggestions from batch results
+    suggestions = []
+    for artist_id in candidate_artist_ids:
+        if artist_id in artist_details:
+            artist = artist_details[artist_id]
+            suggestions.append({
+                'id': artist_id,
+                'name': artist['name'],
+                'song_count': artist_counts[artist_id],
+                'popularity': artist['popularity'],
+                'genres': artist['genres'],
+                'tracks': artist_tracks[artist_id]
+            })
     
     # Sort by song count (most frequent first)
     suggestions.sort(key=lambda x: x['song_count'], reverse=True)
@@ -349,7 +334,7 @@ def auto_follow_artists(sp, suggestions, auto_threshold=5):
                 for i in range(0, len(artist_ids), batch_size):
                     batch = artist_ids[i:i + batch_size]
                     sp.user_follow_artists(batch)
-                    time.sleep(0.2)  # Rate limiting
+                    # SafeSpotifyClient handles rate limiting automatically
                 
                 print(f"Successfully followed {len(auto_follow_list)} artists!")
                 
@@ -406,7 +391,7 @@ def manual_follow_selection(sp, artists):
             for i in range(0, len(artist_ids), batch_size):
                 batch = artist_ids[i:i + batch_size]
                 sp.user_follow_artists(batch)
-                time.sleep(0.2)  # Rate limiting
+                # SafeSpotifyClient handles rate limiting automatically
             
             print(f"Successfully followed {len(selected_artists)} artists!")
             

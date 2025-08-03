@@ -31,7 +31,10 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, script_dir)
 
 # Import custom modules
-from spotify_utils import create_spotify_client, print_success, print_error, print_warning, print_info, print_header
+from spotify_utils import (
+    create_spotify_client, print_success, print_error, print_warning, print_info, print_header,
+    fetch_user_playlists, fetch_playlist_tracks
+)
 from cache_utils import save_to_cache, load_from_cache
 from tqdm_utils import create_progress_bar, update_progress_bar, close_progress_bar
 
@@ -65,91 +68,62 @@ def setup_spotify_client():
         return None
 
 def get_all_user_playlists(sp):
-    """Get all playlists for the current user."""
-    cache_key = STANDARD_CACHE_KEYS['user_playlists'] 
-    cached_data = load_from_cache(cache_key, DEFAULT_CACHE_EXPIRATION)
+    """Get all playlists for the current user using centralized fetch function."""
+    # Use centralized function which handles caching, progress, and rate limiting
+    all_playlists = fetch_user_playlists(
+        sp,
+        show_progress=True,
+        cache_key=STANDARD_CACHE_KEYS['user_playlists'],
+        cache_expiration=DEFAULT_CACHE_EXPIRATION
+    )
     
-    if cached_data:
-        print_info("Using cached playlist data...")
-        return cached_data
+    # Filter for user's own playlists and transform to expected format
+    user = sp.current_user()
+    user_id = user['id']
     
-    print_info("Fetching all playlists...")
-    playlists = []
+    user_playlists = []
+    for playlist in all_playlists:
+        if playlist and playlist['owner']['id'] == user_id:
+            user_playlists.append({
+                'id': playlist['id'],
+                'name': playlist['name'],
+                'description': playlist.get('description', ''),
+                'public': playlist['public'],
+                'tracks_total': playlist['tracks']['total'],
+                'owner_id': playlist['owner']['id']
+            })
     
-    try:
-        # Get current user ID
-        user = sp.current_user()
-        user_id = user['id']
-        
-        # Fetch all playlists
-        results = sp.current_user_playlists(limit=50)
-        
-        while results:
-            for playlist in results['items']:
-                if playlist and playlist['owner']['id'] == user_id:
-                    playlists.append({
-                        'id': playlist['id'],
-                        'name': playlist['name'],
-                        'description': playlist.get('description', ''),
-                        'public': playlist['public'],
-                        'tracks_total': playlist['tracks']['total'],
-                        'owner_id': playlist['owner']['id']
-                    })
-            
-            if results['next']:
-                results = sp.next(results)
-            else:
-                break
-        
-        # Cache the results
-        save_to_cache(playlists, cache_key)
-        print_success(f"Found {len(playlists)} playlists")
-        
-        return playlists
-    
-    except Exception as e:
-        print_error(f"Error fetching playlists: {e}")
-        return []
+    print_success(f"Found {len(user_playlists)} user-owned playlists")
+    return user_playlists
 
 def get_playlist_tracks(sp, playlist_id):
-    """Get all tracks from a playlist."""
-    cache_key = f"playlist_tracks_{playlist_id}"
-    cached_data = load_from_cache(cache_key, CACHE_EXPIRATION)
+    """Get all tracks from a playlist using centralized fetch function."""
+    # Use centralized function which handles caching, progress, and rate limiting
+    track_items = fetch_playlist_tracks(
+        sp,
+        playlist_id,
+        show_progress=False,  # Don't show progress for individual playlists in this context
+        cache_key=f"playlist_tracks_{playlist_id}",
+        cache_expiration=DEFAULT_CACHE_EXPIRATION
+    )
     
-    if cached_data:
-        return cached_data
-    
+    # Transform to expected format for this script
     tracks = []
-    try:
-        results = sp.playlist_tracks(playlist_id, limit=100)
-        
-        while results:
-            for item in results['items']:
-                if item['track'] and item['track']['id']:
-                    track = {
-                        'id': item['track']['id'],
-                        'name': item['track']['name'],
-                        'artists': [artist['name'] for artist in item['track']['artists']],
-                        'album': item['track']['album']['name'],
-                        'duration_ms': item['track']['duration_ms'],
-                        'popularity': item['track']['popularity'],
-                        'uri': item['track']['uri']
-                    }
-                    tracks.append(track)
-            
-            if results['next']:
-                results = sp.next(results)
-            else:
-                break
-        
-        # Cache the results
-        save_to_cache(tracks, cache_key)
-        
-        return tracks
+    for item in track_items:
+        if item and item.get('track') and item['track'].get('id'):
+            track_data = item['track']
+            track = {
+                'id': track_data['id'],
+                'name': track_data['name'],
+                'artists': [artist['name'] for artist in track_data.get('artists', [])],
+                'album': track_data['album']['name'] if track_data.get('album') else 'Unknown Album',
+                'duration_ms': track_data.get('duration_ms', 0),
+                'popularity': track_data.get('popularity', 0),
+                'uri': track_data['uri']
+            }
+            tracks.append(track)
     
-    except Exception as e:
-        print_error(f"Error fetching tracks from playlist: {e}")
-        return []
+    return tracks
 
 def find_duplicate_tracks_in_playlist(sp, playlist_id, playlist_name):
     """Find duplicate tracks within a single playlist."""

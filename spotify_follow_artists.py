@@ -136,31 +136,31 @@ def follow_artists(sp, artists, followed_artists):
         fetch_details = input("Fetch detailed artist info to check follower counts? (This may take a while) (y/n): ").strip().lower()
         
         if fetch_details == 'y':
-            from tqdm_utils import create_progress_bar, update_progress_bar, close_progress_bar
-            print_info("Fetching detailed artist information...")
-            progress_bar = create_progress_bar(total=min(50, len(new_artists)), desc="Checking artist details", unit="artist")
+            # Use batch function for much better efficiency
+            from spotify_utils import batch_get_artist_details
             
             # Sample first 50 artists to check for low followers
             sample_artists = new_artists[:50]
+            artist_ids = [artist['id'] for artist in sample_artists]
             
-            for i, artist in enumerate(sample_artists):
-                try:
-                    # Fetch full artist details
-                    full_artist = sp.artist(artist['id'])
+            # Batch fetch all artist details at once
+            artist_details = batch_get_artist_details(
+                sp, 
+                artist_ids, 
+                show_progress=True, 
+                cache_key_prefix="follow_artist_details",
+                cache_expiration=7 * 24 * 60 * 60  # 7 days
+            )
+            
+            # Check for low followers
+            for artist in sample_artists:
+                artist_id = artist['id']
+                if artist_id in artist_details:
+                    full_artist = artist_details[artist_id]
                     if full_artist and 'followers' in full_artist and full_artist['followers']['total'] <= low_follower_threshold:
                         # Update artist with follower info
                         artist['followers'] = full_artist['followers']
                         low_follower_artists.append(artist)
-                    
-                    update_progress_bar(progress_bar, 1)
-                    time.sleep(0.1)  # Rate limiting
-                    
-                except Exception as e:
-                    print_warning(f"Error fetching details for {artist.get('name', 'Unknown')}: {e}")
-                    update_progress_bar(progress_bar, 1)
-                    continue
-            
-            close_progress_bar(progress_bar)
     
     if low_follower_artists:
         print_warning(f"\nFound {len(low_follower_artists)} artists with {low_follower_threshold} or fewer followers:")
@@ -210,8 +210,7 @@ def follow_artists(sp, artists, followed_artists):
             # Update progress bar with the number of artists in this batch
             update_progress_bar(progress_bar, len(batch))
             
-            # Add a small delay to avoid hitting rate limits
-            time.sleep(0.5)
+            # SafeSpotifyClient handles rate limiting automatically
         except Exception as e:
             print_error(f"Error following batch of {len(batch)} artists: {e}")
             print_warning("Continuing with next batch...")

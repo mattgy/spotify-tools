@@ -28,6 +28,7 @@ import time
 import logging
 import json
 from tqdm_utils import create_progress_bar, update_progress_bar, close_progress_bar
+from spotify_utils import optimized_track_search_strategies
 import traceback
 from datetime import datetime, timedelta
 import colorama
@@ -1616,121 +1617,16 @@ def search_track_on_spotify(sp, artist, title, album=None):
     # Log the search parameters
     logger.debug(f"Searching for: Artist='{artist}', Album='{album}', Title='{title}'")
     
-    # Try multiple search strategies
+    # Use optimized search strategies - much faster than 13 individual searches
+    result = optimized_track_search_strategies(sp, artist, title, album, max_strategies=6)
+    
+    if result:
+        logger.debug(f"Optimized search found: {result['name']} by {result['artists']} (Score: {result['score']:.1f})")
+        save_to_cache(result, cache_key)
+        return result
+    
+    # Fallback to original complex strategies for edge cases
     candidates = []
-    
-    # Strategy 1: Exact artist, album and title search (if album is available)
-    if artist and album:
-        query1 = f"artist:\"{artist}\" album:\"{album}\" track:\"{title}\""
-        logger.debug(f"Strategy 1: {query1}")
-        try:
-            apply_rate_limit()
-            results1 = sp.search(q=query1, type='track', limit=10)
-            process_search_results(results1, artist, title, album, candidates, weight=1.5)
-            
-            # Early exit if we found a very high-confidence match
-            if candidates and max(c['score'] for c in candidates) > 95:
-                logger.debug("Found very high-confidence match, skipping remaining strategies")
-                best_match = max(candidates, key=lambda x: x['score'])
-                result = {
-                    'id': best_match['track']['id'],
-                    'name': best_match['track']['name'],
-                    'artists': [artist['name'] for artist in best_match['track']['artists']],
-                    'album': best_match['track']['album']['name'],
-                    'score': best_match['score'],
-                    'uri': best_match['track']['uri']
-                }
-                save_to_cache(result, cache_key)
-                return result
-        except Exception as e:
-            if handle_rate_limit_error(e):
-                # Retry after rate limit handling
-                try:
-                    results1 = sp.search(q=query1, type='track', limit=10)
-                    process_search_results(results1, artist, title, album, candidates, weight=1.5)
-                except Exception as retry_e:
-                    logger.error(f"Error in search strategy 1 retry: {retry_e}")
-            else:
-                logger.error(f"Error in search strategy 1: {e}")
-    
-    # Strategy 2: Exact artist and title search
-    if artist:
-        query2 = f"artist:\"{artist}\" track:\"{title}\""
-        logger.debug(f"Strategy 2: {query2}")
-        try:
-            apply_rate_limit()
-            results2 = sp.search(q=query2, type='track', limit=10)
-            process_search_results(results2, artist, title, album, candidates, weight=1.3)
-        except Exception as e:
-            logger.error(f"Error in search strategy 2: {e}")
-    
-    # Strategy 3: Album and title search (if album is available)
-    if album:
-        query3 = f"album:\"{album}\" track:\"{title}\""
-        logger.debug(f"Strategy 3: {query3}")
-        try:
-            results3 = sp.search(q=query3, type='track', limit=10)
-            process_search_results(results3, artist, title, album, candidates, weight=1.2)
-        except Exception as e:
-            logger.error(f"Error in search strategy 3: {e}")
-    
-    # Strategy 4: Quoted title with artist
-    if artist:
-        query4 = f"\"{title}\" artist:\"{artist}\""
-        logger.debug(f"Strategy 4: {query4}")
-        try:
-            results4 = sp.search(q=query4, type='track', limit=10)
-            process_search_results(results4, artist, title, album, candidates, weight=1.1)
-        except Exception as e:
-            logger.error(f"Error in search strategy 4: {e}")
-    
-    # Strategy 5: Simple artist, album and title
-    if artist and album:
-        query5 = f"{artist} {album} {title}"
-        logger.debug(f"Strategy 5: {query5}")
-        try:
-            results5 = sp.search(q=query5, type='track', limit=10)
-            process_search_results(results5, artist, title, album, candidates, weight=1.05)
-        except Exception as e:
-            logger.error(f"Error in search strategy 5: {e}")
-    
-    # Strategy 6: Simple artist and title
-    if artist:
-        query6 = f"{artist} {title}"
-        logger.debug(f"Strategy 6: {query6}")
-        try:
-            apply_rate_limit()
-            results6 = sp.search(q=query6, type='track', limit=10)
-            process_search_results(results6, artist, title, album, candidates, weight=1.0)
-        except Exception as e:
-            logger.error(f"Error in search strategy 6: {e}")
-    
-    # Strategy 7: Just the title
-    query7 = f"\"{title}\""
-    logger.debug(f"Strategy 7: {query7}")
-    try:
-        apply_rate_limit()
-        results7 = sp.search(q=query7, type='track', limit=10)
-        process_search_results(results7, artist, title, album, candidates, weight=0.9)
-    except Exception as e:
-        logger.error(f"Error in search strategy 7: {e}")
-    
-    # Strategy 8: Try with partial matching for title (only remove remaster/deluxe tags)
-    # Keep featuring info in parentheses
-    base_title = title
-    # Only remove specific tags that are not part of the song
-    for tag in ['remaster', 'remastered', 'deluxe', 'anniversary', 'expanded']:
-        base_title = re.sub(rf'\s*[\(\[].*{tag}.*[\)\]]\s*', '', base_title, flags=re.IGNORECASE)
-    base_title = base_title.strip()
-    
-    if base_title != title:
-        query8 = f"artist:\"{artist}\" track:\"{base_title}\"" if artist else f"\"{base_title}\""
-        logger.debug(f"Strategy 8 (cleaned title): {query8}")
-        try:
-            results8 = sp.search(q=query8, type='track', limit=10)
-            process_search_results(results8, artist, title, album, candidates, weight=0.95)
-        except Exception as e:
-            logger.error(f"Error in search strategy 8: {e}")
     
     # Strategy 8a: Try removing parenthetical content as backup
     # For cases like "Ada - The Jazz Singer (Re-Imagined By Ada)" -> try "Ada - The Jazz Singer"

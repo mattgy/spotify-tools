@@ -237,20 +237,32 @@ def find_extra_tracks_in_spotify_playlist(sp, spotify_playlist_id, local_tracks)
     for i in range(0, len(spotify_track_uris), batch_size):
         batch_uris = spotify_track_uris[i:i + batch_size]
         
-        # Handle both URI strings and dict objects (defensive programming)
+        # Handle different track data formats (defensive programming)
         track_ids = []
-        for uri in batch_uris:
-            if isinstance(uri, str):
+        for item in batch_uris:
+            track_id = None
+            
+            if isinstance(item, str):
                 # URI string format: "spotify:track:id"
-                track_ids.append(uri.split(':')[-1])
-            elif isinstance(uri, dict) and 'uri' in uri:
-                # Dict format with 'uri' key
-                track_ids.append(uri['uri'].split(':')[-1])
-            elif isinstance(uri, dict) and 'id' in uri:
-                # Dict format with 'id' key
-                track_ids.append(uri['id'])
+                track_id = item.split(':')[-1]
+            elif isinstance(item, dict):
+                # Check if this is a playlist item object with nested track
+                if 'track' in item and isinstance(item['track'], dict):
+                    track = item['track']
+                    if 'id' in track:
+                        track_id = track['id']
+                    elif 'uri' in track:
+                        track_id = track['uri'].split(':')[-1]
+                # Check if this is a direct track object
+                elif 'uri' in item:
+                    track_id = item['uri'].split(':')[-1]
+                elif 'id' in item:
+                    track_id = item['id']
+            
+            if track_id:
+                track_ids.append(track_id)
             else:
-                logger.warning(f"Unexpected track URI format: {type(uri)} - {uri}")
+                logger.warning(f"Could not extract track ID from: {type(item)}")
                 continue
         
         try:
@@ -294,20 +306,32 @@ def find_extra_tracks_in_spotify_playlist_with_threshold(sp, spotify_playlist_id
     for i in range(0, len(spotify_track_uris), batch_size):
         batch_uris = spotify_track_uris[i:i + batch_size]
         
-        # Handle both URI strings and dict objects (defensive programming)
+        # Handle different track data formats (defensive programming)
         track_ids = []
-        for uri in batch_uris:
-            if isinstance(uri, str):
+        for item in batch_uris:
+            track_id = None
+            
+            if isinstance(item, str):
                 # URI string format: "spotify:track:id"
-                track_ids.append(uri.split(':')[-1])
-            elif isinstance(uri, dict) and 'uri' in uri:
-                # Dict format with 'uri' key
-                track_ids.append(uri['uri'].split(':')[-1])
-            elif isinstance(uri, dict) and 'id' in uri:
-                # Dict format with 'id' key
-                track_ids.append(uri['id'])
+                track_id = item.split(':')[-1]
+            elif isinstance(item, dict):
+                # Check if this is a playlist item object with nested track
+                if 'track' in item and isinstance(item['track'], dict):
+                    track = item['track']
+                    if 'id' in track:
+                        track_id = track['id']
+                    elif 'uri' in track:
+                        track_id = track['uri'].split(':')[-1]
+                # Check if this is a direct track object
+                elif 'uri' in item:
+                    track_id = item['uri'].split(':')[-1]
+                elif 'id' in item:
+                    track_id = item['id']
+            
+            if track_id:
+                track_ids.append(track_id)
             else:
-                logger.warning(f"Unexpected track URI format: {type(uri)} - {uri}")
+                logger.warning(f"Could not extract track ID from: {type(item)}")
                 continue
         
         try:

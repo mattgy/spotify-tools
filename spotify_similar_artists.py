@@ -22,6 +22,7 @@ import os
 import sys
 import time
 import json
+import math
 import requests
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
@@ -230,25 +231,45 @@ def display_artists_paginated(artists_list, page_size=25):
             match_score = artist['match']
             source = artist['source']
             
-            # Add quality indicators
+            # Add quality indicators - be more selective to avoid spam
             quality_indicators = []
-            if artist.get('popularity', 0) >= 60:
-                quality_indicators.append("🔥 Popular")
-            elif artist.get('popularity', 0) >= 40:
-                quality_indicators.append("⭐ Rising")
             
-            if artist.get('boost_applied', 1.0) > 1.2:
-                quality_indicators.append("💎 High Relevance")
+            # Popularity indicators
+            popularity = artist.get('popularity', 0)
+            if popularity >= 70:
+                quality_indicators.append("🔥 Very Popular")
+            elif popularity >= 50:
+                quality_indicators.append("⭐ Popular")
             
-            if artist.get('genres'):
+            # High relevance only for truly exceptional boosts (top 10% of recommendations)
+            boost = artist.get('boost_applied', 1.0)
+            if boost > 1.5:  # Much higher threshold to reduce spam
+                quality_indicators.append("💎 Top Match")
+            elif boost > 1.3:
+                quality_indicators.append("🎯 Great Match")
+            
+            # Genre only if it's distinctive or new
+            if artist.get('genres') and len(quality_indicators) < 2:
                 main_genre = artist['genres'][0] if artist['genres'] else "Unknown"
-                quality_indicators.append(f"🎵 {main_genre.title()}")
+                # Only show genre if it's not too common or generic
+                if main_genre.lower() not in ['pop', 'rock', 'electronic', 'hip hop']:
+                    quality_indicators.append(f"🎵 {main_genre.title()}")
             
-            quality_str = " ".join(quality_indicators[:2])  # Limit to 2 indicators for readability
+            quality_str = " • ".join(quality_indicators[:2])  # Use bullet separator, limit to 2
             
-            print(f"{i:3d}. {artist['name']} (Match: {match_score:.1f}% ← {source})")
+            # Show more detailed matching info
+            source_info = source
+            if artist.get('source_weight', 0) > 2.0:  # High listening frequency
+                source_info = f"🎧 {source}"  # Indicate this is from a frequently listened artist
+            
+            print(f"{i:3d}. {artist['name']} (Match: {match_score:.1f}% ← {source_info})")
             if quality_str:
                 print(f"     {quality_str}")
+            
+            # Show original vs boosted score for transparency (only for significantly boosted)
+            if artist.get('boost_applied', 1.0) > 1.3:
+                original = artist.get('original_match', match_score)
+                print(f"     📈 Boosted from {original:.1f}% (source relevance: {artist.get('source_weight', 0):.1f})")
         
         # Navigation options
         print(f"\n📊 Navigation:")
@@ -281,10 +302,10 @@ def main():
     print_info("\n🎛️ Discovery Preferences:")
     
     # Ask for maximum recommendations
-    max_recs_input = input("Maximum recommendations to find (default: 50, max: 200): ").strip()
+    max_recs_input = input("Maximum recommendations to find (default: 50, max: 500): ").strip()
     try:
         max_recommendations = int(max_recs_input) if max_recs_input else 50
-        max_recommendations = min(max(max_recommendations, 10), 200)  # Clamp between 10-200
+        max_recommendations = min(max(max_recommendations, 10), 500)  # Clamp between 10-500
     except ValueError:
         max_recommendations = 50
         print_info("Using default: 50 recommendations")
@@ -457,17 +478,30 @@ def main():
         for similar_artist in similar_artists:
             similar_artist["source"] = artist_name
             
-            # Calculate comprehensive boost based on multiple factors
+            # Calculate sophisticated relevance score based on your actual listening habits
             boost_multiplier = 1.0
+            source_weight = 0.0
             
-            # Boost based on source artist listening frequency
+            # Primary boost: How much you actually listen to the source artist
             if artist_id in listening_frequency:
-                frequency_boost = min(0.5, listening_frequency[artist_id] * 0.1)  # Up to 50% boost
+                # Scale listening frequency to a more meaningful boost
+                freq_score = listening_frequency[artist_id]
+                # Use logarithmic scaling to prevent extreme values
+                frequency_boost = min(1.0, math.log10(freq_score + 1) * 0.4)  # Up to 100% boost
                 boost_multiplier += frequency_boost
+                source_weight = freq_score
             
-            # Additional boost for top artists
+            # Secondary boost: Is this a top artist? (indicates strong preference)
             if artist_id in top_artist_ids:
-                boost_multiplier += 0.3  # 30% boost for top artists
+                boost_multiplier += 0.4  # 40% boost for top artists
+            
+            # Tertiary boost: Higher Last.fm match scores get small additional boost
+            if similar_artist["match"] >= 90:
+                boost_multiplier += 0.1  # 10% boost for excellent Last.fm matches
+            
+            # Store detailed matching info for better display
+            similar_artist["source_weight"] = source_weight
+            similar_artist["original_match"] = similar_artist["match"]
             
             # Apply boost while maintaining reasonable limits
             similar_artist["match"] = min(100, similar_artist["match"] * boost_multiplier)
@@ -520,17 +554,37 @@ def main():
     # Enhanced filtering with multiple quality metrics
     print_info("Applying quality filters and diversity checks...")
     
-    # First pass: Match score filtering with adaptive thresholds based on target count
+    # First pass: Intelligent filtering considering source quality and match scores
     target_count = min(max_recommendations * 2, len(new_similar_artists))  # Aim for 2x target for good filtering
-    match_thresholds = [92, 88, 85, 82, 78, 75, 70, 65, 60]
-    selected_threshold = 60
     
-    for threshold in match_thresholds:
-        high_quality_artists = [artist for artist in new_similar_artists if artist["match"] >= threshold]
-        if len(high_quality_artists) >= target_count:
-            selected_threshold = threshold
-            new_similar_artists = high_quality_artists
-            break
+    # Use adaptive thresholds that consider both match score and source quality
+    def calculate_recommendation_score(artist):
+        base_score = artist["match"]
+        source_weight = artist.get("source_weight", 0)
+        boost = artist.get("boost_applied", 1.0)
+        
+        # Prioritize recommendations from artists you actually listen to
+        if source_weight > 3.0:  # High listening frequency
+            return base_score + 5  # Bonus points for coming from frequently played artists
+        elif source_weight > 1.5:  # Medium listening frequency
+            return base_score + 2
+        else:
+            return base_score
+    
+    # Sort by comprehensive recommendation score
+    for artist in new_similar_artists:
+        artist["recommendation_score"] = calculate_recommendation_score(artist)
+    
+    new_similar_artists.sort(key=lambda x: x["recommendation_score"], reverse=True)
+    
+    # Dynamic threshold based on score distribution
+    if len(new_similar_artists) > target_count:
+        target_index = min(target_count - 1, len(new_similar_artists) - 1)
+        selected_threshold = new_similar_artists[target_index]["recommendation_score"]
+        new_similar_artists = [artist for artist in new_similar_artists 
+                             if artist["recommendation_score"] >= selected_threshold]
+    else:
+        selected_threshold = min(artist["recommendation_score"] for artist in new_similar_artists) if new_similar_artists else 60
     
     # Second pass: Diversity enhancement
     # Group by source artist to ensure diversity
@@ -603,8 +657,9 @@ def main():
         return
     
     print_success(f"\n🎉 Found {len(new_similar_artists)} high-quality similar artists you don't follow yet!")
-    print_info(f"📊 Match threshold used: {selected_threshold}%")
-    print_info(f"🎯 Showing all {len(new_similar_artists)} recommendations with pagination")
+    print_info(f"📊 Recommendation score threshold: {selected_threshold:.1f}")
+    print_info(f"🎯 Results prioritized by your actual listening patterns")
+    print_info(f"📖 Showing all {len(new_similar_artists)} recommendations with pagination")
     
     # Analyze genre diversity
     if len(new_similar_artists) > 5:

@@ -48,6 +48,7 @@ from spotify_playlist_converter import (
     find_playlist_files as converter_find_playlist_files, 
     is_text_playlist_file as converter_is_text_playlist_file
 )
+from spotify_utils import batch_process_items, safe_spotify_call
 
 # Configure logging
 logging.basicConfig(
@@ -187,38 +188,73 @@ def get_local_playlist_track_ids_with_threshold(local_tracks, sp, similarity_thr
     """
     Convert local playlist tracks to Spotify track IDs using similarity matching.
     Returns a set of track IDs that were successfully matched above the threshold.
+    
+    OPTIMIZED: Uses caching and batching to minimize API calls.
     """
     from spotify_playlist_converter import search_track_on_spotify
     
     track_ids = set()
     
-    for track in local_tracks:
-        # First try exact search
-        match = search_track_on_spotify(sp, track['artist'], track['title'], track.get('album'))
-        if match and match.get('id'):
-            track_ids.add(match['id'])
-        else:
-            # If no exact match, try fuzzy matching with threshold
-            search_query = f"{track['artist']} {track['title']}"
-            try:
-                results = sp.search(q=search_query, type='track', limit=10)
-                
-                if results['tracks']['items']:
-                    for item in results['tracks']['items']:
-                        # Calculate similarity for artist and title
-                        artist_names = [a['name'] for a in item['artists']]
-                        artist_match = max([fuzz.ratio(track['artist'].lower(), a.lower()) for a in artist_names])
-                        title_match = fuzz.ratio(track['title'].lower(), item['name'].lower())
-                        
-                        # Average similarity
-                        avg_similarity = (artist_match + title_match) / 2
-                        
-                        if avg_similarity >= similarity_threshold:
-                            track_ids.add(item['id'])
-                            break
-            except Exception as e:
-                logger.debug(f"Error in fuzzy search for {track['artist']} - {track['title']}: {e}")
+    # Process in smaller batches to show progress
+    batch_size = 10
+    total_tracks = len(local_tracks)
     
+    print(f"  Matching {total_tracks} local tracks...")
+    
+    for i in range(0, total_tracks, batch_size):
+        batch = local_tracks[i:i+batch_size]
+        batch_end = min(i + batch_size, total_tracks)
+        
+        # Show progress every 50 tracks
+        if i % 50 == 0:
+            print(f"    Processing tracks {i+1}-{batch_end} of {total_tracks}...")
+        
+        for track in batch:
+            # Check cache first
+            cache_key = f"track_match_{track['artist']}_{track['title']}_{similarity_threshold}"
+            cached_id = load_from_cache(cache_key, 7 * 24 * 60 * 60)  # Cache for 7 days
+            
+            if cached_id:
+                if cached_id != "NOT_FOUND":
+                    track_ids.add(cached_id)
+                continue
+            
+            # Try to find match
+            match = search_track_on_spotify(sp, track['artist'], track['title'], track.get('album'))
+            if match and match.get('id'):
+                track_ids.add(match['id'])
+                save_to_cache(match['id'], cache_key)
+            else:
+                # If no exact match, try fuzzy matching with threshold
+                search_query = f"{track['artist']} {track['title']}"
+                try:
+                    results = sp.search(q=search_query, type='track', limit=10)
+                    
+                    found_match = False
+                    if results['tracks']['items']:
+                        for item in results['tracks']['items']:
+                            # Calculate similarity for artist and title
+                            artist_names = [a['name'] for a in item['artists']]
+                            artist_match = max([fuzz.ratio(track['artist'].lower(), a.lower()) for a in artist_names])
+                            title_match = fuzz.ratio(track['title'].lower(), item['name'].lower())
+                            
+                            # Average similarity
+                            avg_similarity = (artist_match + title_match) / 2
+                            
+                            if avg_similarity >= similarity_threshold:
+                                track_ids.add(item['id'])
+                                save_to_cache(item['id'], cache_key)
+                                found_match = True
+                                break
+                    
+                    if not found_match:
+                        # Cache negative result to avoid repeated searches
+                        save_to_cache("NOT_FOUND", cache_key)
+                        
+                except Exception as e:
+                    logger.debug(f"Error in fuzzy search for {track['artist']} - {track['title']}: {e}")
+    
+    print(f"    Matched {len(track_ids)} tracks successfully")
     return track_ids
 
 def find_extra_tracks_in_spotify_playlist(sp, spotify_playlist_id, local_tracks):
@@ -265,7 +301,13 @@ def find_extra_tracks_in_spotify_playlist(sp, spotify_playlist_id, local_tracks)
                 logger.warning(f"Could not extract track ID from: {type(item)}")
                 continue
         
+        # Skip empty batches
+        if not track_ids:
+            continue
+            
         try:
+            # Use safe API call with built-in rate limiting
+            # The SafeSpotifyClient already handles rate limiting
             tracks_info = sp.tracks(track_ids)
             for track in tracks_info['tracks']:
                 if track:
@@ -334,7 +376,13 @@ def find_extra_tracks_in_spotify_playlist_with_threshold(sp, spotify_playlist_id
                 logger.warning(f"Could not extract track ID from: {type(item)}")
                 continue
         
+        # Skip empty batches
+        if not track_ids:
+            continue
+            
         try:
+            # Use safe API call with built-in rate limiting
+            # The SafeSpotifyClient already handles rate limiting
             tracks_info = sp.tracks(track_ids)
             for track in tracks_info['tracks']:
                 if track:

@@ -280,7 +280,27 @@ def identify_inactive_artists(followed_artists, top_artists, recently_played):
             
             # Extract artists from user's playlists
             user_id = sp.current_user()['id']
-            user_created_playlists = [p for p in user_playlists if p['owner']['id'] == user_id]
+            
+            # Handle corrupted cache data - filter out non-dict entries
+            valid_playlists = []
+            corrupted_count = 0
+            for p in user_playlists:
+                if isinstance(p, dict) and 'owner' in p and isinstance(p['owner'], dict) and 'id' in p['owner']:
+                    valid_playlists.append(p)
+                else:
+                    corrupted_count += 1
+            
+            if corrupted_count > 0:
+                print_warning(f"Skipped {corrupted_count} corrupted playlist entries from cache")
+                
+                # If significant corruption, suggest clearing the cache
+                if corrupted_count > 5:
+                    print_warning("Significant cache corruption detected - clearing playlist cache for next run")
+                    from cache_utils import save_to_cache
+                    from constants import STANDARD_CACHE_KEYS
+                    save_to_cache(None, STANDARD_CACHE_KEYS['user_playlists'], force_expire=True)
+                
+            user_created_playlists = [p for p in valid_playlists if p['owner']['id'] == user_id]
             
             if user_created_playlists:
                 playlist_artists = extract_artists_from_playlists(user_created_playlists, sp, show_progress=False)
@@ -288,6 +308,11 @@ def identify_inactive_artists(followed_artists, top_artists, recently_played):
                 # Count how many playlists each artist appears in
                 for playlist in user_created_playlists:
                     try:
+                        # Additional safety check for playlist structure
+                        if not isinstance(playlist, dict) or 'id' not in playlist:
+                            print_warning(f"Skipping invalid playlist data: {type(playlist)}")
+                            continue
+                            
                         from spotify_utils import fetch_playlist_tracks
                         tracks = fetch_playlist_tracks(sp, playlist['id'], show_progress=False)
                         playlist_artist_ids = set()
@@ -300,7 +325,13 @@ def identify_inactive_artists(followed_artists, top_artists, recently_played):
                                         playlist_artist_ids.add(artist_id)
                                         playlist_artist_counts[artist_id] = playlist_artist_counts.get(artist_id, 0) + 1
                     except Exception as e:
-                        print_warning(f"Error processing playlist {playlist.get('name', 'Unknown')}: {e}")
+                        # Use safe method to get playlist name
+                        playlist_name = "Unknown"
+                        if isinstance(playlist, dict) and 'name' in playlist:
+                            playlist_name = playlist['name']
+                        elif isinstance(playlist, str):
+                            playlist_name = playlist[:50]  # Truncate if it's a long string
+                        print_warning(f"Error processing playlist {playlist_name}: {e}")
                         continue
                 
                 # Add artists that appear in multiple playlists to active artists

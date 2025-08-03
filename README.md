@@ -1,252 +1,115 @@
 # Matt Y's Spotify Tools
 
-A comprehensive collection of Python utilities for managing your Spotify account, discovering music, and analyzing listening habits. Features a menu-driven interface with advanced automation, analytics, and music discovery capabilities.
+A comprehensive collection of Python utilities for managing your Spotify account, discovering music, and analyzing listening habits. Features a clean menu-driven interface with advanced automation and music discovery capabilities.
 
-## 🚀 How to Run
+## 🚀 Quick Start
 
-**Simple 3-step setup:**
+**3 simple steps:**
 
-1. **Clone and enter the directory**:
+1. **Clone and run**:
    ```bash
    git clone https://github.com/mattgy/spotify-tools.git
    cd spotify-tools
-   ```
-
-2. **Run the program** (auto-installs everything):
-   ```bash
    ./spotify_run.py
    ```
 
-3. **Set up Spotify credentials** (one-time):
-   - Create a free Spotify app at [developer.spotify.com](https://developer.spotify.com/dashboard/)
+2. **Set up Spotify credentials** (one-time):
+   - Create a free app at [developer.spotify.com](https://developer.spotify.com/dashboard/)  
    - Set redirect URI to: `http://127.0.0.1:8888/callback`
    - Use menu option 10 to enter your Client ID and Client Secret
-   - (Optional) Add AI service API keys for enhanced track matching
 
-**That's it!** The program handles Python virtual environment setup, dependency installation, and provides a user-friendly menu.
+3. **Start using the tools!** Everything else is automated.
 
-## 🎵 Core Features
+## 🎵 What It Does
 
-### Playlist Management
-- **Convert Local Playlists**: Transform M3U, M3U8, PLS, and text files into Spotify playlists
-  - Advanced fuzzy matching with artist/title swap detection
-  - AI-assisted matching for difficult-to-find tracks (optional)
-  - Intelligent featuring artist handling (Ft., Feat., featuring variations)
-  - Session memory - remembers your decisions between runs
-  - Incremental sync and parallel processing for efficiency
-- **Add Songs to Liked Songs**: Automatically like all songs from your created playlists (with optional Christmas filtering)
-- **Remove Christmas Songs**: Intelligent detection and removal of holiday music from your library
-- **Manage Playlists by Size**: Find and delete playlists with X or fewer tracks, with pagination and bulk operations
+### Playlist Tools
+- **Convert local playlists** (M3U, text files) to Spotify with AI-powered matching
+- **Mass-like songs** from your playlists with optional Christmas filtering  
+- **Remove Christmas songs** from your library automatically
+- **Manage small playlists** - find and delete playlists with few tracks
 
-### Artist Management
-- **Follow Playlist Artists**: Automatically follow all artists from your playlists
-- **Smart Artist Discovery**: Find new artists you'll probably like using multi-source recommendations
-- **Artist Cleanup**: Remove followed artists you don't listen to with bulk filtering options
-- **Auto-Follow Feature**: Automatically follow artists when you like multiple songs from them
+### Artist Tools  
+- **Auto-follow artists** from your playlists with smart filtering
+- **Discover new artists** using multi-source recommendations
+- **Clean up followed artists** you don't actually listen to
 
-
-### Backup & Migration
-- **Complete Library Backup**: Export only your created playlists, followed artists, and liked songs
-- **Multiple Export Formats**: JSON, CSV, Apple Music, and YouTube Music compatible formats  
-- **Metadata Preservation**: Include ISRC codes, Spotify URLs, and detailed track information
-- **Smart Filtering**: Only backs up user-created content, not collaborative or followed playlists
+### Backup & Export
+- **Complete library backup** in multiple formats (JSON, CSV, M3U8)
+- **Smart filtering** - only backs up your created content, not followed playlists
 
 ## 📋 Requirements
 
-- **Python 3.6+** (auto-detected and managed)
-- **Spotify Developer Account** (free at [developer.spotify.com](https://developer.spotify.com/dashboard/))
-- **Last.fm API Key** (optional, for enhanced recommendations)
+- **Python 3.6+** (auto-managed)
+- **Free Spotify Developer Account** ([get one here](https://developer.spotify.com/dashboard/))
+- **Optional**: Last.fm API key for enhanced recommendations
 
-## 📱 Menu Overview
+## ⚙️ Configuration
 
-```
-PLAYLIST MANAGEMENT:
-1. Convert local playlists to Spotify playlists
-2. Add all songs from your created playlists to Liked Songs (with Christmas filtering)
-3. Remove Christmas songs from Liked Songs
-4. Find and manage playlists by track count
+All settings stored in `~/.spotify-tools/`:
+- `credentials.json` - API keys (managed via menu option 10)
+- `cache/` - Cached data for faster performance
+- `backups/` - Your exported library data
 
-ARTIST MANAGEMENT:
-5. Follow all artists in your created playlists
-6. Find Artists to Follow That You Probably Like
-7. Remove followed artists that you probably don't like
-
-SYSTEM MANAGEMENT:
-8. Backup & export your music library (user-created content only)
-9. Manage caches (with deprecated cache cleanup)
-10. Manage API credentials
-11. Reset environment (automated with real-time feedback)
-12. Exit
+Environment variables (optional):
+```bash
+export SPOTIFY_CLIENT_ID="your_client_id"
+export SPOTIFY_CLIENT_SECRET="your_client_secret" 
+export LASTFM_API_KEY="your_lastfm_key"
 ```
 
 ## 🔧 Advanced Features
 
-### Intelligent Playlist Conversion
-- **Multiple format support**: M3U, M3U8, PLS playlist files
-- **Advanced fuzzy matching**: Smart track identification across different metadata formats
-- **Batch processing**: Efficiently handle dozens of playlists simultaneously
-- **Interactive confirmation**: Review matches before adding to avoid false positives
-- **Rate limiting**: Respects Spotify API limits for reliable operation
-
-### Smart Artist Following
-- **Low-follower detection**: Prompts before following artists with ≤10 followers
-- **Bulk operations**: Process hundreds of artists efficiently
-- **Auto-follow suggestions**: Automatically suggest artists based on liked songs frequency
-- **Manual review options**: Full control over which artists to follow
-
-
-### Enhanced Discovery Engine
-- **Multi-source recommendations**: Combines Spotify, Last.fm, and MusicBrainz data
-- **Intelligent scoring**: Weighted recommendations based on your listening history
-- **Geographic exploration**: Discover artists from underrepresented regions
-- **Genre diversification**: Expand beyond your current preferences
-
-### Playlist Size Management
-- **Find small playlists**: Search for playlists with X or fewer tracks
-- **Paginated display**: Browse through results with easy navigation
-- **Bulk selection**: Select multiple playlists for deletion
-- **Safe deletion**: Confirmation required before removing playlists
-- **Cache support**: Fast retrieval of previously searched results
-
-## ⚙️ Configuration
-
-### Environment Variables
-```bash
-export SPOTIFY_CLIENT_ID="your_client_id"
-export SPOTIFY_CLIENT_SECRET="your_client_secret"
-export SPOTIFY_REDIRECT_URI="http://127.0.0.1:8888/callback"
-export LASTFM_API_KEY="your_lastfm_key"
-```
-
-### Configuration Directory
-User settings and cache stored in: `~/.spotify-tools/`
-- `credentials.json`: API credentials
-- `cache/`: Cached API responses
-- `backups/`: Library backups
-
-## 🎯 Individual Scripts
-
-Each feature can be run independently:
-
-- `spotify_follow_artists.py`: Follow playlist artists
-- `spotify_like_songs.py`: Like playlist songs (with auto-follow)
-- `spotify_similar_artists.py`: Enhanced artist discovery
-- `spotify_backup.py`: Library backup and export
-- `spotify_playlist_converter.py`: Convert local playlists
-- `spotify_cleanup_artists.py`: Artist cleanup with bulk filtering
-- `spotify_remove_christmas.py`: Remove Christmas songs
-- `spotify_identify_skipped.py`: Identify frequently skipped songs
-- `spotify_playlist_manager.py`: Advanced playlist management
-- `spotify_playlist_size_manager.py`: Find and manage playlists by track count
+- **AI-assisted track matching** using Gemini, ChatGPT, Claude, or Perplexity
+- **Session memory** - remembers your decisions between runs
+- **Smart caching** with automatic corruption detection and recovery
+- **Bulk operations** with progress tracking
+- **Rate limiting** to respect API limits
+- **Comprehensive error handling** with graceful recovery
 
 ## 🧪 Testing
 
-Run the comprehensive test suite:
+Run the test suite:
 ```bash
-python3 run_tests.py
+./venv/bin/python run_tests.py
 ```
 
-Individual test files are available in the `tests/` directory.
+## 🛠️ Individual Scripts
 
-## 🔒 Security Features
-
-- **Secure credential storage**: No hardcoded API keys
-- **Comprehensive .gitignore**: Prevents accidental credential commits
-- **Safe subprocess usage**: Only for legitimate environment management
-- **Input validation**: Protection against injection attacks
-- **Rate limiting**: Prevents API abuse
+Each tool can run independently:
+- `spotify_playlist_converter.py` - Convert local playlists
+- `spotify_like_songs.py` - Mass-like songs from playlists
+- `spotify_follow_artists.py` - Follow playlist artists
+- `spotify_similar_artists.py` - Discover new artists
+- `spotify_backup.py` - Export your library
+- `spotify_remove_christmas.py` - Remove holiday music
+- `spotify_playlist_size_manager.py` - Manage small playlists
+- `spotify_cleanup_artists.py` - Clean up followed artists
 
 ## 🐛 Troubleshooting
 
-### Authentication Issues
-- Verify redirect URI matches exactly: `http://127.0.0.1:8888/callback`
-- Use menu option 10 to re-enter credentials
-- Check that your Spotify app has the correct scopes
+**Authentication issues?**
+- Check redirect URI: `http://127.0.0.1:8888/callback` (exact match)
+- Re-enter credentials via menu option 10
 
-### Performance Issues
-- Use menu option 11 to manage caches if experiencing stale data
-- Adjust batch sizes in `constants.py` for different network conditions
-- The system includes intelligent rate limiting to prevent API errors
+**Performance issues?**
+- Clear caches via menu option 9
+- Reset environment via menu option 11
 
-### Environment Issues
-- Use menu option 11 to reset the Python environment
-- Ensure Python 3.6+ is installed
-- Check that all dependencies are properly installed
+**Import errors?** 
+- Run `./spotify_run.py` (handles all dependencies automatically)
 
-### Common Error Solutions
-- **Module not found**: Run environment reset (option 11)
-- **API rate limits**: Wait a few minutes and retry
-- **Authentication expired**: Re-run credential setup (option 10)
-- **Cache corruption**: Clear caches (option 9)
+## 🔒 Security
 
-
-## 🔄 Data Export Options
-
-Multiple export formats for different use cases:
-
-- **JSON**: Complete structured data for developers
-- **CSV**: Spreadsheet-compatible for analysis
-- **Apple Music**: Text format for playlist transfer
-- **YouTube Music**: CSV format for Google services
-- **M3U8**: Standard playlist format for media players
-
-## 🌟 Recent Updates
-
-### Major Enhancements
-- **Caching System Overhaul**: Standardized cache keys across all scripts for better performance and data consistency
-- **Analytics Improvements**: Fixed progress bars, eliminated duplicate messages, enhanced rate limiting in music analytics
-- **Backup System Redesign**: Modified to only backup user-created content with progress bars and cached data usage
-- **Christmas Filtering**: Added optional Christmas song filtering to playlist liking functionality
-- **Environment Reset Automation**: Enhanced reset with real-time output and improved error handling
-- **Cache Management**: Added cleanup for deprecated cache files and better cache organization
-- **Comprehensive Testing**: Full test suite covering imports, syntax validation, and core functionality
-
-### Performance & Stability
-- Enhanced fuzzy matching for playlist conversion
-- Added auto-follow functionality based on liked songs
-- Improved security with comprehensive auditing
-- Centralized configuration management
-- Enhanced error handling and user feedback
-- Better rate limiting across all API operations
-
-## 📝 Development
-
-This project uses a modular architecture with:
-
-- **Centralized utilities**: Shared functions in `spotify_utils.py`
-- **Configuration management**: Settings in `constants.py`
-- **Caching system**: Intelligent API response caching with consistent naming
-- **Error handling**: Comprehensive error recovery
-- **Testing framework**: Unit and integration tests (`python3 run_tests.py`)
-- **Documentation**: Comprehensive guides in `CLAUDE.md` for development
-
-### Running Tests
-```bash
-source venv/bin/activate
-python3 run_tests.py
-```
-
-### Architecture Highlights
-- Consistent cache key naming across all scripts
-- Progress bars for all long-running operations  
-- Rate limiting with exponential backoff
-- User-created content filtering in backup operations
-- Comprehensive error messages and user feedback
-
-## 🤝 Contributing
-
-Contributions are welcome! The codebase follows these principles:
-
-- **Security first**: No hardcoded credentials or unsafe operations
-- **User-friendly**: Clear feedback and confirmation prompts
-- **Robust error handling**: Graceful degradation and recovery
-- **Comprehensive testing**: Verify all functionality
-- **Documentation**: Clear code comments and user guides
+- No hardcoded API keys
+- Secure credential storage  
+- Comprehensive input validation
+- Safe API rate limiting
+- Protected against common vulnerabilities
 
 ## 📄 License
 
-This project is licensed under the MIT License. See the LICENSE file for details.
+MIT License - see LICENSE file for details.
 
 ---
 
-*Matt Y's Spotify Tools - Comprehensive music library management and discovery*
+*Comprehensive Spotify library management and music discovery tools*

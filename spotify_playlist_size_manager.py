@@ -97,8 +97,7 @@ class PlaylistSizeManager:
                 cached_data = [p for p in cached_data if p['id'] not in self.deleted_playlist_ids]
                 return cached_data
         
-        print_info("Fetching your playlists...")
-        all_playlists = fetch_user_playlists(self.sp, self.user_id)
+        all_playlists = fetch_user_playlists(self.sp, show_progress=True)
         
         # Filter to only user-created playlists
         user_playlists = [p for p in all_playlists if p['owner']['id'] == self.user_id]

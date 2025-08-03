@@ -30,7 +30,7 @@ All scripts can be run independently:
 - `python3 spotify_playlist_size_manager.py`
 
 ### Testing
-- Comprehensive test suite: `python3 run_tests.py`
+- **MANDATORY**: Use virtual environment: `./venv/bin/python run_tests.py` (never use system python3)
 - Tests cover imports, syntax, functions, and core functionality
 - Run tests in virtual environment for full coverage
 - **CRITICAL**: Always run your test suite after making ANY changes, even small ones
@@ -40,11 +40,37 @@ All scripts can be run independently:
 - Core test modules: cache_utils, credentials_manager, playlist_size_manager, spotify_playlist_converter
 
 ## Development Workflow
-- **TEST FIRST**: Run tests before and after every change using `SPOTIFY_TOOLS_TEST_MODE=1 python3 run_tests.py`
+- **TEST FIRST**: Run tests before and after every change using `./venv/bin/python run_tests.py` (always use virtual environment)
 - **MANDATORY**: All tests must pass before committing any changes
-- Ask whether I want to commit to Git/GitHub after each set of major changes, and automatically look for any sensitive information before committing.
+- **IMPORTANT**: Always ASK the user if they want to commit changes after major modifications - never commit automatically
+- Check for sensitive information before any commit (API keys, personal data, etc.)
 - Update CLAUDE.md with important workflow/architecture changes after major modifications
 - Never claim tests are passing without actually running them and verifying the results
+
+## Code Quality & Safety Guidelines
+- **DEFENSIVE PROGRAMMING**: Always validate inputs and handle edge cases gracefully
+- **ERROR HANDLING**: Use try-catch blocks for API calls and file operations
+- **CACHE CORRUPTION**: Use the auto-recreation system - corrupted data should be detected and handled automatically
+- **CENTRALIZED FUNCTIONS**: Always use existing utility functions (spotify_utils, cache_utils, tqdm_utils) instead of duplicating code
+- **PROGRESS BARS**: Use tqdm_utils.py - never import tqdm directly
+- **PRINT STATEMENTS**: Use spotify_utils print functions (print_info, print_success, print_warning, print_error)
+- **API RATE LIMITING**: Add delays between API calls (time.sleep) to avoid hitting limits
+
+## Session Efficiency Tips
+- **CONTEXT PRESERVATION**: Always read relevant files before making changes to understand existing patterns
+- **BATCH OPERATIONS**: Group related changes together to minimize context switching  
+- **EXISTING PATTERNS**: Follow established code conventions found in the codebase
+- **INCREMENTAL TESTING**: Test small changes frequently rather than big batch changes
+- **DOCUMENTATION**: Update CLAUDE.md immediately when architectural changes are made
+
+## Common Pitfalls to Avoid
+- **DON'T**: Import system modules directly when centralized utilities exist
+- **DON'T**: Assume libraries are available without checking imports in similar files
+- **DON'T**: Use `python3` command - always use `./venv/bin/python`
+- **DON'T**: Duplicate progress bar or print logic - use centralized functions
+- **DON'T**: Ignore cache corruption - the auto-recreation system handles it
+- **DON'T**: Make assumptions about data structure - validate before accessing dict keys
+- **DON'T**: Commit without explicit user approval
 
 ## Confidentiality and Communication Guidelines
 - **CRITICAL**: Never mention Claude, AI, or any AI tool in Git commit messages, README, or other documentation
@@ -135,5 +161,27 @@ All scripts can be run independently:
 - Secure credential storage in ~/.spotify-tools/credentials.json
 
 ## Architecture
+
+### Key Design Principles
+- **CENTRALIZATION**: Common functionality is centralized in utility modules to avoid duplication
+- **CACHE-FIRST**: All expensive operations (API calls) use caching with automatic corruption handling
+- **DEFENSIVE**: Input validation and graceful error handling throughout
+- **PROGRESS FEEDBACK**: User-friendly progress indicators for long-running operations
+- **SESSION STATE**: Some features maintain session-level state (e.g., deleted playlists) without persisting to cache
+- **MODULAR**: Each script can run independently while sharing common utilities
+- **TESTABLE**: Comprehensive test coverage with mocking for external dependencies
+
+### Data Flow Patterns
+- **API → Cache → User**: Expensive API calls are cached and filtered before presentation
+- **User Input → Validation → Processing**: All user inputs are validated before processing
+- **Error → Log → Graceful Degradation**: Errors are logged and handled without crashing
+- **State Changes → Session Memory**: Important state (like deletions) is tracked during sessions
+
+### Core Modules
+- `spotify_utils.py`: Shared utilities for Spotify API interactions, authentication, and common operations
+- `cache_utils.py`: Caching system with automatic corruption detection and cleanup
+- `credentials_manager.py`: Secure credential storage and retrieval
+- `constants.py`: Application constants, cache keys, and configuration values
+- `tqdm_utils.py`: Centralized progress bar utilities for consistent UX
 
 [... rest of the file remains unchanged ...]

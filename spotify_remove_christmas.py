@@ -268,24 +268,32 @@ def identify_christmas_songs(liked_songs, christmas_playlists, sp):
             tracks = get_playlist_tracks(sp, playlist['id'])
             for track in tracks:
                 # Handle corrupted cache data - skip tracks missing required fields
-                if not isinstance(track, dict) or 'id' not in track:
-                    print_warning(f"Skipping corrupted playlist track data: {type(track)}")
+                if not isinstance(track, dict):
+                    print_warning(f"Skipping non-dict playlist track data: {type(track)}")
                     continue
                     
                 track_id = track.get('id')
                 if track_id:
                     playlist_track_ids.add(track_id)
+                else:
+                    print_warning(f"Skipping playlist track with missing ID: {track.get('name', 'Unknown')}")
     
     # Check each liked song
     for track in liked_songs:
         # Handle corrupted cache data - skip tracks missing required fields
-        if not isinstance(track, dict) or 'id' not in track:
-            print_warning(f"Skipping corrupted track data: {type(track)}")
+        if not isinstance(track, dict):
+            print_warning(f"Skipping non-dict track data: {type(track)}")
             continue
             
+        # Check for required fields - be more specific about what's missing
         track_id = track.get('id')
         if not track_id:
-            print_warning("Skipping track with missing ID")
+            print_warning(f"Skipping track with missing/empty ID: {track.get('name', 'Unknown')}")
+            continue
+            
+        # Ensure other required fields exist for Christmas detection
+        if 'name' not in track:
+            print_warning(f"Skipping track {track_id} with missing name field")
             continue
         
         # Check if it's in a Christmas playlist

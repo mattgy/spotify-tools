@@ -190,30 +190,36 @@ def follow_artists(sp, artists, followed_artists):
         print("Operation cancelled")
         return
     
-    # Set up progress tracking
-    try:
-        from tqdm import tqdm
-        artists_iter = tqdm(new_artists, desc="Following artists", unit="artist")
-    except ImportError:
-        print(f"Following {len(new_artists)} artists...")
-        artists_iter = new_artists
+    # Set up progress tracking using centralized utilities
+    from tqdm_utils import create_progress_bar, update_progress_bar, close_progress_bar
+    
+    progress_bar = create_progress_bar(total=len(new_artists), desc="Following artists", unit="artist")
     
     # Follow artists in batches of 50 (Spotify API limit)
     batch_size = 50
+    followed_count = 0
+    
     for i in range(0, len(new_artists), batch_size):
         batch = new_artists[i:i+batch_size]
         artist_ids = [a['id'] for a in batch]
         
         try:
             sp.user_follow_artists(artist_ids)
+            followed_count += len(batch)
+            
+            # Update progress bar with the number of artists in this batch
+            update_progress_bar(progress_bar, len(batch))
             
             # Add a small delay to avoid hitting rate limits
             time.sleep(0.5)
         except Exception as e:
-            print(f"Error following artists: {e}")
-            print("Continuing with next batch...")
+            print_error(f"Error following batch of {len(batch)} artists: {e}")
+            print_warning("Continuing with next batch...")
+            # Still update progress bar even if batch failed
+            update_progress_bar(progress_bar, len(batch))
     
-    print(f"Successfully followed {len(new_artists)} new artists!")
+    close_progress_bar(progress_bar)
+    print_success(f"Successfully followed {followed_count} new artists!")
     
     # Clear the followed artists cache since it's now outdated
     save_to_cache(list(followed_artists) + [a['id'] for a in new_artists], "followed_artists")

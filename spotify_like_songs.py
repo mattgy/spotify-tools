@@ -81,16 +81,13 @@ def get_tracks_from_playlists(sp, playlists):
     # Dictionary to track which playlists each track appears in
     track_playlists = defaultdict(list)
     
-    # Set up progress tracking
-    try:
-        from tqdm import tqdm
-        playlists_iter = tqdm(playlists, desc="Processing playlists", unit="playlist")
-    except ImportError:
-        print(f"Processing {len(playlists)} playlists...")
-        playlists_iter = playlists
+    # Set up progress tracking using centralized utilities
+    from tqdm_utils import create_progress_bar, update_progress_bar, close_progress_bar
+    
+    progress_bar = create_progress_bar(total=len(playlists), desc="Processing playlists", unit="playlist")
     
     # Process each playlist
-    for playlist in playlists_iter:
+    for playlist in playlists:
         playlist_id = playlist['id']
         playlist_name = playlist['name']
         
@@ -136,6 +133,12 @@ def get_tracks_from_playlists(sp, playlists):
             
             # Record that this track appears in this playlist
             track_playlists[track_id].append(playlist_name)
+        
+        # Update progress bar
+        update_progress_bar(progress_bar, 1)
+    
+    # Close progress bar
+    close_progress_bar(progress_bar)
     
     # Add playlist info to each track
     for track_id, playlists in track_playlists.items():
@@ -180,13 +183,8 @@ def like_tracks(sp, tracks, saved_tracks):
         print("Operation cancelled")
         return []
     
-    # Set up progress tracking
-    try:
-        from tqdm import tqdm
-        progress_bar = tqdm(total=len(new_tracks), desc="Liking tracks", unit="track")
-    except ImportError:
-        print(f"Liking {len(new_tracks)} tracks...")
-        progress_bar = None
+    # Set up progress tracking using centralized utilities
+    progress_bar = create_progress_bar(total=len(new_tracks), desc="Liking tracks", unit="track")
     
     # Like tracks in batches of 50 (Spotify API limit)
     batch_size = 50
@@ -201,20 +199,18 @@ def like_tracks(sp, tracks, saved_tracks):
             processed += len(batch)
             
             # Update progress bar
-            if progress_bar:
-                progress_bar.update(len(batch))
+            update_progress_bar(progress_bar, len(batch))
             
             # Add a small delay to avoid hitting rate limits
             time.sleep(0.5)
         except Exception as e:
             print(f"Error liking tracks: {e}")
             print("Continuing with next batch...")
-            if progress_bar:
-                progress_bar.update(len(batch))  # Still update progress even on error
+            # Still update progress even on error
+            update_progress_bar(progress_bar, len(batch))
     
     # Close progress bar
-    if progress_bar:
-        progress_bar.close()
+    close_progress_bar(progress_bar)
     
     print(f"Successfully liked {len(new_tracks)} new tracks!")
     

@@ -420,14 +420,14 @@ def bulk_search_tracks_on_spotify(sp, tracks: List[Dict], max_workers: int = 5) 
         future_to_track = {executor.submit(search_single_track, track): track for track in tracks}
         
         # Process completed searches with progress bar
-        for future in tqdm(concurrent.futures.as_completed(future_to_track), 
-                          total=len(tracks), 
-                          desc="Searching tracks"):
-            track_key, result = future.result()
-            results[track_key] = result
-            
-            # Small delay to avoid rate limiting
-            time.sleep(0.05)
+        with create_progress_bar(total=len(tracks), desc="Searching tracks", unit="track") as pbar:
+            for future in concurrent.futures.as_completed(future_to_track):
+                track_key, result = future.result()
+                results[track_key] = result
+                
+                # Small delay to avoid rate limiting
+                time.sleep(0.05)
+                update_progress_bar(pbar)
     
     return results
 
@@ -1875,11 +1875,15 @@ def get_user_playlists(sp, user_id):
     
     # Try to load from disk cache
     cached_playlists = load_from_cache(cache_key, 60 * 60)  # Cache for 1 hour
-    if cached_playlists:
-        logger.debug("Using disk-cached user playlists")
-        _user_playlists_cache = cached_playlists
-        _user_playlists_cache_time = time.time()
-        return cached_playlists
+    if cached_playlists is not None:
+        # Check if cache returned an empty list (which would be a problem)
+        if isinstance(cached_playlists, list) and len(cached_playlists) == 0:
+            logger.warning("Disk cache returned empty playlist list - fetching fresh data")
+        else:
+            logger.debug(f"Using disk-cached user playlists ({len(cached_playlists)} playlists)")
+            _user_playlists_cache = cached_playlists
+            _user_playlists_cache_time = time.time()
+            return cached_playlists
     
     playlists = []
     offset = 0
@@ -1889,10 +1893,14 @@ def get_user_playlists(sp, user_id):
         response = sp.current_user_playlists(limit=limit, offset=offset)
         playlists.extend(response['items'])
         
+        logger.debug(f"Fetched {len(response['items'])} playlists at offset {offset}")
+        
         if len(response['items']) < limit:
             break
         
         offset += limit
+    
+    logger.info(f"Fetched total of {len(playlists)} playlists from Spotify API")
     
     # Save to caches
     save_to_cache(playlists, cache_key)
@@ -3272,7 +3280,7 @@ def main():
             # Search all unique tracks with progress bar
             track_matches = {}
             search_desc = f"🎵 Searching {len(unique_tracks)} unique tracks across all playlists"
-            with tqdm(total=len(unique_tracks), desc=search_desc, unit="track") as pbar:
+            with create_progress_bar(total=len(unique_tracks), desc=search_desc, unit="track") as pbar:
                 for key, track in unique_tracks.items():
                     # Apply learning patterns
                     learned_artist, learned_title = apply_learning_patterns(track['artist'], track['title'])
@@ -3285,7 +3293,7 @@ def main():
                         track_matches[key] = match
                         save_user_decision(track, match, 'y')
                     
-                    pbar.update(1)
+                    update_progress_bar(pbar, 1)
                     time.sleep(0.05)  # Rate limiting
             
             # Process each playlist with the matches

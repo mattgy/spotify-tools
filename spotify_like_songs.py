@@ -105,6 +105,11 @@ def get_tracks_from_playlists(sp, playlists):
         
         # Process tracks in this playlist
         for item in playlist_items:
+            # Handle potential cache corruption where item is not a dict
+            if not isinstance(item, dict):
+                print_warning(f"Skipping corrupted item in playlist '{playlist_name}': {item}")
+                continue
+
             # Skip null tracks or episodes
             if not item.get('track') or not item['track'].get('id'):
                 continue

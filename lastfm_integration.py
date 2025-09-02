@@ -23,7 +23,7 @@ class LastFmClient:
     
     def __init__(self):
         self.api_key = get_lastfm_api_key()
-        self.base_url = "http://ws.audioscrobbler.com/2.0/"
+        self.base_url = "https://ws.audioscrobbler.com/2.0/"
         self.cache_expiration = CACHE_EXPIRATION.get('long', 7 * 24 * 60 * 60)  # 7 days
         self.api_delay = 0.2  # Last.fm rate limit is generous
     

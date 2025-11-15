@@ -2762,18 +2762,10 @@ def process_playlist_file(sp, file_path, user_id, confidence_threshold, min_scor
         logger.info("Skipped tracks:")
         for track in skipped_tracks:
             logger.info(f"  - {track['artist']} - {track['title']}")
-    
-    # Save sync state for incremental sync
-    if spotify_tracks and content_hash:
-        sync_state = {
-            'content_hash': content_hash,
-            'last_sync_time': time.time(),
-            'tracks_matched': len(spotify_tracks),
-            'tracks_skipped': len(skipped_tracks),
-            'playlist_name': playlist_name
-        }
-        save_playlist_sync_state(file_path, sync_state)
-    
+
+    # Note: Sync state tracking removed - playlists are now fully processed each run
+    # De-duplication logic prevents adding duplicate tracks to Spotify playlists
+
     return len(spotify_tracks), len(skipped_tracks)
 
 def view_all_text_files_paginated(files, page_size=20):

@@ -34,6 +34,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 # Define paths to other scripts
 FOLLOW_ARTISTS_SCRIPT = os.path.join(SCRIPT_DIR, "spotify_follow_artists.py")
 LIKE_SONGS_SCRIPT = os.path.join(SCRIPT_DIR, "spotify_like_songs.py")
+LIBRARY_CLEANUP_SCRIPT = os.path.join(SCRIPT_DIR, "spotify_library_cleanup.py")
 SIMILAR_ARTISTS_SCRIPT = os.path.join(SCRIPT_DIR, "spotify_similar_artists.py")
 # ANALYTICS_SCRIPT - Removed (file doesn't exist)
 PLAYLIST_CONVERTER_SCRIPT = os.path.join(SCRIPT_DIR, "spotify_playlist_converter.py")
@@ -660,78 +661,84 @@ def main():
         # Group 1: Playlist Management
         print(f"{Fore.WHITE}1. Convert local playlists to Spotify playlists")
         print(f"{Fore.WHITE}2. Add all songs from your created playlists to Liked Songs")
-        print(f"{Fore.WHITE}3. Remove Christmas songs from Liked Songs")
-        print(f"{Fore.WHITE}4. Find and manage playlists by track count")
-        
-        # Group 2: Artist Management  
-        print(f"{Fore.WHITE}5. Follow all artists in your created playlists")
-        print(f"{Fore.WHITE}6. Find Artists to Follow That You Probably Like")
-        print(f"{Fore.WHITE}7. Remove followed artists that you probably don't like")
-        
+        print(f"{Fore.WHITE}3. Clean up and optimize your library (songs & artists)")
+        print(f"{Fore.WHITE}4. Remove Christmas songs from Liked Songs")
+        print(f"{Fore.WHITE}5. Find and manage playlists by track count")
+
+        # Group 2: Artist Management
+        print(f"{Fore.WHITE}6. Follow all artists in your created playlists")
+        print(f"{Fore.WHITE}7. Find Artists to Follow That You Probably Like")
+        print(f"{Fore.WHITE}8. Remove followed artists that you probably don't like")
+
         # Group 3: System & Data Management
-        print(f"{Fore.WHITE}8. Backup & export your music library")
-        print(f"{Fore.WHITE}9. Manage caches")
-        print(f"{Fore.WHITE}10. Manage API credentials")
-        print(f"{Fore.WHITE}11. Reset environment (reinstall dependencies)")
-        print(f"{Fore.WHITE}12. Exit")
-        
-        choice = input(f"\n{Fore.CYAN}Enter your choice (1-12): ")
+        print(f"{Fore.WHITE}9. Backup & export your music library")
+        print(f"{Fore.WHITE}10. Manage caches")
+        print(f"{Fore.WHITE}11. Manage API credentials")
+        print(f"{Fore.WHITE}12. Reset environment (reinstall dependencies)")
+        print(f"{Fore.WHITE}13. Exit")
+
+        choice = input(f"\n{Fore.CYAN}Enter your choice (1-13): ")
         
         if choice == "1":
             # Playlist converter sub-menu
             playlist_converter_menu()
-            
+
         elif choice == "2":
             # Run the like songs script
             print_info("\nRunning like songs functionality...")
             run_script(LIKE_SONGS_SCRIPT)
-            
+
         elif choice == "3":
+            # Run the library cleanup script
+            print_info("\nRunning library cleanup functionality...")
+            run_script(LIBRARY_CLEANUP_SCRIPT)
+
+        elif choice == "4":
             # Run the Christmas cleanup script
             print_info("\nRemoving Christmas songs from Liked Songs...")
             run_script(CHRISTMAS_CLEANUP_SCRIPT)
-            
-        elif choice == "4":
+
+        elif choice == "5":
             # Run the playlist size manager script
             print_info("\nManaging playlists by track count...")
             run_script(PLAYLIST_SIZE_MANAGER_SCRIPT)
-            
-        elif choice == "5":
+
+        elif choice == "6":
             # Run the follow artists script
             print_info("\nRunning follow artists functionality...")
             run_script(FOLLOW_ARTISTS_SCRIPT)
-            
-        elif choice == "6":
+
+        elif choice == "7":
             # Run the similar artists script
             print_info("\nFinding artists to follow that you probably like...")
             run_script(SIMILAR_ARTISTS_SCRIPT)
-            
-        elif choice == "7":
+
+        elif choice == "8":
             # Run the artist cleanup script
             print_info("\nRemoving followed artists that you probably don't like...")
             run_script(CLEANUP_ARTISTS_SCRIPT)
-            
-        elif choice == "8":
+
+        elif choice == "9":
             # Run the backup script
             print_info("\nRunning backup & export functionality...")
             run_script(BACKUP_SCRIPT)
-            
-        elif choice == "9":
+
+        elif choice == "10":
             # Manage caches
             manage_caches()
-            
-        elif choice == "10":
+
+        elif choice == "11":
             # Manage API credentials
             manage_api_credentials()
-            
-        elif choice == "11":
+
+        elif choice == "12":
             # Reset environment
             reset_environment()
-            
-        elif choice == "12":
+
+        elif choice == "13":
             print_success("Exiting...")
             break
-        
+
         else:
             print_error("Invalid choice. Please try again.")
 

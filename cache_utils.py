@@ -33,7 +33,7 @@ def sanitize_cache_key(cache_key):
 def log_cache_corruption(cache_key, error_message):
     """Log cache corruption events for monitoring and debugging."""
     corruption_log_file = os.path.join(CACHE_DIR, "corruption_log.txt")
-    
+
     try:
         with open(corruption_log_file, "a") as f:
             timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
@@ -41,6 +41,53 @@ def log_cache_corruption(cache_key, error_message):
     except Exception:
         # If we can't log, don't crash - just continue silently
         pass
+
+def validate_artist_data(artist, silent=True):
+    """
+    Validate artist data structure for consistency.
+
+    Args:
+        artist: Artist data (can be string or dict)
+        silent: If True, skip silently. If False, log warning.
+
+    Returns:
+        Validated artist dict or None if invalid
+    """
+    # Handle old cache format (artist as string)
+    if isinstance(artist, str):
+        # Old cached data had artists as strings - skip silently
+        return None
+
+    # Validate artist data structure
+    if not isinstance(artist, dict) or 'id' not in artist or 'name' not in artist:
+        if not silent:
+            print_warning(f"Invalid artist data structure: {artist}")
+        return None
+
+    return artist
+
+def handle_data_corruption(data, expected_type, field_name="data", silent=False):
+    """
+    Handle data corruption gracefully with consistent error handling.
+
+    Args:
+        data: The data to validate
+        expected_type: Expected Python type (dict, list, str, etc.)
+        field_name: Name of the field for error messages
+        silent: If True, skip silently without warnings
+
+    Returns:
+        Validated data or None if corrupted
+    """
+    if data is None:
+        return None
+
+    if not isinstance(data, expected_type):
+        if not silent:
+            print_warning(f"Data corruption detected: {field_name} expected {expected_type.__name__}, got {type(data).__name__}")
+        return None
+
+    return data
 
 def save_to_cache(data, cache_key, force_expire=False):
     """Save data to cache."""

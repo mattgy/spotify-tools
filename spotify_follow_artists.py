@@ -26,6 +26,7 @@ sys.path.insert(0, script_dir)
 # Import custom modules
 from credentials_manager import get_spotify_credentials
 from cache_utils import save_to_cache, load_from_cache
+from exclusion_manager import is_excluded
 
 # Import colorama for colored output
 import colorama
@@ -112,7 +113,21 @@ def follow_artists(sp, artists, followed_artists):
     
     # Filter out artists already being followed
     new_artists = [a for a in artists if a['id'] not in followed_ids]
-    
+
+    # Filter out excluded artists
+    excluded_count = 0
+    filtered_artists = []
+    for artist in new_artists:
+        if is_excluded(artist['id'], 'artist'):
+            excluded_count += 1
+        else:
+            filtered_artists.append(artist)
+
+    new_artists = filtered_artists
+
+    if excluded_count > 0:
+        print_warning(f"Skipped {excluded_count} artists in exclusion list")
+
     if not new_artists:
         print("You are already following all artists from your playlists!")
         return

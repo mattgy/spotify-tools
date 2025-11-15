@@ -25,7 +25,8 @@ sys.path.insert(0, script_dir)
 
 # Import custom modules
 from credentials_manager import get_spotify_credentials
-from cache_utils import save_to_cache, load_from_cache
+from cache_utils import save_to_cache, load_from_cache, validate_artist_data
+from exclusion_manager import is_excluded, add_bulk_exclusions, get_exclusion_count
 from spotify_utils import (
     create_spotify_client, COMMON_SCOPES, print_success, print_error, print_warning, print_info,
     fetch_user_playlists, fetch_user_saved_tracks, fetch_playlist_tracks, fetch_followed_artists
@@ -167,7 +168,21 @@ def like_tracks(sp, tracks, saved_tracks):
     """Like tracks that the user hasn't already saved."""
     # Filter out tracks already saved
     new_tracks = [t for t in tracks if t['id'] not in saved_tracks]
-    
+
+    # Filter out excluded tracks
+    excluded_count = 0
+    filtered_tracks = []
+    for track in new_tracks:
+        if is_excluded(track['id'], 'track'):
+            excluded_count += 1
+        else:
+            filtered_tracks.append(track)
+
+    new_tracks = filtered_tracks
+
+    if excluded_count > 0:
+        print_warning(f"Skipped {excluded_count} tracks in exclusion list")
+
     if not new_tracks:
         print("You have already liked all tracks from your playlists!")
         return []
@@ -223,19 +238,13 @@ def analyze_artist_frequency(tracks):
     
     for track in tracks:
         for artist in track['artists']:
-            # Handle backwards compatibility with old cache format (artist as string)
-            if isinstance(artist, str):
-                # Old cached data had artists as strings (just names)
-                # Skip these for analysis since we need artist IDs
+            # Use centralized artist validation (handles old cache formats)
+            validated_artist = validate_artist_data(artist, silent=True)
+            if not validated_artist:
                 continue
 
-            # Validate artist data structure
-            if not isinstance(artist, dict) or 'id' not in artist or 'name' not in artist:
-                # Malformed artist data - skip silently
-                continue
-                
-            artist_id = artist['id']
-            artist_name = artist['name']
+            artist_id = validated_artist['id']
+            artist_name = validated_artist['name']
             artist_counts[artist_id] += 1
             artist_tracks[artist_id].append({
                 'track_name': track['name'],

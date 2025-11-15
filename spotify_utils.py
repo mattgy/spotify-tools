@@ -979,26 +979,49 @@ def optimized_track_search_strategies(sp, artist, title, album=None, max_strateg
     # Use batch search for all strategies
     search_results = batch_search_tracks(sp, strategies, show_progress=False, cache_expiration=60*60)
     
-    # Find best match across all strategies
+    # Find best match across all strategies using fuzzy matching
+    from thefuzz import fuzz
     best_match = None
     best_score = 0
-    
+
     for strategy, results in search_results.items():
         tracks = results.get('tracks', {}).get('items', [])
-        
+
         for track in tracks:
-            # Simple scoring based on name matching
-            track_artists = [a['name'].lower() for a in track.get('artists', [])]
+            # Fuzzy scoring based on name matching
+            track_artists_list = [a['name'] for a in track.get('artists', [])]
+            track_artists_str = ', '.join(track_artists_list).lower()
             track_name = track.get('name', '').lower()
-            
-            score = 0
-            if artist.lower() in ' '.join(track_artists):
-                score += 50
-            if title.lower() in track_name:
-                score += 40
-            if album and album.lower() in track.get('album', {}).get('name', '').lower():
-                score += 10
-            
+            track_album = track.get('album', {}).get('name', '').lower()
+
+            # Calculate fuzzy match scores
+            artist_score = 0
+            if artist:
+                # Check against individual artists and joined string
+                for track_artist in track_artists_list:
+                    individual_score = fuzz.ratio(artist.lower(), track_artist.lower())
+                    artist_score = max(artist_score, individual_score)
+                # Also check the full artist string
+                full_artist_score = fuzz.partial_ratio(artist.lower(), track_artists_str)
+                artist_score = max(artist_score, full_artist_score)
+
+            # Title matching - use both ratio and partial_ratio for flexibility
+            title_score = 0
+            if title:
+                title_score = max(
+                    fuzz.ratio(title.lower(), track_name),
+                    fuzz.partial_ratio(title.lower(), track_name)
+                )
+
+            # Album matching
+            album_score = 0
+            if album and track_album:
+                album_score = fuzz.partial_ratio(album.lower(), track_album)
+
+            # Weighted composite score (0-100 scale)
+            # Artist match is most important (60%), title is critical (35%), album helps (5%)
+            score = (artist_score * 0.6) + (title_score * 0.35) + (album_score * 0.05)
+
             if score > best_score:
                 best_score = score
                 best_match = {

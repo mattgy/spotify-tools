@@ -2324,9 +2324,18 @@ def manual_search_flow(sp, track):
 
 def process_tracks_batch(sp, tracks_batch, confidence_threshold, batch_mode=False, auto_threshold=85, use_previous_decisions=False):
     """Process a batch of tracks efficiently with minimal user interaction."""
+    from tqdm_utils import create_progress_bar, update_progress_bar, close_progress_bar
+
     results = []
-    
+
+    # Create progress bar for batch processing
+    progress_bar = create_progress_bar(total=len(tracks_batch), desc="Searching tracks", unit="track")
+
     for track in tracks_batch:
+        # Show current track being processed
+        original_line = track.get('original_line', f"{track.get('artist', '')} - {track.get('title', '')}")
+        progress_bar.set_description(f"Searching: {original_line[:50]}")
+
         # Check for cached decision first if using previous decisions
         if use_previous_decisions:
             cached_decision = get_cached_decision(track)
@@ -2334,13 +2343,15 @@ def process_tracks_batch(sp, tracks_batch, confidence_threshold, batch_mode=Fals
                 # Apply the cached decision
                 if cached_decision['decision'] == 'y' and cached_decision.get('match'):
                     results.append({'track': track, 'match': cached_decision['match'], 'accepted': True, 'auto': False, 'cached': True})
+                    update_progress_bar(progress_bar, 1)
                     continue
                 elif cached_decision['decision'] == 'n':
                     results.append({'track': track, 'match': None, 'accepted': False, 'review': False, 'cached': True})
+                    update_progress_bar(progress_bar, 1)
                     continue
-        
+
         match = search_track_on_spotify(sp, track['artist'], track['title'], track['album'])
-        
+
         if match:
             if batch_mode and match['score'] >= auto_threshold:
                 results.append({'track': track, 'match': match, 'accepted': True, 'auto': True})
@@ -2350,7 +2361,11 @@ def process_tracks_batch(sp, tracks_batch, confidence_threshold, batch_mode=Fals
                 results.append({'track': track, 'match': match, 'accepted': False, 'review': False})
         else:
             results.append({'track': track, 'match': None, 'accepted': False, 'review': False})
-    
+
+        update_progress_bar(progress_bar, 1)
+
+    close_progress_bar(progress_bar)
+
     return results
 
 def process_playlist_file(sp, file_path, user_id, confidence_threshold, min_score=50, batch_mode=False, auto_threshold=85, use_previous_decisions=False):

@@ -27,6 +27,7 @@ from credentials_manager import get_spotify_credentials
 from cache_utils import save_to_cache, load_from_cache
 from config import config, get_cache_expiration, get_batch_size
 from tqdm_utils import create_progress_bar, update_progress_bar, close_progress_bar
+from constants import CACHE_EXPIRATION
 
 # Spotify API scopes needed
 SPOTIFY_SCOPES = [
@@ -290,17 +291,28 @@ class SpotifyBackup:
         return tracks
     
     def _backup_top_artists(self) -> dict:
-        """Backup top artists for different time ranges."""
+        """Backup top artists for different time ranges using cached data."""
+        from spotify_utils import fetch_user_top_items
+
         top_artists = {}
         time_ranges = ['short_term', 'medium_term', 'long_term']
-        
+
         for time_range in time_ranges:
             print(f"  🏆 Top artists ({time_range})")
-            
-            results = self.sp.current_user_top_artists(limit=50, time_range=time_range)
-            
+
+            # Use cached fetch function
+            results = fetch_user_top_items(
+                self.sp,
+                item_type='artists',
+                time_range=time_range,
+                limit=50,
+                show_progress=False,
+                cache_key=f"top_artists_{time_range}_backup",
+                cache_expiration=CACHE_EXPIRATION['personal']  # 1 hour
+            )
+
             artists = []
-            for artist in results['items']:
+            for artist in results:
                 artist_data = {
                     'id': artist['id'],
                     'name': artist['name'],
@@ -310,23 +322,34 @@ class SpotifyBackup:
                     'spotify_url': artist['external_urls'].get('spotify')
                 }
                 artists.append(artist_data)
-            
+
             top_artists[time_range] = artists
-        
+
         return top_artists
     
     def _backup_top_tracks(self) -> dict:
-        """Backup top tracks for different time ranges."""
+        """Backup top tracks for different time ranges using cached data."""
+        from spotify_utils import fetch_user_top_items
+
         top_tracks = {}
         time_ranges = ['short_term', 'medium_term', 'long_term']
-        
+
         for time_range in time_ranges:
             print(f"  🏆 Top tracks ({time_range})")
-            
-            results = self.sp.current_user_top_tracks(limit=50, time_range=time_range)
-            
+
+            # Use cached fetch function
+            results = fetch_user_top_items(
+                self.sp,
+                item_type='tracks',
+                time_range=time_range,
+                limit=50,
+                show_progress=False,
+                cache_key=f"top_tracks_{time_range}_backup",
+                cache_expiration=CACHE_EXPIRATION['personal']  # 1 hour
+            )
+
             tracks = []
-            for track in results['items']:
+            for track in results:
                 track_data = {
                     'name': track['name'],
                     'artists': [artist['name'] for artist in track['artists']],
@@ -337,9 +360,9 @@ class SpotifyBackup:
                     'spotify_url': track['external_urls'].get('spotify')
                 }
                 tracks.append(track_data)
-            
+
             top_tracks[time_range] = tracks
-        
+
         return top_tracks
     
     def _create_csv_exports(self, backup_data: dict, backup_path: str):

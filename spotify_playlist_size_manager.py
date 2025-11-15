@@ -23,15 +23,16 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, script_dir)
 
 from spotify_utils import (
-    create_spotify_client, 
+    create_spotify_client,
     fetch_user_playlists,
-    print_header, 
-    print_success, 
-    print_error, 
-    print_warning, 
+    print_header,
+    print_success,
+    print_error,
+    print_warning,
     print_info
 )
 from cache_utils import save_to_cache, load_from_cache
+from tqdm_utils import create_progress_bar, update_progress_bar, close_progress_bar
 from colorama import Fore, Style, init
 
 # Initialize colorama
@@ -103,13 +104,14 @@ class PlaylistSizeManager:
         user_playlists = [p for p in all_playlists if p['owner']['id'] == self.user_id]
         
         print_info(f"Analyzing {len(user_playlists)} playlists...")
-        
+
         matching_playlists = []
-        
+        pbar = create_progress_bar(total=len(user_playlists), desc="Analyzing playlists", unit="playlist")
+
         for playlist in user_playlists:
             # Get track count
             track_count = playlist['tracks']['total']
-            
+
             if track_count <= max_tracks:
                 playlist_info = {
                     'id': playlist['id'],
@@ -121,6 +123,10 @@ class PlaylistSizeManager:
                     'url': playlist['external_urls']['spotify']
                 }
                 matching_playlists.append(playlist_info)
+
+            update_progress_bar(pbar, 1)
+
+        close_progress_bar(pbar)
         
         # Filter out playlists that were deleted in this session
         matching_playlists = [p for p in matching_playlists if p['id'] not in self.deleted_playlist_ids]

@@ -2452,7 +2452,8 @@ def process_playlist_file(sp, file_path, user_id, confidence_threshold, min_scor
     else:
         # Interactive mode or small playlist - process individually
         progress_desc = f"Searching {len(tracks)} tracks"
-        for track in tqdm(tracks, desc=progress_desc, unit="track"):
+        pbar = create_progress_bar(total=len(tracks), desc=progress_desc, unit="track")
+        for track in tracks:
             # Get the original line from the playlist file if available
             original_line = track.get('original_line', f"{track['artist']} - {track['title']}")
             
@@ -2630,7 +2631,13 @@ def process_playlist_file(sp, file_path, user_id, confidence_threshold, min_scor
                                 break
                 else:
                     skipped_tracks.append(track)
-    
+
+            # Update progress bar after processing each track
+            update_progress_bar(pbar, 1)
+
+        # Close progress bar after loop
+        close_progress_bar(pbar)
+
     if not spotify_tracks:
         logger.warning("No tracks could be matched on Spotify. Playlist will not be created.")
         return 0, len(tracks)
@@ -2912,19 +2919,21 @@ def process_playlists_parallel(sp, playlist_files, user_id, auto_threshold=85, m
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         # Submit all tasks
         future_to_file = {executor.submit(process_single_playlist, f): f for f in playlist_files}
-        
-        # Process completed tasks
-        with tqdm(total=len(playlist_files), desc="Processing playlists") as pbar:
-            for future in concurrent.futures.as_completed(future_to_file):
-                file_path = future_to_file[future]
-                try:
-                    result = future.result()
-                    results.append((file_path, result))
-                except Exception as e:
-                    logger.error(f"Failed to process {file_path}: {e}")
-                    results.append((file_path, (0, 0, 0)))
-                
-                pbar.update(1)
+
+        # Process completed tasks with progress bar
+        pbar = create_progress_bar(total=len(playlist_files), desc="Processing playlists", unit="playlist")
+        for future in concurrent.futures.as_completed(future_to_file):
+            file_path = future_to_file[future]
+            try:
+                result = future.result()
+                results.append((file_path, result))
+            except Exception as e:
+                logger.error(f"Failed to process {file_path}: {e}")
+                results.append((file_path, (0, 0, 0)))
+
+            update_progress_bar(pbar, 1)
+
+        close_progress_bar(pbar)
     
     return results
 

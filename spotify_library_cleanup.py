@@ -32,7 +32,8 @@ from credentials_manager import get_spotify_credentials
 from cache_utils import save_to_cache, load_from_cache, validate_artist_data
 from spotify_utils import (
     create_spotify_client, print_success, print_error, print_warning, print_info, print_header,
-    fetch_user_playlists, fetch_user_saved_tracks, fetch_playlist_tracks
+    fetch_user_playlists, fetch_user_saved_tracks, fetch_playlist_tracks,
+    fetch_followed_artists, fetch_recently_played
 )
 from constants import CACHE_EXPIRATION, BATCH_SIZES, SPOTIFY_SCOPES
 from tqdm_utils import create_progress_bar, update_progress_bar, close_progress_bar
@@ -158,32 +159,31 @@ def categorize_songs_by_criteria(sp, songs_data):
         'already_excluded': []
     }
 
-    # Get followed artists
-    print_info("Checking which artists you follow...")
+    # Get followed artists (using cached version with progress bar)
     try:
-        followed_artists_data = sp.current_user_followed_artists(limit=50)
-        followed_artist_ids = set()
-
-        while followed_artists_data:
-            for artist in followed_artists_data['artists']['items']:
-                followed_artist_ids.add(artist['id'])
-
-            if followed_artists_data['artists']['next']:
-                followed_artists_data = sp.next(followed_artists_data['artists'])
-            else:
-                break
-
+        followed_artists = fetch_followed_artists(
+            sp,
+            show_progress=True,
+            cache_key="followed_artists_cleanup",
+            cache_expiration=CACHE_EXPIRATION['medium']  # 6 hours
+        )
+        followed_artist_ids = {artist['id'] for artist in followed_artists}
         print_success(f"You follow {len(followed_artist_ids)} artists")
     except Exception as e:
         print_warning(f"Could not fetch followed artists: {e}")
         followed_artist_ids = set()
 
     # Get recently played to determine play counts (Spotify doesn't expose play counts directly)
-    # We can only check if a song appears in recently played
-    print_info("Checking play history...")
+    # We can only check if a song appears in recently played (using cached version)
     try:
-        recently_played = sp.current_user_recently_played(limit=50)
-        recently_played_ids = {item['track']['id'] for item in recently_played['items'] if item.get('track')}
+        recently_played = fetch_recently_played(
+            sp,
+            limit=50,
+            show_progress=False,  # Don't show progress for this quick API call
+            cache_key="recently_played_cleanup",
+            cache_expiration=CACHE_EXPIRATION['short']  # 1 hour
+        )
+        recently_played_ids = {item['track']['id'] for item in recently_played if item.get('track')}
     except Exception as e:
         print_warning(f"Could not fetch recently played: {e}")
         recently_played_ids = set()
@@ -250,40 +250,96 @@ def categorize_songs_by_criteria(sp, songs_data):
 
     return categories
 
-def show_cleanup_recommendations(analysis, categories):
-    """Display cleanup recommendations based on analysis."""
-    print_header("Cleanup Recommendations")
+def show_category_selection_menu(analysis, categories):
+    """
+    Display category-based cleanup options and allow user to select.
 
-    print_info("🔴 High Priority Issues:")
-    print_info(f"  • {len(categories['unavailable'])} unavailable tracks (can't be played)")
-    print_info(f"  • {len(categories['podcasts'])} podcast episodes (clutter music library)")
-    print_info(f"  • {len(analysis['orphaned_songs'])} orphaned songs (not in any playlist)")
+    Returns list of selected category names, or None if cancelled.
+    """
+    print_header("Smart Cleanup - Choose Categories")
 
-    print_info("\n🟡 Medium Priority:")
-    print_info(f"  • {len(categories['never_played'])} songs not in recent plays")
-    print_info(f"  • {len(categories['from_unfollowed_artists'])} songs from artists you don't follow")
-    print_info(f"  • {len(categories['not_played_2years'])} old songs (added 2+ years ago, not recently played)")
+    # Show available categories with counts
+    available_options = []
 
-    print_info("\n✅ Already Handled:")
-    print_info(f"  • {len(categories['already_excluded'])} songs in exclusion list")
+    # High priority categories
+    print_info("🔴 High Priority:")
+    if len(categories['unavailable']) > 0:
+        available_options.append(('unavailable', f"Remove {len(categories['unavailable'])} unavailable tracks (can't be played)"))
+        print_info(f"  [1] Remove {len(categories['unavailable'])} unavailable tracks")
 
-    # Calculate cleanup modes
-    conservative_count = len(categories['unavailable']) + len(categories['podcasts'])
-    moderate_count = conservative_count + len(analysis['orphaned_songs'])
-    aggressive_count = moderate_count + len(categories['from_unfollowed_artists'])
+    if len(categories['podcasts']) > 0:
+        available_options.append(('podcasts', f"Remove {len(categories['podcasts'])} podcast episodes"))
+        print_info(f"  [{len(available_options) + 1}] Remove {len(categories['podcasts'])} podcast episodes")
 
-    print_info("\n📊 Cleanup Mode Estimates:")
-    print_info(f"  [1] Conservative: Remove {conservative_count} songs (unavailable + podcasts)")
-    print_info(f"  [2] Moderate: Remove {moderate_count} songs (+ orphaned songs)")
-    print_info(f"  [3] Aggressive: Remove {aggressive_count} songs (+ unfollowed artists)")
-    print_info(f"  [4] Custom: Choose specific categories")
-    print_info(f"  [5] Cancel")
+    if len(analysis['orphaned_songs']) > 0:
+        available_options.append(('orphaned', f"Remove {len(analysis['orphaned_songs'])} orphaned songs (not in playlists)"))
+        print_info(f"  [{len(available_options) + 1}] Remove {len(analysis['orphaned_songs'])} orphaned songs")
 
-    return {
-        'conservative': conservative_count,
-        'moderate': moderate_count,
-        'aggressive': aggressive_count
-    }
+    # Medium priority categories
+    if categories['from_unfollowed_artists'] or categories['not_played_2years']:
+        print_info("\n🟡 Medium Priority:")
+
+    if len(categories['from_unfollowed_artists']) > 0:
+        available_options.append(('unfollowed_artists', f"Remove {len(categories['from_unfollowed_artists'])} songs from artists you don't follow"))
+        print_info(f"  [{len(available_options) + 1}] Remove {len(categories['from_unfollowed_artists'])} songs from unfollowed artists")
+
+    if len(categories['not_played_2years']) > 0:
+        available_options.append(('old_unplayed', f"Remove {len(categories['not_played_2years'])} old songs (2+ years, not recently played)"))
+        print_info(f"  [{len(available_options) + 1}] Remove {len(categories['not_played_2years'])} old unplayed songs")
+
+    # Already handled
+    if len(categories['already_excluded']) > 0:
+        print_info("\n✅ Already Handled:")
+        print_info(f"  • {len(categories['already_excluded'])} songs in exclusion list")
+
+    # No issues found
+    if not available_options:
+        print_success("\n🎉 No cleanup needed! Your library is in great shape.")
+        return None
+
+    # Selection options
+    print_info(f"\n  [{len(available_options) + 1}] Custom: Select multiple categories")
+    print_info(f"  [{len(available_options) + 2}] Cancel")
+
+    # Get user selection
+    choice = input(f"\nEnter your choice (1-{len(available_options) + 2}): ").strip()
+
+    try:
+        choice_num = int(choice)
+
+        # Single category selection
+        if 1 <= choice_num <= len(available_options):
+            selected_category = available_options[choice_num - 1][0]
+            return [selected_category]
+
+        # Custom multi-select
+        elif choice_num == len(available_options) + 1:
+            print_info("\nSelect categories to remove (comma-separated numbers):")
+            for i, (_, desc) in enumerate(available_options, 1):
+                print_info(f"  [{i}] {desc}")
+
+            selections = input(f"\nEnter numbers (e.g., 1,2,3): ").strip()
+            selected_nums = [int(n.strip()) for n in selections.split(',') if n.strip().isdigit()]
+
+            selected_categories = []
+            for num in selected_nums:
+                if 1 <= num <= len(available_options):
+                    selected_categories.append(available_options[num - 1][0])
+
+            if selected_categories:
+                return selected_categories
+            else:
+                print_warning("No valid categories selected")
+                return None
+
+        # Cancel
+        else:
+            print_info("Cleanup cancelled")
+            return None
+
+    except (ValueError, IndexError):
+        print_warning("Invalid selection")
+        return None
 
 def unlike_tracks(sp, track_ids, add_to_exclusions=True):
     """
@@ -340,34 +396,54 @@ def unlike_tracks(sp, track_ids, add_to_exclusions=True):
 
     return unliked_count
 
-def execute_cleanup(sp, mode, analysis, categories):
-    """Execute cleanup based on selected mode."""
-    tracks_to_remove = []
+def execute_cleanup(sp, selected_categories, analysis, categories):
+    """
+    Execute cleanup based on selected categories.
 
-    if mode == "conservative":
-        tracks_to_remove = categories['unavailable'] + categories['podcasts']
-        reason = "Conservative cleanup: unavailable + podcasts"
-    elif mode == "moderate":
-        tracks_to_remove = (categories['unavailable'] +
-                          categories['podcasts'] +
-                          analysis['orphaned_songs'])
-        # Extract track data from orphaned songs
-        tracks_to_remove = [t if isinstance(t, dict) and 'id' in t else t.get('track_data', t)
-                          for t in tracks_to_remove]
-        reason = "Moderate cleanup: + orphaned songs"
-    elif mode == "aggressive":
-        tracks_to_remove = (categories['unavailable'] +
-                          categories['podcasts'] +
-                          analysis['orphaned_songs'] +
-                          categories['from_unfollowed_artists'])
-        tracks_to_remove = [t if isinstance(t, dict) and 'id' in t else t.get('track_data', t)
-                          for t in tracks_to_remove]
-        reason = "Aggressive cleanup: + unfollowed artists"
-    else:
-        print_error("Invalid cleanup mode")
+    Args:
+        sp: Spotify client
+        selected_categories: List of category names to clean (e.g., ['unavailable', 'podcasts'])
+        analysis: Dict from analyze_library_health()
+        categories: Dict from categorize_songs_by_criteria()
+
+    Returns:
+        Number of tracks successfully unliked
+    """
+    tracks_to_remove = []
+    category_names = []
+
+    # Category mapping
+    category_map = {
+        'unavailable': ('unavailable', 'unavailable tracks'),
+        'podcasts': ('podcasts', 'podcast episodes'),
+        'orphaned': ('orphaned_songs', 'orphaned songs'),  # From analysis, not categories
+        'unfollowed_artists': ('from_unfollowed_artists', 'songs from unfollowed artists'),
+        'old_unplayed': ('not_played_2years', 'old unplayed songs')
+    }
+
+    # Build tracks list from selected categories
+    for cat_key in selected_categories:
+        if cat_key not in category_map:
+            continue
+
+        source_key, display_name = category_map[cat_key]
+        category_names.append(display_name)
+
+        # Special handling for orphaned songs (from analysis dict)
+        if cat_key == 'orphaned':
+            tracks_to_remove.extend(analysis['orphaned_songs'])
+        else:
+            # From categories dict
+            tracks_to_remove.extend(categories[source_key])
+
+    if not tracks_to_remove:
+        print_warning("No tracks selected for cleanup")
         return 0
 
-    # Extract track IDs
+    # Build reason string
+    reason = f"Cleanup: {', '.join(category_names)}"
+
+    # Extract track IDs (handling different data structures)
     track_ids = []
     for track in tracks_to_remove:
         if isinstance(track, dict):
@@ -385,8 +461,7 @@ def execute_cleanup(sp, mode, analysis, categories):
 
     # Show preview
     print_info(f"\nYou're about to unlike {len(track_ids)} songs")
-    print_info(f"Mode: {mode}")
-    print_info(f"Reason: {reason}")
+    print_info(f"Categories: {', '.join(category_names)}")
     print_info(f"\nFirst 10 tracks:")
     for i, track_id in enumerate(track_ids[:10]):
         for track in tracks_to_remove:
@@ -414,51 +489,35 @@ def main_menu():
     while True:
         print_header("Library Cleanup")
         print_info("\nWhat would you like to do?\n")
-        print_info("  1. Analyze library health")
-        print_info("  2. Smart cleanup (recommended)")
-        print_info("  3. Remove orphaned songs only")
-        print_info("  4. Remove unavailable tracks only")
-        print_info("  5. Remove podcast episodes only")
-        print_info("  6. View exclusion list stats")
-        print_info("  7. Back to main menu")
+        print_info("  1. Smart cleanup (choose categories to remove)")
+        print_info("  2. Remove orphaned songs only")
+        print_info("  3. Remove unavailable tracks only")
+        print_info("  4. Remove podcast episodes only")
+        print_info("  5. View exclusion list stats")
+        print_info("  6. Back to main menu")
 
-        choice = input("\nEnter your choice (1-7): ").strip()
+        choice = input("\nEnter your choice (1-6): ").strip()
 
-        if choice == "7":
+        if choice == "6":
             break
 
         # Set up Spotify client
         sp = setup_spotify_client()
 
         if choice == "1":
-            # Analyze only
+            # Smart cleanup with category selection
             analysis = analyze_library_health(sp)
             categories = categorize_songs_by_criteria(sp, analysis['all_liked_songs'])
-            show_cleanup_recommendations(analysis, categories)
+
+            # Show category selection menu (will be implemented next)
+            selected_categories = show_category_selection_menu(analysis, categories)
+
+            if selected_categories:
+                execute_cleanup(sp, selected_categories, analysis, categories)
+
             input("\nPress Enter to continue...")
 
         elif choice == "2":
-            # Smart cleanup
-            analysis = analyze_library_health(sp)
-            categories = categorize_songs_by_criteria(sp, analysis['all_liked_songs'])
-            estimates = show_cleanup_recommendations(analysis, categories)
-
-            mode_choice = input("\nSelect cleanup mode (1-5): ").strip()
-
-            if mode_choice == "1":
-                execute_cleanup(sp, "conservative", analysis, categories)
-            elif mode_choice == "2":
-                execute_cleanup(sp, "moderate", analysis, categories)
-            elif mode_choice == "3":
-                execute_cleanup(sp, "aggressive", analysis, categories)
-            elif mode_choice == "4":
-                print_info("Custom cleanup not yet implemented")
-            elif mode_choice == "5":
-                print_info("Cleanup cancelled")
-
-            input("\nPress Enter to continue...")
-
-        elif choice == "3":
             # Orphaned songs only
             analysis = analyze_library_health(sp)
             orphaned_ids = [song['id'] for song in analysis['orphaned_songs']]
@@ -473,7 +532,7 @@ def main_menu():
 
             input("\nPress Enter to continue...")
 
-        elif choice == "4":
+        elif choice == "3":
             # Unavailable tracks only
             analysis = analyze_library_health(sp)
             categories = categorize_songs_by_criteria(sp, analysis['all_liked_songs'])
@@ -489,7 +548,7 @@ def main_menu():
 
             input("\nPress Enter to continue...")
 
-        elif choice == "5":
+        elif choice == "4":
             # Podcasts only
             analysis = analyze_library_health(sp)
             categories = categorize_songs_by_criteria(sp, analysis['all_liked_songs'])
@@ -505,7 +564,7 @@ def main_menu():
 
             input("\nPress Enter to continue...")
 
-        elif choice == "6":
+        elif choice == "5":
             # Exclusion stats
             from exclusion_manager import show_exclusion_stats
             show_exclusion_stats()

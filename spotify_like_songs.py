@@ -124,7 +124,8 @@ def get_tracks_from_playlists(sp, playlists):
                 tracks[track_id] = {
                     'id': track_id,
                     'name': track['name'],
-                    'artists': [artist['name'] for artist in track.get('artists', [])],
+                    # Keep full artist objects with id, name, uri for downstream processing
+                    'artists': track.get('artists', []),
                     'album': track['album']['name'] if track.get('album') else 'Unknown Album'
                 }
             
@@ -222,15 +223,15 @@ def analyze_artist_frequency(tracks):
     
     for track in tracks:
         for artist in track['artists']:
-            # Handle cache corruption where artist might be a string instead of dict
+            # Handle backwards compatibility with old cache format (artist as string)
             if isinstance(artist, str):
-                print_warning(f"Detected corrupted artist data for track: {track.get('name', 'Unknown')}. Artist entry is a string: '{artist}'")
-                print_warning("This indicates cache corruption. Please clear caches and try again.")
+                # Old cached data had artists as strings (just names)
+                # Skip these for analysis since we need artist IDs
                 continue
-            
+
+            # Validate artist data structure
             if not isinstance(artist, dict) or 'id' not in artist or 'name' not in artist:
-                print_warning(f"Invalid artist data for track: {track.get('name', 'Unknown')}. Artist entry is: {artist}")
-                print_warning("This indicates cache corruption. Please clear caches and try again.")
+                # Malformed artist data - skip silently
                 continue
                 
             artist_id = artist['id']

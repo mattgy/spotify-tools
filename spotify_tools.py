@@ -35,7 +35,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 FOLLOW_ARTISTS_SCRIPT = os.path.join(SCRIPT_DIR, "spotify_follow_artists.py")
 LIKE_SONGS_SCRIPT = os.path.join(SCRIPT_DIR, "spotify_like_songs.py")
 SIMILAR_ARTISTS_SCRIPT = os.path.join(SCRIPT_DIR, "spotify_similar_artists.py")
-ANALYTICS_SCRIPT = os.path.join(SCRIPT_DIR, "spotify_analytics.py")
+# ANALYTICS_SCRIPT - Removed (file doesn't exist)
 PLAYLIST_CONVERTER_SCRIPT = os.path.join(SCRIPT_DIR, "spotify_playlist_converter.py")
 CLEANUP_ARTISTS_SCRIPT = os.path.join(SCRIPT_DIR, "spotify_cleanup_artists.py")
 BACKUP_SCRIPT = os.path.join(SCRIPT_DIR, "spotify_backup.py")
@@ -54,8 +54,8 @@ CACHE_DIR = os.path.join(CONFIG_DIR, "cache")
 # Default cache age in days
 DEFAULT_MAX_CACHE_AGE = 7
 
-# Import print functions from spotify_utils
-from spotify_utils import print_header, print_success, print_error, print_warning, print_info
+# Import print functions from centralized module
+from print_utils import print_header, print_success, print_error, print_warning, print_info
 
 def run_script(script_path, args=None):
     """Run a Python script with optional arguments."""

@@ -8,34 +8,9 @@ import time
 import functools
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
-import colorama
-from colorama import Fore, Style
 
-# Initialize colorama
-colorama.init(autoreset=True)
-
-# Common print functions for consistent messaging across the project
-def print_success(text):
-    """Print a success message."""
-    print(f"{Fore.GREEN}{text}")
-
-def print_error(text):
-    """Print an error message.""" 
-    print(f"{Fore.RED}{text}")
-
-def print_warning(text):
-    """Print a warning message."""
-    print(f"{Fore.YELLOW}{text}")
-
-def print_info(text):
-    """Print an info message."""
-    print(f"{Fore.BLUE}{text}")
-
-def print_header(text):
-    """Print a formatted header."""
-    print(f"\n{Fore.CYAN}{Style.BRIGHT}" + "="*50)
-    print(f"{Fore.CYAN}{Style.BRIGHT}{text}")
-    print(f"{Fore.CYAN}{Style.BRIGHT}" + "="*50)
+# Import centralized print functions (prevents circular imports)
+from print_utils import print_success, print_error, print_warning, print_info, print_header
 
 # Import centralized constants
 from constants import CACHE_EXPIRATION, SPOTIFY_SCOPES, RATE_LIMITS

@@ -2,6 +2,8 @@
 spotipy>=2.24.0,<2.25.0
 # HTTP library
 requests>=2.31.0,<2.32.0
+# Pin urllib3 to v1.x for LibreSSL compatibility (macOS default Python)
+urllib3>=1.26.0,<2.0.0
 # Progress bars
 tqdm>=4.66.0,<4.67.0
 # Terminal colors

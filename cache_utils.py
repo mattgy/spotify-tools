@@ -8,17 +8,12 @@ import glob
 import json
 import time
 from pathlib import Path
-import colorama
-from colorama import Fore, Style
-
-# Initialize colorama for cross-platform color support
-colorama.init(autoreset=True)
 
 # Define cache directory
 CACHE_DIR = os.path.join(str(Path.home()), ".spotify-tools", "cache")
 
-# Import print functions from spotify_utils
-from spotify_utils import print_success, print_error, print_warning, print_info
+# Import print functions from centralized module (prevents circular imports)
+from print_utils import print_success, print_error, print_warning, print_info
 
 def sanitize_cache_key(cache_key):
     """Sanitize cache key to be safe for filesystem."""

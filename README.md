@@ -24,11 +24,17 @@ A comprehensive collection of Python utilities for managing your Spotify account
 
 ### Playlist Tools
 - **Convert local playlists** (M3U, text files) to Spotify with AI-powered matching
-- **Mass-like songs** from your playlists with optional Christmas filtering  
+- **Mass-like songs** from your playlists with optional Christmas filtering
 - **Remove Christmas songs** from your library automatically
 - **Manage small playlists** - find and delete playlists with few tracks
 
-### Artist Tools  
+### Library Cleanup (NEW!)
+- **Analyze library health** - identify orphaned songs, unavailable tracks, and more
+- **Smart cleanup modes** - conservative, moderate, or aggressive cleanup strategies
+- **Exclusion list** - prevents cleaned items from being re-added automatically
+- **Customizable preferences** - configure automation behavior to match your needs
+
+### Artist Tools
 - **Auto-follow artists** from your playlists with smart filtering
 - **Discover new artists** using multi-source recommendations
 - **Clean up followed artists** you don't actually listen to
@@ -48,7 +54,9 @@ A comprehensive collection of Python utilities for managing your Spotify account
 ## ⚙️ Configuration
 
 All settings stored in `~/.spotify-tools/`:
-- `credentials.json` - API keys (managed via menu option 10)
+- `credentials.json` - API keys (managed via menu option 11)
+- `preferences.json` - User preferences and automation settings (NEW)
+- `exclusions.json` - Tracks/artists to never auto-add (NEW)
 - `cache/` - Cached data for faster performance
 - `backups/` - Your exported library data
 
@@ -80,6 +88,7 @@ Run the test suite:
 Each tool can run independently:
 - `spotify_playlist_converter.py` - Convert local playlists
 - `spotify_like_songs.py` - Mass-like songs from playlists
+- `spotify_library_cleanup.py` - **NEW**: Clean and optimize your library
 - `spotify_follow_artists.py` - Follow playlist artists
 - `spotify_similar_artists.py` - Discover new artists
 - `spotify_backup.py` - Export your library

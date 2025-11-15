@@ -46,7 +46,8 @@ SCOPES = [
 ]
 
 # Import cache expiration from constants
-from constants import DEFAULT_CACHE_EXPIRATION, STANDARD_CACHE_KEYS
+from constants import STANDARD_CACHE_KEYS
+from preferences_manager import get_cache_duration_seconds
 
 def setup_spotify_client():
     """Set up and return an authenticated Spotify client."""
@@ -61,7 +62,7 @@ def get_user_playlists(sp):
     from spotify_utils import fetch_user_playlists
     
     # Fetch all playlists with progress bar
-    all_playlists = fetch_user_playlists(sp, show_progress=True, cache_key=STANDARD_CACHE_KEYS['user_playlists'], cache_expiration=DEFAULT_CACHE_EXPIRATION)
+    all_playlists = fetch_user_playlists(sp, show_progress=True, cache_key=STANDARD_CACHE_KEYS['user_playlists'], cache_expiration=get_cache_duration_seconds())
     
     # Filter to only include playlists created by the user
     user_id = sp.current_user()['id']
@@ -103,7 +104,7 @@ def get_tracks_from_playlists(sp, playlists):
             playlist_id,
             show_progress=False,  # Don't show individual progress per playlist
             cache_key=f"playlist_tracks_{playlist_id}",
-            cache_expiration=DEFAULT_CACHE_EXPIRATION
+            cache_expiration=get_cache_duration_seconds()
         )
         
         # Process tracks in this playlist
@@ -156,7 +157,7 @@ def get_saved_tracks(sp):
     from spotify_utils import fetch_user_saved_tracks
     
     # Fetch saved tracks with progress bar - use same cache key as other scripts
-    saved_tracks_data = fetch_user_saved_tracks(sp, show_progress=True, cache_key=STANDARD_CACHE_KEYS['liked_songs'], cache_expiration=DEFAULT_CACHE_EXPIRATION)
+    saved_tracks_data = fetch_user_saved_tracks(sp, show_progress=True, cache_key=STANDARD_CACHE_KEYS['liked_songs'], cache_expiration=get_cache_duration_seconds())
     
     # Convert to set of track IDs for efficient lookup
     saved_tracks = {item['track']['id'] for item in saved_tracks_data if item['track']}
@@ -260,7 +261,7 @@ def get_followed_artists(sp):
         sp,
         show_progress=False,
         cache_key="followed_artists_for_autofollow",
-        cache_expiration=3600  # Cache for 1 hour
+        cache_expiration=get_cache_duration_seconds()
     )
     
     # Convert to set of artist IDs for efficient lookup
@@ -289,11 +290,11 @@ def suggest_artists_to_follow(sp, liked_tracks, min_songs=3):
     from spotify_utils import batch_get_artist_details
     
     artist_details = batch_get_artist_details(
-        sp, 
-        candidate_artist_ids, 
-        show_progress=True, 
+        sp,
+        candidate_artist_ids,
+        show_progress=True,
         cache_key_prefix="follow_suggestion_artist_details",
-        cache_expiration=7 * 24 * 60 * 60  # 7 days
+        cache_expiration=get_cache_duration_seconds()
     )
     
     # Build suggestions from batch results

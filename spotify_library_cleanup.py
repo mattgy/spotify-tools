@@ -35,10 +35,10 @@ from spotify_utils import (
     fetch_user_playlists, fetch_user_saved_tracks, fetch_playlist_tracks,
     fetch_followed_artists, fetch_recently_played
 )
-from constants import CACHE_EXPIRATION, BATCH_SIZES, SPOTIFY_SCOPES
+from constants import BATCH_SIZES, SPOTIFY_SCOPES
 from tqdm_utils import create_progress_bar, update_progress_bar, close_progress_bar
 from exclusion_manager import add_bulk_exclusions, is_excluded, get_exclusion_count
-from preferences_manager import get_cleanup_mode, should_create_backup, should_always_confirm
+from preferences_manager import get_cleanup_mode, should_create_backup, should_always_confirm, get_cache_duration_seconds
 
 # Spotify API scopes needed
 SCOPES = SPOTIFY_SCOPES['modify']
@@ -69,7 +69,7 @@ def analyze_library_health(sp):
         sp,
         show_progress=True,
         cache_key="liked_songs_cleanup",
-        cache_expiration=CACHE_EXPIRATION['short']  # 1 hour cache
+        cache_expiration=get_cache_duration_seconds()
     )
 
     total_liked = len(saved_tracks_data)
@@ -81,7 +81,7 @@ def analyze_library_health(sp):
         sp,
         show_progress=True,
         cache_key="user_playlists_cleanup",
-        cache_expiration=CACHE_EXPIRATION['short']
+        cache_expiration=get_cache_duration_seconds()
     )
 
     # Filter to only user's own playlists
@@ -101,7 +101,7 @@ def analyze_library_health(sp):
             playlist['id'],
             show_progress=False,
             cache_key=f"playlist_tracks_cleanup_{playlist['id']}",
-            cache_expiration=CACHE_EXPIRATION['medium']
+            cache_expiration=get_cache_duration_seconds()
         )
 
         for item in playlist_tracks:
@@ -165,7 +165,7 @@ def categorize_songs_by_criteria(sp, songs_data):
             sp,
             show_progress=True,
             cache_key="followed_artists_cleanup",
-            cache_expiration=CACHE_EXPIRATION['medium']  # 6 hours
+            cache_expiration=get_cache_duration_seconds()
         )
         followed_artist_ids = {artist['id'] for artist in followed_artists}
         print_success(f"You follow {len(followed_artist_ids)} artists")
@@ -181,7 +181,7 @@ def categorize_songs_by_criteria(sp, songs_data):
             limit=50,
             show_progress=False,  # Don't show progress for this quick API call
             cache_key="recently_played_cleanup",
-            cache_expiration=CACHE_EXPIRATION['short']  # 1 hour
+            cache_expiration=get_cache_duration_seconds()
         )
         recently_played_ids = {item['track']['id'] for item in recently_played if item.get('track')}
     except Exception as e:

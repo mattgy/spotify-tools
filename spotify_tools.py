@@ -422,9 +422,10 @@ def manage_caches():
     print("2. Clear caches by type")
     print("3. Clean up deprecated cache files")
     print("4. Optimize cache storage (comprehensive cleanup)")
-    print("5. Back to main menu")
-    
-    choice = input("\nEnter your choice (1-5): ")
+    print("5. Configure cache duration")
+    print("6. Back to main menu")
+
+    choice = input("\nEnter your choice (1-6): ")
     
     if choice == "1":
         # Clear all caches
@@ -442,6 +443,15 @@ def manage_caches():
     elif choice == "4":
         # Optimize cache storage
         optimize_cache_storage()
+    elif choice == "5":
+        # Configure cache duration
+        from preferences_manager import configure_cache_duration
+        configure_cache_duration()
+    elif choice == "6":
+        # Back to main menu
+        return
+    else:
+        print_warning("Invalid choice")
 
 def playlist_converter_menu():
     """Sub-menu for playlist converter options."""

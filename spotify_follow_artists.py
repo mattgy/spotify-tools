@@ -46,7 +46,8 @@ SCOPES = [
 ]
 
 # Import cache expiration from constants
-from constants import DEFAULT_CACHE_EXPIRATION, STANDARD_CACHE_KEYS, CLEANUP_THRESHOLDS
+from constants import STANDARD_CACHE_KEYS, CLEANUP_THRESHOLDS
+from preferences_manager import get_cache_duration_seconds
 
 def setup_spotify_client():
     """Set up and return an authenticated Spotify client."""
@@ -63,7 +64,7 @@ def get_user_playlists(sp):
     from spotify_utils import fetch_user_playlists
     
     # Fetch all playlists
-    all_playlists = fetch_user_playlists(sp, show_progress=True, cache_key=STANDARD_CACHE_KEYS['user_playlists'], cache_expiration=DEFAULT_CACHE_EXPIRATION)
+    all_playlists = fetch_user_playlists(sp, show_progress=True, cache_key=STANDARD_CACHE_KEYS['user_playlists'], cache_expiration=get_cache_duration_seconds())
     
     # Filter for playlists created by the user
     user_id = sp.current_user()['id']
@@ -95,7 +96,7 @@ def get_artists_from_playlists(sp, playlists):
 def get_followed_artists(sp):
     """Get a list of artists the user is already following."""
     from spotify_utils import fetch_followed_artists
-    return fetch_followed_artists(sp, show_progress=True, cache_key=STANDARD_CACHE_KEYS['followed_artists'], cache_expiration=DEFAULT_CACHE_EXPIRATION)
+    return fetch_followed_artists(sp, show_progress=True, cache_key=STANDARD_CACHE_KEYS['followed_artists'], cache_expiration=get_cache_duration_seconds())
 
 def follow_artists(sp, artists, followed_artists):
     """Follow artists that the user isn't already following."""
@@ -160,11 +161,11 @@ def follow_artists(sp, artists, followed_artists):
             
             # Batch fetch all artist details at once
             artist_details = batch_get_artist_details(
-                sp, 
-                artist_ids, 
-                show_progress=True, 
+                sp,
+                artist_ids,
+                show_progress=True,
                 cache_key_prefix="follow_artist_details",
-                cache_expiration=7 * 24 * 60 * 60  # 7 days
+                cache_expiration=get_cache_duration_seconds()
             )
             
             # Check for low followers

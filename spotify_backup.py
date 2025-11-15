@@ -27,7 +27,7 @@ from credentials_manager import get_spotify_credentials
 from cache_utils import save_to_cache, load_from_cache
 from config import config, get_cache_expiration, get_batch_size
 from tqdm_utils import create_progress_bar, update_progress_bar, close_progress_bar
-from constants import CACHE_EXPIRATION
+from preferences_manager import get_cache_duration_seconds
 
 # Spotify API scopes needed
 SPOTIFY_SCOPES = [
@@ -130,14 +130,13 @@ class SpotifyBackup:
     def _backup_playlists(self) -> list:
         """Backup user-created playlists using cached data and progress bars."""
         from spotify_utils import fetch_user_playlists, fetch_playlist_tracks
-        from constants import CACHE_EXPIRATION
-        
+
         # Get all user playlists using cached data
         all_playlists = fetch_user_playlists(
-            self.sp, 
-            show_progress=True, 
+            self.sp,
+            show_progress=True,
             cache_key="user_playlists_backup",
-            cache_expiration=CACHE_EXPIRATION['medium']
+            cache_expiration=get_cache_duration_seconds()
         )
         
         # Filter to only user-created playlists
@@ -172,7 +171,7 @@ class SpotifyBackup:
                 playlist['id'],
                 show_progress=False,  # Don't show individual progress for each playlist
                 cache_key=f"playlist_tracks_{playlist['id']}_backup",
-                cache_expiration=CACHE_EXPIRATION['medium']
+                cache_expiration=get_cache_duration_seconds()
             )
             
             # Convert to backup format
@@ -210,14 +209,13 @@ class SpotifyBackup:
     def _backup_followed_artists(self) -> list:
         """Backup all followed artists using cached data and progress bars."""
         from spotify_utils import fetch_followed_artists
-        from constants import CACHE_EXPIRATION
-        
+
         # Get all followed artists using cached data
         followed_artists = fetch_followed_artists(
             self.sp,
             show_progress=True,
             cache_key="followed_artists_backup",
-            cache_expiration=CACHE_EXPIRATION['medium']
+            cache_expiration=get_cache_duration_seconds()
         )
         
         print(f"  Found {len(followed_artists)} followed artists to backup")
@@ -248,14 +246,13 @@ class SpotifyBackup:
     def _backup_liked_songs(self) -> list:
         """Backup all liked songs using cached data and progress bars."""
         from spotify_utils import fetch_liked_songs
-        from constants import CACHE_EXPIRATION
-        
+
         # Get all liked songs using cached data
         liked_songs = fetch_liked_songs(
             self.sp,
             show_progress=True,
             cache_key="liked_songs_backup",
-            cache_expiration=CACHE_EXPIRATION['medium']
+            cache_expiration=get_cache_duration_seconds()
         )
         
         print(f"  Found {len(liked_songs)} liked songs to backup")
@@ -308,7 +305,7 @@ class SpotifyBackup:
                 limit=50,
                 show_progress=False,
                 cache_key=f"top_artists_{time_range}_backup",
-                cache_expiration=CACHE_EXPIRATION['personal']  # 1 hour
+                cache_expiration=get_cache_duration_seconds()
             )
 
             artists = []
@@ -345,7 +342,7 @@ class SpotifyBackup:
                 limit=50,
                 show_progress=False,
                 cache_key=f"top_tracks_{time_range}_backup",
-                cache_expiration=CACHE_EXPIRATION['personal']  # 1 hour
+                cache_expiration=get_cache_duration_seconds()
             )
 
             tracks = []

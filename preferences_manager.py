@@ -48,7 +48,8 @@ DEFAULT_PREFERENCES = {
     },
     "cache": {
         "auto_clear_on_errors": False,
-        "max_age_days": 7
+        "max_age_days": 7,
+        "duration_hours": 24  # Global cache duration: 24, 6, 1, or 0 (no cache)
     },
     "metadata": {
         "created": time.time(),
@@ -204,6 +205,34 @@ def should_create_backup():
     """Check if backups should be created before destructive operations."""
     return get_preference("cleanup.create_backup", True)
 
+def get_cache_duration_hours():
+    """Get the global cache duration in hours."""
+    return get_preference("cache.duration_hours", 24)
+
+def get_cache_duration_seconds():
+    """Get the global cache duration in seconds."""
+    hours = get_cache_duration_hours()
+    if hours == 0:
+        return None  # No caching
+    return hours * 60 * 60
+
+def set_cache_duration(hours):
+    """
+    Set the global cache duration.
+
+    Args:
+        hours: Cache duration in hours (24, 6, 1, or 0 for no cache)
+
+    Returns:
+        True if saved successfully
+    """
+    valid_values = [0, 1, 6, 24]
+    if hours not in valid_values:
+        print_error(f"Invalid cache duration. Must be one of: {valid_values}")
+        return False
+
+    return set_preference("cache.duration_hours", hours)
+
 def show_preferences():
     """Display current preferences in a readable format."""
     prefs = _load_preferences()
@@ -237,7 +266,73 @@ def show_preferences():
     print_info(f"  Verbose output: {ui.get('verbose_output', False)}")
     print_info(f"  Color output: {ui.get('color_output', True)}")
 
+    print_info("\nCache:")
+    cache = prefs.get('cache', {})
+    duration_hours = cache.get('duration_hours', 24)
+    duration_label = "Disabled (fetch every time)" if duration_hours == 0 else f"{duration_hours} hour(s)"
+    print_info(f"  Global cache duration: {duration_label}")
+    print_info(f"  Auto-clear on errors: {cache.get('auto_clear_on_errors', False)}")
+
     print_info("\n" + "="*50 + "\n")
+
+def configure_cache_duration():
+    """
+    Interactive cache duration configuration.
+
+    Returns:
+        True if changed successfully, False otherwise
+    """
+    print_info("\n" + "="*50)
+    print_info("Cache Duration Configuration")
+    print_info("="*50)
+
+    current_hours = get_cache_duration_hours()
+    current_label = "Disabled (fetch every time)" if current_hours == 0 else f"{current_hours} hour(s)"
+
+    print_info(f"\nCurrent cache duration: {current_label}")
+    print_info("\nCache determines how long data is reused before fetching fresh data from Spotify.")
+    print_info("This applies to: playlists, liked songs, followed artists, recently played, etc.")
+
+    print_info("\nAvailable options:")
+    print_info("  1. 24 hours (default, recommended)")
+    print_info("  2. 6 hours")
+    print_info("  3. 1 hour")
+    print_info("  4. Disabled (always fetch fresh data, slower)")
+    print_info("  5. Cancel")
+
+    choice = input("\nSelect cache duration (1-5): ").strip()
+
+    duration_map = {
+        "1": 24,
+        "2": 6,
+        "3": 1,
+        "4": 0
+    }
+
+    if choice == "5":
+        print_info("Cancelled")
+        return False
+
+    if choice not in duration_map:
+        print_warning("Invalid choice")
+        return False
+
+    new_duration = duration_map[choice]
+
+    if set_cache_duration(new_duration):
+        new_label = "Disabled" if new_duration == 0 else f"{new_duration} hour(s)"
+        print_success(f"\nCache duration set to: {new_label}")
+
+        # Optionally clear existing cache
+        clear = input("\nClear existing cache to apply immediately? (y/n): ").strip().lower()
+        if clear == 'y':
+            from cache_utils import clear_cache
+            clear_cache()
+            print_success("Cache cleared")
+
+        return True
+
+    return False
 
 def configure_interactive():
     """Interactive configuration wizard."""

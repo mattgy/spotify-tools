@@ -62,12 +62,13 @@ Thumbs.db
 ehthumbs.db
 Desktop.ini
 
-# AI context files (exclude other AI references, but keep CLAUDE.md)
-GEMINI.md
+# AI context files
 ABOUT.md
 AmazonQ.md
 CONTRIBUTING.md
 *.ai.md
+CLAUDE.md
+GEMINI.md
 
 # Temporary files
 *.tmp

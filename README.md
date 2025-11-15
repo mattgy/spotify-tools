@@ -41,6 +41,8 @@ A comprehensive collection of Python utilities for managing your Spotify account
 
 - **Python 3.6+** (auto-managed)
 - **Free Spotify Developer Account** ([get one here](https://developer.spotify.com/dashboard/))
+  - **Note**: Development mode apps are limited to 25 users
+  - For extended access, see [Spotify's quota modes documentation](https://developer.spotify.com/documentation/web-api/concepts/quota-modes)
 - **Optional**: Last.fm API key for enhanced recommendations
 
 ## ⚙️ Configuration
@@ -61,10 +63,10 @@ export LASTFM_API_KEY="your_lastfm_key"
 
 - **AI-assisted track matching** using Gemini, ChatGPT, Claude, or Perplexity
 - **Session memory** - remembers your decisions between runs
-- **Smart caching** with automatic corruption detection and recovery
+- **Smart caching** with automatic corruption detection and recovery (updated to 24-hour default)
 - **Bulk operations** with progress tracking
-- **Rate limiting** to respect API limits
-- **Comprehensive error handling** with graceful recovery
+- **Optimized rate limiting** - up to 20 requests/second while respecting API limits
+- **Comprehensive error handling** with graceful recovery and automatic retry
 
 ## 🧪 Testing
 
@@ -94,6 +96,11 @@ Each tool can run independently:
 **Performance issues?**
 - Clear caches via menu option 9
 - Reset environment via menu option 11
+- Note: Cache duration reduced to 24 hours for fresher data
+
+**API quota warnings?**
+- Development mode apps are limited to 25 users
+- Extended access requires organizational approval (as of May 2025)
 
 **Import errors?** 
 - Run `./spotify_run.py` (handles all dependencies automatically)

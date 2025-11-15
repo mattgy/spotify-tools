@@ -18,17 +18,18 @@ CACHE_DIR = os.path.join(CONFIG_DIR, "cache")
 BACKUP_DIR = os.path.join(CONFIG_DIR, "backups")
 CREDENTIALS_FILE = os.path.join(CONFIG_DIR, "credentials.json")
 
-# Cache expiration times (in seconds) - default to 30 days for consistency
-DEFAULT_CACHE_EXPIRATION = 30 * 24 * 60 * 60  # 30 days
+# Cache expiration times (in seconds)
+# Updated to more reasonable defaults - user data changes frequently
+DEFAULT_CACHE_EXPIRATION = 24 * 60 * 60  # 24 hours (more reasonable default)
 
 CACHE_EXPIRATION = {
-    'short': 60 * 60,                    # 1 hour (for rapidly changing data)
-    'medium': 24 * 60 * 60,              # 24 hours (for daily data)
-    'long': 7 * 24 * 60 * 60,            # 7 days (for weekly data)
-    'default': DEFAULT_CACHE_EXPIRATION, # 30 days (standard across app)
-    'very_long': DEFAULT_CACHE_EXPIRATION, # 30 days (for consistency)
-    'personal': DEFAULT_CACHE_EXPIRATION,  # 30 days (user data should persist)
-    'external': DEFAULT_CACHE_EXPIRATION  # 30 days (external API data)
+    'short': 1 * 60 * 60,                # 1 hour (user playlists, liked songs - changes frequently)
+    'medium': 6 * 60 * 60,               # 6 hours (playlist tracks)
+    'long': 7 * 24 * 60 * 60,            # 7 days (artist info, relatively static)
+    'default': DEFAULT_CACHE_EXPIRATION, # 24 hours (reasonable default)
+    'very_long': 30 * 24 * 60 * 60,      # 30 days (static data only)
+    'personal': 1 * 60 * 60,             # 1 hour (user data changes frequently)
+    'external': 7 * 24 * 60 * 60         # 7 days (external API data)
 }
 
 # Standardized cache keys for consistent reuse across the app
@@ -90,17 +91,19 @@ SPOTIFY_SCOPES = {
 BATCH_SIZES = {
     'spotify_tracks': 50,         # Max tracks per Spotify API call
     'spotify_artists': 50,        # Max artists per Spotify API call
-    'spotify_audio_features': 100, # Max audio features per call
+    # 'spotify_audio_features': 100, # DEPRECATED: Audio Features API removed by Spotify
     'display_pagination': 20,     # Items per page in paginated displays
     'processing_batch': 100       # Default batch size for processing
 }
 
 # Rate limiting delays (in seconds)
+# Spotify's actual limit is ~10-20 requests/second
 RATE_LIMITS = {
-    'api_call_delay': 0.1,        # Delay between API calls
-    'batch_delay': 0.5,           # Delay between batches
+    'api_call_delay': 0.05,       # Delay between API calls (20 req/s)
+    'batch_delay': 0.3,           # Delay between batches
     'retry_base_delay': 1,        # Base delay for retries
-    'max_retries': 3              # Maximum retry attempts
+    'max_retries': 3,             # Maximum retry attempts
+    'respect_retry_after': True   # Always respect Retry-After headers
 }
 
 # Default confidence thresholds
@@ -108,6 +111,14 @@ CONFIDENCE_THRESHOLDS = {
     'fuzzy_matching': 0.8,        # 80% similarity for fuzzy matching
     'external_validation': 0.7,   # 70% confidence for external APIs
     'personal_relevance': 0.6     # 60% for personal taste matching
+}
+
+# AI service settings for track matching
+AI_SETTINGS = {
+    'default_service': None,      # None = use first available (gemini, openai, anthropic, perplexity)
+    'cache_expiration': 7 * 24 * 60 * 60,  # 7 days for AI responses
+    'max_retries': 2,             # Maximum retry attempts for AI queries
+    'timeout': 30                 # Request timeout in seconds
 }
 
 # Export format configurations
@@ -135,13 +146,15 @@ EXPORT_FORMATS = {
 }
 
 # Audio feature analysis ranges
-AUDIO_FEATURES = {
-    'energy': {'low': 0.3, 'high': 0.7},
-    'valence': {'low': 0.3, 'high': 0.7}, 
-    'danceability': {'low': 0.4, 'high': 0.8},
-    'acousticness': {'low': 0.2, 'high': 0.8},
-    'tempo': {'low': 80, 'high': 140}  # BPM
-}
+# DEPRECATED: Spotify deprecated the Audio Features API endpoint in 2024
+# Kept for reference but functionality removed
+# AUDIO_FEATURES = {
+#     'energy': {'low': 0.3, 'high': 0.7},
+#     'valence': {'low': 0.3, 'high': 0.7},
+#     'danceability': {'low': 0.4, 'high': 0.8},
+#     'acousticness': {'low': 0.2, 'high': 0.8},
+#     'tempo': {'low': 80, 'high': 140}  # BPM
+# }
 
 # Geographic regions for heat map analysis
 GEOGRAPHIC_REGIONS = {
@@ -157,10 +170,13 @@ GEOGRAPHIC_REGIONS = {
 ERROR_MESSAGES = {
     'auth_failed': "Failed to authenticate with Spotify. Please check your credentials.",
     'api_rate_limit': "API rate limit exceeded. Please wait and try again.",
+    'quota_exceeded': "API quota exceeded. Your app is in Development Mode (25 user limit).",
+    'extended_access_needed': "This operation requires Extended Access. See: https://developer.spotify.com/documentation/web-api/concepts/quota-modes",
     'network_error': "Network error occurred. Please check your connection.",
     'file_not_found': "The specified file could not be found.",
     'invalid_format': "The file format is not supported.",
-    'insufficient_data': "Insufficient data to perform the requested operation."
+    'insufficient_data': "Insufficient data to perform the requested operation.",
+    'audio_features_deprecated': "Audio Features API has been deprecated by Spotify and is no longer available."
 }
 
 # Success messages

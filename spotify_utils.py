@@ -94,10 +94,8 @@ def safe_spotify_call(func):
                     else:
                         print(f"{Fore.RED}❌ Rate limiting persists after {max_retries} attempts.")
                         raise
-                elif '403' in error_str and ('audio-features' in error_str or 'audio_features' in error_str):
-                    # Handle audio features permission issues gracefully
-                    print(f"{Fore.YELLOW}Warning: Audio features not accessible (likely missing scope)")
-                    return None
+                # Note: Audio Features API deprecated by Spotify in 2024
+                # Removed special handling for audio-features errors
                 else:
                     raise
         
@@ -122,8 +120,8 @@ class SafeSpotifyClient:
             # Wrap API methods with rate limiting
             @safe_spotify_call
             def safe_method(*args, **kwargs):
-                # Add small delay between calls
-                time.sleep(0.1)
+                # Add small delay between calls (0.05s = 20 req/s)
+                time.sleep(0.05)
                 return attr(*args, **kwargs)
             
             return safe_method
@@ -218,17 +216,17 @@ def paginate_spotify_results(api_call, *args, **kwargs):
             break
         
         if results.get('next'):
-            # Add delay between pages
-            time.sleep(0.1)
+            # Add delay between pages (0.05s = 20 req/s)
+            time.sleep(0.05)
             results = api_call._sp.next(results)
         elif 'artists' in results and results['artists'].get('next'):
-            # Handle followed artists pagination
-            time.sleep(0.1)
+            # Handle followed artists pagination (0.05s = 20 req/s)
+            time.sleep(0.05)
             results = api_call._sp.next(results['artists'])
         else:
             break
 
-def batch_process_items(items, batch_size, process_func, delay_between_batches=0.1):
+def batch_process_items(items, batch_size, process_func, delay_between_batches=0.3):
     """
     Process items in batches with rate limiting.
     
@@ -313,7 +311,7 @@ def fetch_user_playlists(sp, show_progress=True, cache_key="user_playlists", cac
             update_progress_bar(progress_bar, len(batch_playlists))
         
         if results['next']:
-            time.sleep(0.1)  # Rate limiting
+            time.sleep(0.05)  # Rate limiting (20 req/s)
             results = sp.next(results)
         else:
             break
@@ -373,7 +371,7 @@ def fetch_user_saved_tracks(sp, show_progress=True, cache_key="saved_tracks", ca
             update_progress_bar(progress_bar, len(batch_tracks))
         
         if results['next']:
-            time.sleep(0.1)  # Rate limiting
+            time.sleep(0.05)  # Rate limiting (20 req/s)
             results = sp.next(results)
         else:
             break
@@ -433,7 +431,7 @@ def fetch_followed_artists(sp, show_progress=True, cache_key="followed_artists",
             update_progress_bar(progress_bar, len(batch_artists))
         
         if results['artists']['next']:
-            time.sleep(0.1)  # Rate limiting
+            time.sleep(0.05)  # Rate limiting (20 req/s)
             results = sp.next(results['artists'])
         else:
             break
@@ -496,7 +494,7 @@ def fetch_playlist_tracks(sp, playlist_id, show_progress=True, cache_key=None, c
             update_progress_bar(progress_bar, len(batch_tracks))
         
         if results['next']:
-            time.sleep(0.1)  # Rate limiting
+            time.sleep(0.05)  # Rate limiting (20 req/s)
             results = sp.next(results)
         else:
             break
@@ -788,7 +786,7 @@ def batch_get_artist_details(sp, artist_ids, show_progress=True, cache_key_prefi
             if show_progress and uncached_ids:
                 update_progress_bar(progress_bar, len(batch_ids))
             
-            time.sleep(0.1)  # Rate limiting
+            time.sleep(0.05)  # Rate limiting (20 req/s)
             
         except Exception as e:
             print_warning(f"Error fetching artist batch: {e}")
@@ -865,7 +863,7 @@ def batch_search_tracks(sp, search_queries, show_progress=True, cache_key_prefix
             if show_progress:
                 update_progress_bar(progress_bar, 1)
             
-            time.sleep(0.1)  # Rate limiting
+            time.sleep(0.05)  # Rate limiting (20 req/s)
             
         except Exception as e:
             print_warning(f"Error searching for '{query[:50]}...': {e}")

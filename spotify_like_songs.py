@@ -32,6 +32,9 @@ from spotify_utils import (
 )
 from constants import BATCH_SIZES, CONFIDENCE_THRESHOLDS
 
+# Import tqdm_utils for progress bars
+from tqdm_utils import create_progress_bar, update_progress_bar, close_progress_bar
+
 # Spotify API scopes needed for this script
 SCOPES = [
     "user-library-read",
@@ -85,7 +88,6 @@ def get_tracks_from_playlists(sp, playlists):
     track_playlists = defaultdict(list)
     
     # Set up progress tracking using centralized utilities
-    from tqdm_utils import create_progress_bar, update_progress_bar, close_progress_bar
     
     progress_bar = create_progress_bar(total=len(playlists), desc="Processing playlists", unit="playlist")
     
@@ -222,12 +224,13 @@ def analyze_artist_frequency(tracks):
         for artist in track['artists']:
             # Handle cache corruption where artist might be a string instead of dict
             if isinstance(artist, str):
-                print_warning(f"Detected corrupted artist data for track: {track.get('name', 'Unknown')}")
-                print_warning("Cache corruption detected. Please clear caches and try again.")
+                print_warning(f"Detected corrupted artist data for track: {track.get('name', 'Unknown')}. Artist entry is a string: '{artist}'")
+                print_warning("This indicates cache corruption. Please clear caches and try again.")
                 continue
             
             if not isinstance(artist, dict) or 'id' not in artist or 'name' not in artist:
-                print_warning(f"Invalid artist data for track: {track.get('name', 'Unknown')}")
+                print_warning(f"Invalid artist data for track: {track.get('name', 'Unknown')}. Artist entry is: {artist}")
+                print_warning("This indicates cache corruption. Please clear caches and try again.")
                 continue
                 
             artist_id = artist['id']

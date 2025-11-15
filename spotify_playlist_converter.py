@@ -1293,30 +1293,64 @@ def filter_album_name(album_name):
 def normalize_string(s):
     """
     Normalize string for better matching.
-    Preserves non-English characters while cleaning up formatting.
+    Handles unicode, accents, and preserves important punctuation.
     """
     if not s:
         return ""
-    
-    # Convert to lowercase but preserve Unicode characters
-    s = s.lower()
-    
-    # Remove extra whitespace and normalize spaces
+
+    import unicodedata
+
+    # Step 1: Normalize unicode (composed vs decomposed characters)
+    # NFC = Canonical Composition (é stays as single character)
+    s = unicodedata.normalize('NFC', s)
+
+    # Step 2: Fold accents for better matching (José → Jose, Beyoncé → Beyonce)
+    # This helps match international artists when spelled without accents
+    try:
+        # Try using unidecode if available
+        from unidecode import unidecode
+        # Keep original for comparison, fold for matching
+        s_folded = unidecode(s)
+    except ImportError:
+        # Fallback: manual accent folding using NFD decomposition
+        s_folded = ''.join(
+            char for char in unicodedata.normalize('NFD', s)
+            if unicodedata.category(char) != 'Mn'  # Remove combining marks (accents)
+        )
+
+    # Step 3: Convert to lowercase
+    s = s_folded.lower()
+
+    # Step 4: Standardize ampersand and "and"
+    s = s.replace(' & ', ' and ')
+    s = s.replace('&', ' and ')
+
+    # Step 5: Remove extra whitespace and normalize spaces
     s = re.sub(r'\s+', ' ', s).strip()
-    
-    # Remove punctuation but keep letters, numbers, spaces, and Unicode characters
-    # This preserves Chinese, Arabic, Cyrillic, etc. characters
-    s = re.sub(r'[^\w\s\u4e00-\u9fff\u0600-\u06ff\u0400-\u04ff]', '', s)
-    
-    # Remove common English words that might interfere with matching
-    # Only remove if the string contains mostly English text
+
+    # Step 6: Remove punctuation BUT preserve hyphens in words (Jay-Z, X-Ray)
+    # Also preserve letters, numbers, spaces, and Unicode characters
+    # Remove: quotes, parentheses, brackets, periods, commas, etc.
+    # Keep: hyphens when between word characters
+    s = re.sub(r'[^\w\s\-\u4e00-\u9fff\u0600-\u06ff\u0400-\u04ff]', '', s)
+
+    # Step 7: Clean up standalone hyphens (not between words)
+    s = re.sub(r'\s+-\s+', ' ', s)  # " - " → " "
+    s = re.sub(r'^-+|-+$', '', s)   # Leading/trailing hyphens
+
+    # Step 8: Remove common filler words but KEEP "the" for matching
+    # (Important for "The XX", "The Beatles" vs "Beatles")
+    # Only remove truly meaningless words
     if re.search(r'[a-z]', s):  # Contains English letters
-        common_words = ['the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'feat', 'featuring', 'ft']
+        filler_words = ['a', 'an', 'feat', 'featuring', 'ft']
         words = s.split()
-        words = [w for w in words if w not in common_words]
+        words = [w for w in words if w not in filler_words]
         s = ' '.join(words)
-    
-    return s.strip()
+
+    # Final cleanup
+    s = re.sub(r'\s+', ' ', s).strip()
+
+    return s
 
 def normalize_for_variations(text):
     """Apply common variations normalization."""
@@ -1549,32 +1583,27 @@ def search_track_on_spotify(sp, artist, title, album=None):
     if not title:
         return None
     
-    # Create a cache key based on artist, album and title
-    # Clean the key components first
+    # Create a cache key based on artist, album and title using MD5 hash
+    # This prevents issues with long names, special characters, and URL encoding
+    import hashlib
+
+    # Normalize the components for consistent caching
     clean_artist = normalize_for_variations(artist) if artist else "none"
     clean_title = normalize_for_variations(title) if title else "none"
     clean_album = normalize_for_variations(album) if album else "none"
-    
-    # Create cache key (properly encode for filesystem safety)
-    cache_key = f"track_search_{clean_artist}_{clean_album}_{clean_title}".replace(" ", "_").lower()
-    # Handle non-ASCII characters in cache key
-    try:
-        import urllib.parse
-        cache_key = urllib.parse.quote(cache_key.encode('utf-8'), safe='_-')
-    except:
-        # Fallback: replace non-ASCII characters with underscore
-        cache_key = re.sub(r'[^\w\-_]', '_', cache_key)
-    
-    # Also check for variation cache keys (e.g., with/without "feat." vs "featuring")
-    variation_keys = []
-    if artist and ('feat' in artist.lower() or 'ft' in artist.lower() or '&' in artist):
-        # Create alternate keys with variations
-        for variant, normalized in COMMON_VARIATIONS.items():
-            if variant in artist.lower():
-                alt_artist = artist.lower().replace(variant, normalized)
-                alt_key = f"track_search_{alt_artist}_{clean_album}_{clean_title}".replace(" ", "_").lower()
-                variation_keys.append(alt_key)
-    
+
+    # Create a stable string representation
+    cache_string = f"{clean_artist}|{clean_title}|{clean_album}"
+
+    # Hash it for a short, safe cache key
+    # Use MD5 (fast, good enough for cache keys, not security)
+    # Take first 16 chars of hex digest for short keys
+    cache_hash = hashlib.md5(cache_string.encode('utf-8')).hexdigest()[:16]
+
+    # Include version in key so algorithm improvements invalidate old cache
+    algorithm_version = "v2"  # Increment when scoring/matching logic changes
+    cache_key = f"track_search_{algorithm_version}_{cache_hash}"
+
     # Try to load from cache first
     cached_result = load_from_cache(cache_key, CACHE_EXPIRATION['medium'])
     if cached_result:
@@ -2322,11 +2351,24 @@ def manual_search_flow(sp, track):
             if retry != 'y':
                 return None
 
-def process_tracks_batch(sp, tracks_batch, confidence_threshold, batch_mode=False, auto_threshold=85, use_previous_decisions=False):
-    """Process a batch of tracks efficiently with minimal user interaction."""
+def process_tracks_batch(sp, tracks_batch, confidence_threshold, batch_mode=False, auto_threshold=85, use_previous_decisions=False, use_ai_boost=False):
+    """
+    Process a batch of tracks efficiently with minimal user interaction.
+
+    Args:
+        sp: Spotify client
+        tracks_batch: List of tracks to process
+        confidence_threshold: Minimum score for manual review
+        batch_mode: If True, auto-accept high confidence matches
+        auto_threshold: Score threshold for auto-acceptance in batch mode
+        use_previous_decisions: If True, use cached user decisions
+        use_ai_boost: If True, use AI to boost medium-confidence matches (60-84 score)
+    """
     from tqdm_utils import create_progress_bar, update_progress_bar, close_progress_bar
 
     results = []
+    ai_boost_count = 0
+    ai_boost_limit = 50  # Cost control: max AI requests per batch
 
     # Create progress bar for batch processing
     progress_bar = create_progress_bar(total=len(tracks_batch), desc="Searching tracks", unit="track")
@@ -2353,22 +2395,74 @@ def process_tracks_batch(sp, tracks_batch, confidence_threshold, batch_mode=Fals
         match = search_track_on_spotify(sp, track['artist'], track['title'], track['album'])
 
         if match:
-            if batch_mode and match['score'] >= auto_threshold:
+            score = match.get('score', 0)
+
+            # Check if AI boost should be used for medium-confidence matches
+            if use_ai_boost and batch_mode and 60 <= score < auto_threshold and ai_boost_count < ai_boost_limit:
+                try:
+                    progress_bar.set_description(f"AI boosting: {original_line[:45]}")
+                    from ai_track_matcher import ai_assisted_search
+                    ai_match = ai_assisted_search(sp, track['artist'], track['title'], track.get('album'), min_confidence=0.7)
+
+                    if ai_match and ai_match.get('score', 0) >= auto_threshold:
+                        # AI found a better match - auto-accept
+                        ai_match['ai_assisted'] = True
+                        results.append({'track': track, 'match': ai_match, 'accepted': True, 'auto': True, 'ai_assisted': True})
+                        ai_boost_count += 1
+                        logger.info(f"AI boosted match for '{original_line}': {ai_match.get('score', 0):.1f}")
+                    elif score >= confidence_threshold:
+                        # AI didn't help enough - keep for manual review
+                        results.append({'track': track, 'match': match, 'accepted': False, 'review': True})
+                    else:
+                        # Still low confidence - skip
+                        results.append({'track': track, 'match': match, 'accepted': False, 'review': False})
+                except Exception as e:
+                    logger.warning(f"AI assist failed for '{original_line}': {e}")
+                    # Fall back to regular logic
+                    if score >= confidence_threshold:
+                        results.append({'track': track, 'match': match, 'accepted': False, 'review': True})
+                    else:
+                        results.append({'track': track, 'match': match, 'accepted': False, 'review': False})
+            elif batch_mode and score >= auto_threshold:
+                # High confidence - auto-accept without AI
                 results.append({'track': track, 'match': match, 'accepted': True, 'auto': True})
-            elif match['score'] >= confidence_threshold:
+            elif score >= confidence_threshold:
+                # Medium/high confidence - needs review
                 results.append({'track': track, 'match': match, 'accepted': False, 'review': True})
             else:
+                # Low confidence - skip
                 results.append({'track': track, 'match': match, 'accepted': False, 'review': False})
         else:
-            results.append({'track': track, 'match': None, 'accepted': False, 'review': False})
+            # No match found - try AI as last resort if enabled
+            if use_ai_boost and batch_mode and ai_boost_count < ai_boost_limit:
+                try:
+                    progress_bar.set_description(f"AI searching: {original_line[:45]}")
+                    from ai_track_matcher import ai_assisted_search
+                    ai_match = ai_assisted_search(sp, track['artist'], track['title'], track.get('album'), min_confidence=0.7)
+
+                    if ai_match:
+                        ai_match['ai_assisted'] = True
+                        results.append({'track': track, 'match': ai_match, 'accepted': True, 'auto': True, 'ai_assisted': True})
+                        ai_boost_count += 1
+                        logger.info(f"AI found match for '{original_line}': {ai_match.get('score', 0):.1f}")
+                    else:
+                        results.append({'track': track, 'match': None, 'accepted': False, 'review': False})
+                except Exception as e:
+                    logger.warning(f"AI assist failed for '{original_line}': {e}")
+                    results.append({'track': track, 'match': None, 'accepted': False, 'review': False})
+            else:
+                results.append({'track': track, 'match': None, 'accepted': False, 'review': False})
 
         update_progress_bar(progress_bar, 1)
 
     close_progress_bar(progress_bar)
 
+    if ai_boost_count > 0:
+        logger.info(f"AI assisted with {ai_boost_count} tracks in this batch")
+
     return results
 
-def process_playlist_file(sp, file_path, user_id, confidence_threshold, min_score=50, batch_mode=False, auto_threshold=85, use_previous_decisions=False):
+def process_playlist_file(sp, file_path, user_id, confidence_threshold, min_score=50, batch_mode=False, auto_threshold=85, use_previous_decisions=False, use_ai_boost=False):
     """Process a single playlist file and convert it to a Spotify playlist."""
     logger.info(f"Processing playlist: {file_path}")
     
@@ -2383,14 +2477,10 @@ def process_playlist_file(sp, file_path, user_id, confidence_threshold, min_scor
         return 0, 0
     
     logger.info(f"Found {len(tracks)} tracks in playlist")
-    
-    # Check if playlist needs sync (incremental sync optimization)
-    needs_sync, content_hash = playlist_needs_sync(file_path, tracks)
-    if not needs_sync and batch_mode:
-        logger.info(f"Playlist '{playlist_name}' is up to date, skipping...")
-        return 0, 0
-    
+
     # Search for tracks on Spotify
+    # Note: Removed broken sync check that compared M3U hash to previous M3U hash
+    # The de-duplication logic below (checking existing Spotify tracks) handles avoiding duplicates
     spotify_tracks = []
     skipped_tracks = []
     
@@ -2406,7 +2496,7 @@ def process_playlist_file(sp, file_path, user_id, confidence_threshold, min_scor
             batch_num = i//batch_size + 1
             logger.info(f"🔍 Processing batch {batch_num}/{total_batches} ({len(batch)} tracks)")
             
-            batch_results = process_tracks_batch(sp, batch, confidence_threshold, batch_mode, auto_threshold, use_previous_decisions)
+            batch_results = process_tracks_batch(sp, batch, confidence_threshold, batch_mode, auto_threshold, use_previous_decisions, use_ai_boost)
             
             for result in batch_results:
                 if result['accepted'] and result['match']:
@@ -3202,6 +3292,7 @@ def main():
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     parser.add_argument("--batch", action="store_true", help="Batch mode: auto-accept high confidence matches")
     parser.add_argument("--auto-threshold", type=int, default=85, help="Auto-accept threshold for batch mode (default: 85)")
+    parser.add_argument("--use-ai-boost", action="store_true", help="Use AI to boost medium-confidence matches (60-84 score) in batch mode")
     parser.add_argument("--max-playlists", type=int, help="Maximum number of playlists to process")
     
     # New mode arguments
@@ -3564,7 +3655,7 @@ def main():
     for i, file_path in enumerate(playlist_files, 1):
         try:
             logger.info(f"\nProcessing playlist {i}/{len(playlist_files)}: {os.path.basename(file_path)}")
-            matches, skipped = process_playlist_file(sp, file_path, user_id, confidence_threshold, min_score, args.batch, args.auto_threshold, use_previous_decisions)
+            matches, skipped = process_playlist_file(sp, file_path, user_id, confidence_threshold, min_score, args.batch, args.auto_threshold, use_previous_decisions, args.use_ai_boost)
             total_processed += 1
             total_matches += matches
             total_skipped += skipped

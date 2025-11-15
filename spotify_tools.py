@@ -670,7 +670,7 @@ def main():
         print(f"{Fore.WHITE}1. Convert local playlists to Spotify playlists")
         print(f"{Fore.WHITE}2. Add all songs from your created playlists to Liked Songs")
         print(f"{Fore.WHITE}3. Find and manage playlists by track count")
-        print(f"{Fore.WHITE}4. Clean up and optimize your library (songs & artists)")
+        print(f"{Fore.WHITE}4. Clean up and optimize your library (songs only)")
         print(f"{Fore.WHITE}5. Remove Christmas songs from Liked Songs")
 
         # Group 2: Artist Management

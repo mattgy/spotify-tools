@@ -265,15 +265,15 @@ def show_category_selection_menu(analysis, categories):
     print_info("🔴 High Priority:")
     if len(categories['unavailable']) > 0:
         available_options.append(('unavailable', f"Remove {len(categories['unavailable'])} unavailable tracks (can't be played)"))
-        print_info(f"  [1] Remove {len(categories['unavailable'])} unavailable tracks")
+        print_info(f"  [{len(available_options)}] Remove {len(categories['unavailable'])} unavailable tracks")
 
     if len(categories['podcasts']) > 0:
         available_options.append(('podcasts', f"Remove {len(categories['podcasts'])} podcast episodes"))
-        print_info(f"  [{len(available_options) + 1}] Remove {len(categories['podcasts'])} podcast episodes")
+        print_info(f"  [{len(available_options)}] Remove {len(categories['podcasts'])} podcast episodes")
 
     if len(analysis['orphaned_songs']) > 0:
         available_options.append(('orphaned', f"Remove {len(analysis['orphaned_songs'])} orphaned songs (not in playlists)"))
-        print_info(f"  [{len(available_options) + 1}] Remove {len(analysis['orphaned_songs'])} orphaned songs")
+        print_info(f"  [{len(available_options)}] Remove {len(analysis['orphaned_songs'])} orphaned songs")
 
     # Medium priority categories
     if categories['from_unfollowed_artists'] or categories['not_played_2years']:
@@ -281,11 +281,11 @@ def show_category_selection_menu(analysis, categories):
 
     if len(categories['from_unfollowed_artists']) > 0:
         available_options.append(('unfollowed_artists', f"Remove {len(categories['from_unfollowed_artists'])} songs from artists you don't follow"))
-        print_info(f"  [{len(available_options) + 1}] Remove {len(categories['from_unfollowed_artists'])} songs from unfollowed artists")
+        print_info(f"  [{len(available_options)}] Remove {len(categories['from_unfollowed_artists'])} songs from unfollowed artists")
 
     if len(categories['not_played_2years']) > 0:
         available_options.append(('old_unplayed', f"Remove {len(categories['not_played_2years'])} old songs (2+ years, not recently played)"))
-        print_info(f"  [{len(available_options) + 1}] Remove {len(categories['not_played_2years'])} old unplayed songs")
+        print_info(f"  [{len(available_options)}] Remove {len(categories['not_played_2years'])} old unplayed songs")
 
     # Already handled
     if len(categories['already_excluded']) > 0:

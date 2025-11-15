@@ -75,6 +75,7 @@ GEMINI.md
 *.temp
 temp/
 tmp/
+test_results.txt
 
 # personal playlists
 *.m3u

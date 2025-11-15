@@ -659,9 +659,9 @@ def main():
         # Group 1: Playlist Management
         print(f"{Fore.WHITE}1. Convert local playlists to Spotify playlists")
         print(f"{Fore.WHITE}2. Add all songs from your created playlists to Liked Songs")
-        print(f"{Fore.WHITE}3. Clean up and optimize your library (songs & artists)")
-        print(f"{Fore.WHITE}4. Remove Christmas songs from Liked Songs")
-        print(f"{Fore.WHITE}5. Find and manage playlists by track count")
+        print(f"{Fore.WHITE}3. Find and manage playlists by track count")
+        print(f"{Fore.WHITE}4. Clean up and optimize your library (songs & artists)")
+        print(f"{Fore.WHITE}5. Remove Christmas songs from Liked Songs")
 
         # Group 2: Artist Management
         print(f"{Fore.WHITE}6. Follow all artists in your created playlists")
@@ -687,19 +687,19 @@ def main():
             run_script(LIKE_SONGS_SCRIPT)
 
         elif choice == "3":
+            # Run the playlist size manager script
+            print_info("\nManaging playlists by track count...")
+            run_script(PLAYLIST_SIZE_MANAGER_SCRIPT)
+
+        elif choice == "4":
             # Run the library cleanup script
             print_info("\nRunning library cleanup functionality...")
             run_script(LIBRARY_CLEANUP_SCRIPT)
 
-        elif choice == "4":
+        elif choice == "5":
             # Run the Christmas cleanup script
             print_info("\nRemoving Christmas songs from Liked Songs...")
             run_script(CHRISTMAS_CLEANUP_SCRIPT)
-
-        elif choice == "5":
-            # Run the playlist size manager script
-            print_info("\nManaging playlists by track count...")
-            run_script(PLAYLIST_SIZE_MANAGER_SCRIPT)
 
         elif choice == "6":
             # Run the follow artists script

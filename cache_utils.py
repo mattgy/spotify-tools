@@ -9,8 +9,8 @@ import json
 import time
 from pathlib import Path
 
-# Define cache directory
-CACHE_DIR = os.path.join(str(Path.home()), ".spotify-tools", "cache")
+# Import constants
+from constants import CACHE_DIR, CLEANUP_THRESHOLDS
 
 # Import print functions from centralized module (prevents circular imports)
 from print_utils import print_success, print_error, print_warning, print_info
@@ -382,13 +382,15 @@ def clean_deprecated_caches():
         print_info("No deprecated cache files found")
         return False
 
-def clean_stale_caches(max_age_days=30):
+def clean_stale_caches(max_age_days=None):
     """
     Clean up cache files that are older than specified age.
-    
+
     Args:
         max_age_days: Maximum age in days before a cache is considered stale
     """
+    if max_age_days is None:
+        max_age_days = CLEANUP_THRESHOLDS['stale_cache_days']
     import time
     
     caches = list_caches()
@@ -431,10 +433,10 @@ def optimize_cache_storage():
     # Clean deprecated caches first
     print_info("🧹 Cleaning deprecated cache patterns...")
     deprecated_cleaned = clean_deprecated_caches()
-    
-    # Clean stale caches (older than 30 days)
+
+    # Clean stale caches (uses default from constants)
     print_info("⏰ Cleaning stale caches...")
-    stale_cleaned = clean_stale_caches(30)
+    stale_cleaned = clean_stale_caches()
     
     total_cleaned = deprecated_cleaned or stale_cleaned
     

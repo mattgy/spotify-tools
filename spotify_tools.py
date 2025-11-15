@@ -31,6 +31,9 @@ colorama.init(autoreset=True)
 # Get the directory of this script
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
+# Import constants
+from constants import CONFIG_DIR, CREDENTIALS_FILE, CACHE_DIR, CLEANUP_THRESHOLDS
+
 # Define paths to other scripts
 FOLLOW_ARTISTS_SCRIPT = os.path.join(SCRIPT_DIR, "spotify_follow_artists.py")
 LIKE_SONGS_SCRIPT = os.path.join(SCRIPT_DIR, "spotify_like_songs.py")
@@ -47,13 +50,8 @@ PLAYLIST_RECONCILE_SCRIPT = os.path.join(SCRIPT_DIR, "spotify_playlist_reconcile
 PLAYLIST_SIZE_MANAGER_SCRIPT = os.path.join(SCRIPT_DIR, "spotify_playlist_size_manager.py")
 INSTALL_DEPENDENCIES_SCRIPT = os.path.join(SCRIPT_DIR, "install_dependencies.py")
 
-# Define config directory
-CONFIG_DIR = os.path.join(str(Path.home()), ".spotify-tools")
-CREDENTIALS_FILE = os.path.join(CONFIG_DIR, "credentials.json")
-CACHE_DIR = os.path.join(CONFIG_DIR, "cache")
-
-# Default cache age in days
-DEFAULT_MAX_CACHE_AGE = 7
+# Default cache age in days (from constants)
+DEFAULT_MAX_CACHE_AGE = CLEANUP_THRESHOLDS['stale_cache_days']
 
 # Import print functions from centralized module
 from print_utils import print_header, print_success, print_error, print_warning, print_info

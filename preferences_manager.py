@@ -18,9 +18,11 @@ from pathlib import Path
 # Import centralized print functions
 from print_utils import print_success, print_error, print_warning, print_info
 
-# Define preferences file location
-PREFERENCES_DIR = os.path.join(str(Path.home()), ".spotify-tools")
-PREFERENCES_FILE = os.path.join(PREFERENCES_DIR, "preferences.json")
+# Import constants
+from constants import CONFIG_DIR, PREFERENCES_FILE
+
+# Keep for backwards compatibility
+PREFERENCES_DIR = CONFIG_DIR
 
 # Default preferences
 DEFAULT_PREFERENCES = {

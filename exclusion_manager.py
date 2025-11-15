@@ -19,9 +19,11 @@ from datetime import datetime
 # Import centralized print functions
 from print_utils import print_success, print_error, print_warning, print_info
 
-# Define exclusions file location
-EXCLUSIONS_DIR = os.path.join(str(Path.home()), ".spotify-tools")
-EXCLUSIONS_FILE = os.path.join(EXCLUSIONS_DIR, "exclusions.json")
+# Import constants
+from constants import CONFIG_DIR, EXCLUSIONS_FILE
+
+# Keep for backwards compatibility
+EXCLUSIONS_DIR = CONFIG_DIR
 
 def _ensure_exclusions_dir():
     """Ensure the exclusions directory exists."""

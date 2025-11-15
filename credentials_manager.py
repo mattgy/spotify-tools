@@ -15,9 +15,8 @@ import json
 import stat
 from pathlib import Path
 
-# Define config directory
-CONFIG_DIR = os.path.join(str(Path.home()), ".spotify-tools")
-CREDENTIALS_FILE = os.path.join(CONFIG_DIR, "credentials.json")
+# Import constants
+from constants import CONFIG_DIR, CREDENTIALS_FILE
 
 def get_spotify_credentials():
     """

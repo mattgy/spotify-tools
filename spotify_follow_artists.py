@@ -46,7 +46,7 @@ SCOPES = [
 ]
 
 # Import cache expiration from constants
-from constants import DEFAULT_CACHE_EXPIRATION, STANDARD_CACHE_KEYS
+from constants import DEFAULT_CACHE_EXPIRATION, STANDARD_CACHE_KEYS, CLEANUP_THRESHOLDS
 
 def setup_spotify_client():
     """Set up and return an authenticated Spotify client."""
@@ -133,9 +133,9 @@ def follow_artists(sp, artists, followed_artists):
         return
     
     print(f"Found {len(new_artists)} new artists to follow")
-    
+
     # Check for low-follower artists (safely handle missing follower data)
-    low_follower_threshold = 10
+    low_follower_threshold = CLEANUP_THRESHOLDS['low_follower_count']
     low_follower_artists = []
     
     # Filter artists that have follower data

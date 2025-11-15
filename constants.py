@@ -17,6 +17,8 @@ CONFIG_DIR = os.path.join(str(Path.home()), ".spotify-tools")
 CACHE_DIR = os.path.join(CONFIG_DIR, "cache")
 BACKUP_DIR = os.path.join(CONFIG_DIR, "backups")
 CREDENTIALS_FILE = os.path.join(CONFIG_DIR, "credentials.json")
+PREFERENCES_FILE = os.path.join(CONFIG_DIR, "preferences.json")
+EXCLUSIONS_FILE = os.path.join(CONFIG_DIR, "exclusions.json")
 
 # Cache expiration times (in seconds)
 # Updated to more reasonable defaults - user data changes frequently
@@ -111,6 +113,13 @@ CONFIDENCE_THRESHOLDS = {
     'fuzzy_matching': 0.8,        # 80% similarity for fuzzy matching
     'external_validation': 0.7,   # 70% confidence for external APIs
     'personal_relevance': 0.6     # 60% for personal taste matching
+}
+
+# Library cleanup and analysis thresholds
+CLEANUP_THRESHOLDS = {
+    'low_follower_count': 10,     # Artists with <= 10 followers considered low-follower
+    'min_play_count': 1,          # Minimum play count to consider a song "played"
+    'stale_cache_days': 30        # Days before cache is considered stale
 }
 
 # AI service settings for track matching

@@ -165,7 +165,7 @@ If you cannot identify the track with reasonable confidence, return:
         if not api_key:
             return None
             
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={api_key}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key={api_key}"
         
         prompt = self._create_prompt(artist, title, album)
         
@@ -213,13 +213,13 @@ If you cannot identify the track with reasonable confidence, return:
         prompt = self._create_prompt(artist, title, album)
         
         payload = {
-            "model": "gpt-4-turbo-preview",
+            "model": "gpt-4o",
             "messages": [
                 {"role": "system", "content": "You are a music expert helping to identify songs for Spotify search."},
                 {"role": "user", "content": prompt}
             ],
             "temperature": 0.2,
-            "max_tokens": 512
+            "max_tokens": 1024
         }
         
         try:
@@ -253,8 +253,8 @@ If you cannot identify the track with reasonable confidence, return:
         prompt = self._create_prompt(artist, title, album)
 
         payload = {
-            "model": "claude-3-5-sonnet-20241022",
-            "max_tokens": 512,
+            "model": "claude-sonnet-4-20250514",
+            "max_tokens": 1024,
             "messages": [
                 {"role": "user", "content": prompt}
             ]

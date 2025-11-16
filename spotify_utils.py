@@ -934,6 +934,98 @@ def get_playlist_artist_frequency(sp, playlist_ids, show_progress=True, cache_ke
     
     return result
 
+def strip_remix_tags(title):
+    """
+    Strip remix/version tags from a track title to get the original version name.
+
+    Args:
+        title: Track title potentially containing remix tags
+
+    Returns:
+        Cleaned title without remix tags
+    """
+    import re
+
+    if not title:
+        return title
+
+    # Patterns to remove (in order of specificity)
+    remix_patterns = [
+        # Match parenthetical or bracketed remix info
+        r'\s*[\[\(].*?(?:remix|rmx|mix|edit|rework|bootleg|mashup|version|vip|dub).*?[\]\)]',
+        # Match trailing remix info
+        r'\s+[–-]\s+.*?(?:remix|rmx|mix|edit|rework|bootleg|mashup|version|vip|dub).*?$',
+        # Match leading remix info
+        r'^.*?(?:remix|rmx|mix|edit|rework|bootleg|mashup|version|vip|dub)\s+[–-]\s+',
+    ]
+
+    cleaned = title
+    for pattern in remix_patterns:
+        cleaned = re.sub(pattern, '', cleaned, flags=re.IGNORECASE)
+
+    # Clean up extra whitespace and punctuation
+    cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+    cleaned = re.sub(r'\s+[–-]\s*$', '', cleaned)  # Remove trailing dash
+    cleaned = re.sub(r'^\s*[–-]\s+', '', cleaned)  # Remove leading dash
+
+    return cleaned if cleaned else title  # Return original if cleaning resulted in empty string
+
+def is_karaoke_track(track_name, artist_name, album_name):
+    """
+    Detect if a track is likely a karaoke, backing track, or tribute version.
+
+    Args:
+        track_name: Track title
+        artist_name: Artist name
+        album_name: Album name
+
+    Returns:
+        True if track appears to be karaoke/backing track/tribute
+    """
+    # Normalize to lowercase for case-insensitive matching
+    track_lower = track_name.lower() if track_name else ""
+    artist_lower = artist_name.lower() if artist_name else ""
+    album_lower = album_name.lower() if album_name else ""
+
+    # Karaoke/backing track indicators in album names
+    karaoke_album_indicators = [
+        "karaoke", "backing track", "instrumental", "tribute",
+        "in the style of", "sound-alike", "cover", "re-recorded",
+        "originally performed by", "hits", "sing-along"
+    ]
+
+    # Karaoke/backing track indicators in track names
+    karaoke_track_indicators = [
+        "karaoke", "instrumental", "backing track", "sound-alike",
+        "in the style of", "tribute", "cover version"
+    ]
+
+    # Karaoke/backing track artist indicators
+    karaoke_artist_indicators = [
+        "karaoke", "backing track", "tribute", "sound-alike",
+        "originally performed", "cover"
+    ]
+
+    # Check album name for karaoke indicators
+    for indicator in karaoke_album_indicators:
+        if indicator in album_lower:
+            logger.debug(f"Karaoke detected (album): '{track_name}' from '{album_name}' (indicator: '{indicator}')")
+            return True
+
+    # Check track name for karaoke indicators
+    for indicator in karaoke_track_indicators:
+        if indicator in track_lower:
+            logger.debug(f"Karaoke detected (track): '{track_name}' (indicator: '{indicator}')")
+            return True
+
+    # Check artist name for karaoke indicators
+    for indicator in karaoke_artist_indicators:
+        if indicator in artist_lower:
+            logger.debug(f"Karaoke detected (artist): '{track_name}' by '{artist_name}' (indicator: '{indicator}')")
+            return True
+
+    return False
+
 def optimized_track_search_strategies(sp, artist, title, album=None, max_strategies=5):
     """
     Optimized track search using fewer, more effective strategies with higher limits.
@@ -971,10 +1063,15 @@ def optimized_track_search_strategies(sp, artist, title, album=None, max_strateg
     
     if album and title:
         strategies.append(f'album:"{album}" track:"{title}"')
-    
+
     # Simple fallback
     strategies.append(f'"{artist} {title}"')
-    
+
+    # Swap strategy - for cases where artist and title are reversed in metadata
+    # Only try if artist doesn't contain ' - ' (prevents double-swapping issues)
+    if artist and title and ' - ' not in artist:
+        strategies.append(f'artist:"{title}" track:"{artist}"')
+
     # Limit to max_strategies
     strategies = strategies[:max_strategies]
     
@@ -1004,6 +1101,26 @@ def optimized_track_search_strategies(sp, artist, title, album=None, max_strateg
                 result_album=track_album,
                 search_album=album or ""
             )
+
+            # Special handling for swap strategy results
+            # If this came from swap strategy, verify the swap is actually correct
+            swap_strategy = f'artist:"{title}" track:"{artist}"'
+            if swap_strategy in strategy:
+                # Check if artist/title are actually swapped in the result
+                # The search had title as artist and artist as title
+                # So we expect: result artist matches our title, result title matches our artist
+                title_to_artist_score = fuzz.ratio(title.lower(), track_artists_str.lower())
+                artist_to_title_score = fuzz.ratio(artist.lower(), track_name.lower())
+
+                # Only accept if swap makes sense (high scores in both directions)
+                if title_to_artist_score > 60 and artist_to_title_score > 60:
+                    # Apply slight penalty for swapped metadata (metadata quality issue)
+                    score = score * 0.95
+                    logger.debug(f"Detected swapped metadata: '{artist} - {title}' -> '{track_name}' by {track_artists_str} (swap validated)")
+                else:
+                    # Not actually a swap, skip this result
+                    logger.debug(f"Swap strategy false positive, skipping: {track_name} by {track_artists_str}")
+                    continue
 
             if score > best_score:
                 best_score = score
@@ -1176,6 +1293,11 @@ def consolidated_track_score(search_artist, search_title, result_artist, result_
     result_has_version = any(kw in result_title.lower() for kw in version_keywords)
     if search_has_version != result_has_version:
         penalty += 30
+
+    # Karaoke/backing track penalty (-80, very heavy to filter out karaoke versions)
+    if is_karaoke_track(result_title, result_artist, result_album):
+        penalty += 80
+        logger.debug(f"Applied karaoke penalty to: '{result_title}' by {result_artist} from '{result_album}'")
 
     # Different primary artist penalty (-30, major issue)
     if artist_score < 50:  # Very different artists

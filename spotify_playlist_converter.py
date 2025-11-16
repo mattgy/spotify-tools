@@ -1527,9 +1527,11 @@ def search_track_on_spotify(sp, artist, title, album=None):
     Search for a track on Spotify with enhanced fuzzy matching.
     Uses caching to avoid redundant API calls.
     """
+    from spotify_utils import optimized_track_search_strategies, strip_remix_tags
+
     if not title:
         return None
-    
+
     # Create a cache key based on artist, album and title using MD5 hash
     # This prevents issues with long names, special characters, and URL encoding
     import hashlib
@@ -1778,6 +1780,33 @@ def search_track_on_spotify(sp, artist, title, album=None):
     # If we have no candidates, cache the negative result and return None
     if not candidates:
         logger.debug("No candidates found for this track")
+
+        # Remix fallback: if this is a remix and we can't find it, try the original
+        remix_keywords = ['remix', 'rmx', 'mix', 'edit', 'rework', 'bootleg', 'mashup', 'vip', 'dub']
+        is_remix = any(keyword in title.lower() for keyword in remix_keywords)
+
+        if is_remix:
+            original_title = strip_remix_tags(title)
+
+            # Only try if we actually stripped something
+            if original_title != title and original_title:
+                logger.debug(f"Remix not found, trying original version: {original_title}")
+
+                # Recursively search for the original (but prevent infinite loops with a flag)
+                # We'll use a simple approach: search directly without recursive call
+                try:
+                    original_match = optimized_track_search_strategies(sp, artist, original_title, album, max_strategies=6)
+
+                    if original_match and original_match.get('score', 0) >= 60:
+                        # Found the original version
+                        original_match['remix_fallback'] = True
+                        original_match['original_search_title'] = title  # Store what user searched for
+                        logger.info(f"Found original version as fallback: {original_match['name']} (Score: {original_match['score']:.1f})")
+                        # Don't cache this since it's a fallback, user needs to decide
+                        return original_match
+                except Exception as e:
+                    logger.debug(f"Error searching for original version: {e}")
+
         # Save negative cache entry to prevent retry spam for tracks that don't exist
         # Uses a marker so we can distinguish negative results from positive ones
         negative_cache_entry = {
@@ -2458,9 +2487,15 @@ def process_playlist_file(sp, file_path, user_id, confidence_threshold, min_scor
                     
                     print(f"\nManual Review Required:")
                     print(f"Original: {original_line}")
-                    print(f"Match: {', '.join(match['artists'])} - {match['name']} (Score: {match['score']:.1f})")
-                    
-                    choice = input("Accept this match? (y/n/s - y:yes, n:no, s:search manually): ").lower().strip()
+
+                    # Check if this is a remix fallback (original offered when remix not found)
+                    if match.get('remix_fallback'):
+                        print(f"{Fore.YELLOW}⚠️  Specific remix not found: {match.get('original_search_title', 'unknown')}")
+                        print(f"{Fore.GREEN}✓ Found original version instead: {', '.join(match['artists'])} - {match['name']} (Score: {match['score']:.1f})")
+                        choice = input("Accept original version? (y/n/s - y:yes, n:no, s:search manually): ").lower().strip()
+                    else:
+                        print(f"Match: {', '.join(match['artists'])} - {match['name']} (Score: {match['score']:.1f})")
+                        choice = input("Accept this match? (y/n/s - y:yes, n:no, s:search manually): ").lower().strip()
                     if choice == 'y':
                         spotify_tracks.append(match)
                         save_user_decision(track, match, 'y')
@@ -2932,14 +2967,14 @@ def clear_processed_playlist_cache():
         clear_cache(cache['name'])
     print(f"{Fore.GREEN}✅ Cleared {len(converter_caches)} converter cache entries.")
 
-def process_playlists_parallel(sp, playlist_files, user_id, auto_threshold=85, max_workers=3):
+def process_playlists_parallel(sp, playlist_files, user_id, auto_threshold=85, use_ai_boost=False, max_workers=3):
     """Process multiple playlists in parallel for auto mode."""
     results = []
-    
+
     def process_single_playlist(file_path):
         """Helper to process a single playlist."""
         try:
-            return process_playlist_file_auto_mode(sp, file_path, user_id, auto_threshold)
+            return process_playlist_file_auto_mode(sp, file_path, user_id, auto_threshold, use_ai_boost)
         except Exception as e:
             logger.error(f"Error processing {file_path}: {e}")
             return (0, 0, 0)
@@ -2966,43 +3001,83 @@ def process_playlists_parallel(sp, playlist_files, user_id, auto_threshold=85, m
     
     return results
 
-def process_playlist_file_auto_mode(sp, file_path, user_id, auto_threshold=85):
+def process_playlist_file_auto_mode(sp, file_path, user_id, auto_threshold=85, use_ai_boost=False):
     """Process a playlist file in fully autonomous mode - no user interaction."""
     logger.info(f"[AUTO] Processing playlist: {file_path}")
-    
+
     # Extract playlist name from file name
     playlist_name = os.path.splitext(os.path.basename(file_path))[0]
-    
+
     # Parse the playlist file
     tracks = parse_playlist_file(file_path)
-    
+
     if not tracks:
         logger.warning(f"[AUTO] No tracks found in playlist: {file_path}")
         return 0, 0, 0
-    
+
     logger.info(f"[AUTO] Found {len(tracks)} tracks in playlist '{playlist_name}'")
-    
+
     # Search for tracks on Spotify with learning patterns
     spotify_tracks = []
     skipped_tracks = []
-    
+    ai_boost_count = 0
+    ai_boost_limit = 50  # Cost control
+
     for track in tracks:
         # Apply learning patterns first
         learned_artist, learned_title = apply_learning_patterns(track['artist'], track['title'])
-        
+
         # Search with learned patterns
         match = search_track_on_spotify(sp, learned_artist, learned_title, track.get('album'))
-        
+
         # If no match with learned patterns, try original
         if not match and (learned_artist != track['artist'] or learned_title != track['title']):
             match = search_track_on_spotify(sp, track['artist'], track['title'], track.get('album'))
-        
-        if match and match['score'] >= auto_threshold:
+
+        score = match.get('score', 0) if match else 0
+
+        # Try AI boost for medium-confidence matches or no matches
+        if use_ai_boost and ai_boost_count < ai_boost_limit:
+            if (match and 60 <= score < auto_threshold) or not match:
+                try:
+                    from ai_track_matcher import ai_assisted_search
+                    ai_match = ai_assisted_search(sp, track['artist'], track['title'], track.get('album'), min_confidence=0.7)
+
+                    if ai_match and ai_match.get('score', 0) >= auto_threshold:
+                        ai_match['ai_assisted'] = True
+                        spotify_tracks.append(ai_match)
+                        save_user_decision(track, ai_match, 'y')
+                        ai_boost_count += 1
+                        logger.info(f"[AUTO] AI boosted: {track['artist']} - {track['title']} (score: {ai_match.get('score', 0):.1f})")
+                    elif match and score >= auto_threshold:
+                        # Original match is good enough
+                        spotify_tracks.append(match)
+                        save_user_decision(track, match, 'y')
+                    else:
+                        skipped_tracks.append(track)
+                except Exception as e:
+                    logger.warning(f"[AUTO] AI boost failed: {e}")
+                    # Fall back to original match if good enough
+                    if match and score >= auto_threshold:
+                        spotify_tracks.append(match)
+                        save_user_decision(track, match, 'y')
+                    else:
+                        skipped_tracks.append(track)
+            elif match and score >= auto_threshold:
+                # High confidence match - no AI needed
+                spotify_tracks.append(match)
+                save_user_decision(track, match, 'y')
+            else:
+                skipped_tracks.append(track)
+        elif match and score >= auto_threshold:
+            # AI boost not enabled - use threshold only
             spotify_tracks.append(match)
-            # Save successful match for learning
             save_user_decision(track, match, 'y')
         else:
             skipped_tracks.append(track)
+
+    if ai_boost_count > 0:
+        logger.info(f"[AUTO] AI assisted with {ai_boost_count} tracks in this playlist")
     
     if not spotify_tracks:
         logger.warning(f"[AUTO] No tracks matched above threshold {auto_threshold}. Skipping playlist.")
@@ -3204,6 +3279,110 @@ def find_missing_tracks_in_playlists(sp, file_path, user_id, suggest_threshold=7
             if added_count > 0:
                 print(f"{Fore.GREEN}✅ Added {added_count} additional tracks")
 
+def replace_karaoke_in_playlists(sp, user_id):
+    """
+    Scan user's playlists for karaoke tracks and replace with real versions.
+
+    Args:
+        sp: Authenticated Spotify client
+        user_id: User ID
+    """
+    from spotify_utils import is_karaoke_track
+
+    print(f"\n{Fore.CYAN}{'='*60}")
+    print(f"{Fore.CYAN}KARAOKE REPLACEMENT MODE")
+    print(f"{Fore.CYAN}{'='*60}")
+    print(f"{Fore.WHITE}Scanning playlists for karaoke/backing track versions...")
+    print(f"{Fore.CYAN}{'='*60}\n")
+
+    # Get all user playlists
+    user_playlists = get_user_playlists(sp, user_id)
+
+    total_playlists_scanned = 0
+    total_karaoke_found = 0
+    total_karaoke_replaced = 0
+
+    for playlist in user_playlists:
+        playlist_name = playlist['name']
+        playlist_id = playlist['id']
+
+        # Get all tracks in the playlist
+        tracks = get_playlist_tracks_with_details(sp, playlist_id)
+
+        if not tracks:
+            continue
+
+        total_playlists_scanned += 1
+
+        # Find karaoke tracks
+        karaoke_tracks = []
+        for track_uri, track in tracks.items():
+            track_name = track.get('name', '')
+            artists = track.get('artists', [])
+            artist_name = ', '.join([a['name'] for a in artists]) if artists else ''
+            album = track.get('album', {})
+            album_name = album.get('name', '') if album else ''
+
+            if is_karaoke_track(track_name, artist_name, album_name):
+                karaoke_tracks.append({
+                    'uri': track_uri,
+                    'name': track_name,
+                    'artist': artist_name,
+                    'album': album_name,
+                    'id': track.get('id', '')
+                })
+
+        if karaoke_tracks:
+            total_karaoke_found += len(karaoke_tracks)
+            print(f"\n{Fore.YELLOW}Found {len(karaoke_tracks)} karaoke track(s) in '{playlist_name}':")
+
+            for karaoke in karaoke_tracks:
+                print(f"  • {karaoke['artist']} - {karaoke['name']} (from: {karaoke['album']})")
+
+                # Try to find the real version
+                # Extract clean artist and title (removing karaoke indicators)
+                clean_title = karaoke['name']
+                clean_artist = karaoke['artist']
+
+                # Search for the real version
+                match = search_track_on_spotify(sp, clean_artist, clean_title)
+
+                if match and match.get('score', 0) >= 70:
+                    # Verify it's not also karaoke
+                    match_artists = ', '.join(match.get('artists', []))
+                    match_album = match.get('album', '')
+
+                    if not is_karaoke_track(match['name'], match_artists, match_album):
+                        print(f"    {Fore.GREEN}✓ Found real version: {match_artists} - {match['name']} (from: {match_album})")
+
+                        # Ask user for confirmation
+                        replace = input(f"    Replace karaoke with real version? (y/n): ").strip().lower()
+
+                        if replace == 'y':
+                            try:
+                                # Remove karaoke track
+                                sp.playlist_remove_all_occurrences_of_items(playlist_id, [karaoke['uri']])
+                                # Add real version
+                                sp.playlist_add_items(playlist_id, [match['uri']])
+                                print(f"    {Fore.GREEN}✅ Replaced successfully!")
+                                total_karaoke_replaced += 1
+                            except Exception as e:
+                                print(f"    {Fore.RED}❌ Error replacing track: {e}")
+                        else:
+                            print(f"    {Fore.YELLOW}Skipped")
+                    else:
+                        print(f"    {Fore.YELLOW}⚠ Match is also karaoke, skipping")
+                else:
+                    print(f"    {Fore.RED}✗ Could not find real version")
+
+    print(f"\n{Fore.CYAN}{'='*60}")
+    print(f"{Fore.CYAN}KARAOKE REPLACEMENT SUMMARY")
+    print(f"{Fore.CYAN}{'='*60}")
+    print(f"{Fore.WHITE}Playlists scanned: {total_playlists_scanned}")
+    print(f"{Fore.YELLOW}Karaoke tracks found: {total_karaoke_found}")
+    print(f"{Fore.GREEN}Karaoke tracks replaced: {total_karaoke_replaced}")
+    print(f"{Fore.CYAN}{'='*60}\n")
+
 def main():
     """Main function to run the script."""
     global DUPLICATE_CONFIG
@@ -3227,7 +3406,8 @@ def main():
     parser.add_argument("--auto-remove-duplicates", action="store_true", help="Automatically remove duplicate tracks from playlists")
     parser.add_argument("--keep-duplicates", action="store_true", help="Keep all duplicate tracks (don't remove any)")
     parser.add_argument("--ask-duplicates", action="store_true", help="Ask for each playlist whether to remove duplicates")
-    
+    parser.add_argument("--replace-karaoke", action="store_true", help="Scan playlists for karaoke versions and replace with real versions")
+
     args = parser.parse_args()
     
     # Set up logging level
@@ -3288,6 +3468,8 @@ def main():
         print(f"{Fore.WHITE}• Will create missing playlists automatically")
         print(f"{Fore.WHITE}• Will update existing playlists without duplicates")
         print(f"{Fore.WHITE}• Will apply learned matching patterns")
+        if args.use_ai_boost:
+            print(f"{Fore.GREEN}• AI boost enabled for medium-confidence matches (60-{args.auto_threshold})")
         print(f"{Fore.WHITE}• No user interaction required")
         print(f"{Fore.CYAN}{'='*60}\n")
         
@@ -3318,22 +3500,58 @@ def main():
             
             # Search all unique tracks with progress bar
             track_matches = {}
+            ai_boost_count = 0
+            ai_boost_limit = 50  # Cost control
             search_desc = f"🎵 Searching {len(unique_tracks)} unique tracks across all playlists"
             with create_progress_bar(total=len(unique_tracks), desc=search_desc, unit="track") as pbar:
                 for key, track in unique_tracks.items():
                     # Apply learning patterns
                     learned_artist, learned_title = apply_learning_patterns(track['artist'], track['title'])
-                    
+
                     match = search_track_on_spotify(sp, learned_artist, learned_title, track.get('album'))
                     if not match and (learned_artist != track['artist'] or learned_title != track['title']):
                         match = search_track_on_spotify(sp, track['artist'], track['title'], track.get('album'))
-                    
-                    if match and match['score'] >= args.auto_threshold:
+
+                    score = match.get('score', 0) if match else 0
+
+                    # Try AI boost for medium-confidence matches or no matches
+                    if args.use_ai_boost and ai_boost_count < ai_boost_limit:
+                        if (match and 60 <= score < args.auto_threshold) or not match:
+                            try:
+                                update_progress_bar(pbar, 0, f"🤖 AI boosting: {track['artist'][:30]} - {track['title'][:30]}")
+                                from ai_track_matcher import ai_assisted_search
+                                ai_match = ai_assisted_search(sp, track['artist'], track['title'], track.get('album'), min_confidence=0.7)
+
+                                if ai_match and ai_match.get('score', 0) >= args.auto_threshold:
+                                    ai_match['ai_assisted'] = True
+                                    track_matches[key] = ai_match
+                                    save_user_decision(track, ai_match, 'y')
+                                    ai_boost_count += 1
+                                    logger.info(f"[AUTO] AI boosted: {track['artist']} - {track['title']} (score: {ai_match.get('score', 0):.1f})")
+                                elif match and score >= args.auto_threshold:
+                                    # Original match is good enough
+                                    track_matches[key] = match
+                                    save_user_decision(track, match, 'y')
+                            except Exception as e:
+                                logger.warning(f"[AUTO] AI boost failed: {e}")
+                                # Fall back to original match if good enough
+                                if match and score >= args.auto_threshold:
+                                    track_matches[key] = match
+                                    save_user_decision(track, match, 'y')
+                        elif match and score >= args.auto_threshold:
+                            # High confidence match - no AI needed
+                            track_matches[key] = match
+                            save_user_decision(track, match, 'y')
+                    elif match and score >= args.auto_threshold:
+                        # AI boost not enabled - use threshold only
                         track_matches[key] = match
                         save_user_decision(track, match, 'y')
-                    
+
                     update_progress_bar(pbar, 1)
                     time.sleep(0.05)  # Rate limiting
+
+            if ai_boost_count > 0:
+                print(f"{Fore.GREEN}🤖 AI assisted with {ai_boost_count} tracks")
             
             # Process each playlist with the matches
             total_processed = 0
@@ -3373,9 +3591,9 @@ def main():
         else:
             # Parallel processing for fewer playlists
             print(f"{Fore.CYAN}Processing {len(playlist_files)} playlists in parallel...")
-            
+
             # Process playlists in parallel
-            results = process_playlists_parallel(sp, playlist_files, user_id, args.auto_threshold, max_workers=min(3, len(playlist_files)))
+            results = process_playlists_parallel(sp, playlist_files, user_id, args.auto_threshold, args.use_ai_boost, max_workers=min(3, len(playlist_files)))
             
             # Aggregate results
             total_processed = 0
@@ -3407,7 +3625,12 @@ def main():
         
         print(f"{Fore.GREEN}✅ Auto-add completed successfully!")
         return
-    
+
+    elif args.replace_karaoke:
+        # Karaoke replacement mode
+        replace_karaoke_in_playlists(sp, user_id)
+        return
+
     elif args.missing_tracks_mode:
         # Missing tracks mode
         print(f"\n{Fore.CYAN}{'='*60}")

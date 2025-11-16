@@ -382,7 +382,7 @@ class TestErrorHandling(unittest.TestCase):
         self.assertEqual(result['path'], '')
     
     @patch('spotify_playlist_converter.save_to_cache')
-    @patch('spotify_playlist_converter.optimized_track_search_strategies')
+    @patch('spotify_utils.optimized_track_search_strategies')
     @patch('spotify_playlist_converter.load_from_cache')
     def test_handle_corrupted_cache(self, mock_load_cache, mock_optimized_search, mock_save_cache):
         """Test handling of corrupted cache data."""

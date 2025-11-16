@@ -249,13 +249,12 @@ If you cannot identify the track with reasonable confidence, return:
             "anthropic-version": "2023-06-01",
             "content-type": "application/json"
         }
-        
+
         prompt = self._create_prompt(artist, title, album)
-        
+
         payload = {
-            "model": "claude-3-sonnet-20240229",
+            "model": "claude-3-5-sonnet-20241022",
             "max_tokens": 512,
-            "temperature": 0.2,
             "messages": [
                 {"role": "user", "content": prompt}
             ]
@@ -264,15 +263,22 @@ If you cannot identify the track with reasonable confidence, return:
         try:
             response = requests.post(url, headers=headers, json=payload, timeout=30)
             response.raise_for_status()
-            
+
             data = response.json()
             if 'content' in data and data['content']:
                 text = data['content'][0]['text']
                 return self._parse_ai_response(text)
-                
+
+        except requests.exceptions.HTTPError as e:
+            # Log the actual API response for debugging
+            try:
+                error_detail = response.json()
+                logger.error(f"Anthropic API error: {e}\nResponse: {error_detail}")
+            except:
+                logger.error(f"Anthropic API error: {e}\nStatus: {response.status_code}")
         except Exception as e:
             logger.error(f"Anthropic API error: {e}")
-            
+
         return None
     
     def _query_perplexity(self, artist: str, title: str, album: Optional[str] = None) -> Optional[Dict]:

@@ -140,17 +140,35 @@ FILENAME_CLEANUP_PATTERNS = [
 ]
 
 def create_decision_cache_key(track_info, match_info):
-    """Create a cache key for user decisions based on track and match info."""
-    # Use track path, artist, title and matched track ID for uniqueness
-    track_path = track_info.get('path', '')
+    """Create a stable, collision-free cache key for user decisions."""
+    import hashlib
+
+    # Use stable identifiers, not file paths (which can change)
     track_artist = track_info.get('artist', '').lower().strip()
     track_title = track_info.get('title', '').lower().strip()
     match_id = match_info.get('id', '') if match_info else ''
-    
-    # Create a stable key
-    key_parts = [track_path, track_artist, track_title, match_id]
-    cache_key = "_".join(str(part) for part in key_parts if part)
-    return f"user_decision_{hash(cache_key) % 1000000}"  # Use hash to keep key manageable
+
+    # Create deterministic key using MD5 (stable across sessions, no collisions)
+    key_parts = f"{track_artist}|{track_title}|{match_id}"
+    cache_hash = hashlib.md5(key_parts.encode()).hexdigest()
+
+    # Include version for cache invalidation if format changes
+    version = "v1"
+    return f"user_decision_{version}_{cache_hash}"
+
+def create_track_only_cache_key(track_info):
+    """Create a cache key for track-only lookups (no match_id)."""
+    import hashlib
+
+    track_artist = track_info.get('artist', '').lower().strip()
+    track_title = track_info.get('title', '').lower().strip()
+
+    # Create deterministic key using MD5
+    key_parts = f"{track_artist}|{track_title}"
+    cache_hash = hashlib.md5(key_parts.encode()).hexdigest()
+
+    version = "v1"
+    return f"track_decision_{version}_{cache_hash}"
 
 def save_user_decision(track_info, match_info, decision, manual_search_used=False):
     """Save a user decision to cache for learning."""
@@ -174,7 +192,12 @@ def save_user_decision(track_info, match_info, decision, manual_search_used=Fals
         'timestamp': time.time()
     }
     save_to_cache(decision_data, cache_key, force_expire=False)
-    
+
+    # Also save track-only decision for fast lookups without match_id
+    # This prevents expensive linear scans through all cache files
+    track_only_key = create_track_only_cache_key(track_info)
+    save_to_cache(decision_data, track_only_key, force_expire=False)
+
     # Also save to learning cache for pattern analysis
     if decision == 'y' and match_info:
         save_to_learning_cache(track_info, match_info, manual_search_used)
@@ -269,20 +292,12 @@ def get_cached_decision(track_info, match_info=None):
         if cached_data:
             return cached_data
     else:
-        # Look for any decision for this track
-        from cache_utils import list_caches
-        caches = list_caches()
-        
-        # Create pattern to match this track
-        track_key = f"{track_info.get('artist', '').lower()}||{track_info.get('title', '').lower()}"
-        track_hash = hashlib.md5(track_key.encode()).hexdigest()[:8]
-        
-        for cache in caches:
-            if cache['name'].startswith(f'user_decision_{track_hash}_'):
-                cached_data = load_from_cache(cache['name'], 30 * 24 * 60 * 60)
-                if cached_data:
-                    return cached_data
-    
+        # Use direct track-only key for O(1) lookup instead of linear scan
+        track_only_key = create_track_only_cache_key(track_info)
+        cached_data = load_from_cache(track_only_key, 30 * 24 * 60 * 60)
+        if cached_data:
+            return cached_data
+
     return None
 
 def check_and_use_previous_session():
@@ -1385,20 +1400,44 @@ def normalize_string(s):
 
     return s
 
+def normalize_unicode(text):
+    """Normalize Unicode characters to ASCII equivalents."""
+    import unicodedata
+
+    if not text:
+        return text
+
+    # Decompose accented characters (NFD normalization)
+    nfd = unicodedata.normalize('NFD', text)
+    # Remove combining marks (accents)
+    result = ''.join(c for c in nfd if unicodedata.category(c) != 'Mn')
+
+    # Replace special dashes with regular hyphen
+    result = result.replace('–', '-').replace('—', '-')  # en-dash, em-dash
+    result = result.replace('‐', '-').replace('‑', '-')  # hyphen, non-breaking hyphen
+
+    # Remove emoji (characters in emoji ranges)
+    result = ''.join(c for c in result if ord(c) < 0x1F600 or ord(c) > 0x1F64F)
+
+    return result
+
 def normalize_for_variations(text):
-    """Apply common variations normalization."""
+    """Apply common variations normalization with Unicode handling."""
     if not text:
         return ""
-    
+
+    # Normalize Unicode characters first
+    text = normalize_unicode(text)
+
     # Convert to lowercase
     text = text.lower()
-    
+
     # Apply common variations
     for variant, normalized in COMMON_VARIATIONS.items():
         # Use word boundaries to avoid partial replacements
         pattern = r'\b' + re.escape(variant) + r'\b'
         text = re.sub(pattern, normalized, text)
-    
+
     return text
 
 def remove_track_numbers(text):
@@ -1541,8 +1580,14 @@ def search_track_on_spotify(sp, artist, title, album=None):
     clean_title = normalize_for_variations(title) if title else "none"
     clean_album = normalize_for_variations(album) if album else "none"
 
-    # Create a stable string representation
-    cache_string = f"{clean_artist}|{clean_title}|{clean_album}"
+    # Extract version info for version-aware caching
+    # This prevents "Song" and "Song (Remix)" from colliding in cache
+    version_keywords = ['remix', 'rmx', 'mix', 'live', 'acoustic', 'demo', 'radio edit', 'extended', 'vip', 'bootleg', 'mashup']
+    title_lower = title.lower() if title else ""
+    version_type = next((kw for kw in version_keywords if kw in title_lower), "none")
+
+    # Create a stable string representation with version info
+    cache_string = f"{clean_artist}|{clean_title}|{clean_album}|{version_type}"
 
     # Hash it for a short, safe cache key
     # Use MD5 (fast, good enough for cache keys, not security)
@@ -1554,12 +1599,15 @@ def search_track_on_spotify(sp, artist, title, album=None):
     cache_key = f"track_search_{algorithm_version}_{cache_hash}"
 
     # Try to load from cache first
-    cached_result = load_from_cache(cache_key, CACHE_EXPIRATION['medium'])
+    # Use 'long' expiration (7 days) for track searches since:
+    # - Track metadata doesn't change often (positive cache)
+    # - Negative results might become available later (7-day retry window)
+    cached_result = load_from_cache(cache_key, CACHE_EXPIRATION['long'])
     if cached_result:
         # Check if this is a negative cache entry (track not found)
         # Handle corrupted cache gracefully - negative cache entries must be dicts
         if isinstance(cached_result, dict) and cached_result.get('__negative_cache__'):
-            logger.debug(f"Using cached negative result (not found) for '{artist} - {title}'")
+            logger.debug(f"Using cached negative result (not found) for '{artist} - {title}' (version: {cached_result.get('version_type', 'unknown')})")
             return None
         # Validate cache entry is a dict (not corrupted string data)
         if not isinstance(cached_result, dict):
@@ -1604,7 +1652,10 @@ def search_track_on_spotify(sp, artist, title, album=None):
         artist = artist_main
     if title_main:
         title = title_main
-    
+
+    # Apply learned patterns to improve matching
+    artist, title = apply_learning_patterns(artist, title)
+
     # Log the search parameters
     logger.debug(f"Searching for: Artist='{artist}', Album='{album}', Title='{title}'")
 
@@ -1809,12 +1860,15 @@ def search_track_on_spotify(sp, artist, title, album=None):
 
         # Save negative cache entry to prevent retry spam for tracks that don't exist
         # Uses a marker so we can distinguish negative results from positive ones
+        # Auto-expires after 7 days (via CACHE_EXPIRATION['long']) in case track becomes available later
         negative_cache_entry = {
             '__negative_cache__': True,
             'timestamp': time.time(),
-            'search_params': {'artist': artist, 'title': title, 'album': album}
+            'search_params': {'artist': artist, 'title': title, 'album': album},
+            'version_type': version_type  # Track which version this was for (remix, live, etc.)
         }
         save_to_cache(negative_cache_entry, cache_key)
+        logger.debug(f"Cached negative result for '{artist} - {title}' (version: {version_type}, expires in 7 days)")
         return None
     
     # Remove duplicates (same track ID)
@@ -2075,7 +2129,55 @@ def create_or_update_spotify_playlist(sp, playlist_name, track_uris, user_id):
         # Get existing tracks
         existing_tracks = get_playlist_tracks(sp, playlist_id)
         logger.info(f"Existing playlist has {len(existing_tracks)} tracks")
-        
+
+        # Find orphaned tracks (in Spotify but not in local playlist)
+        orphaned_tracks = [uri for uri in existing_tracks if uri not in track_uris]
+
+        if orphaned_tracks:
+            print(f"\n{Fore.YELLOW}⚠️  Found {len(orphaned_tracks)} track(s) in Spotify playlist '{playlist_name}' that are NOT in the local playlist file:")
+
+            # Get track details for orphaned tracks
+            orphaned_details = []
+            for uri in orphaned_tracks[:10]:  # Show first 10
+                try:
+                    track_id = uri.split(':')[-1]
+                    track = sp.track(track_id)
+                    orphaned_details.append(track)
+                    artists = ', '.join([a['name'] for a in track['artists']])
+                    print(f"  • {track['name']} by {artists}")
+                except:
+                    pass
+
+            if len(orphaned_tracks) > 10:
+                print(f"  ... and {len(orphaned_tracks) - 10} more")
+
+            print(f"\n{Fore.CYAN}These tracks exist in your Spotify playlist but are not in your local playlist file.")
+            print(f"Options:")
+            print(f"1. Remove these tracks from Spotify playlist (sync with local)")
+            print(f"2. Keep them (they might have been added manually)")
+
+            choice = input(f"\n{Fore.CYAN}Choose option (1-2): ").strip()
+
+            if choice == "1":
+                # Remove orphaned tracks
+                print(f"{Fore.YELLOW}Removing {len(orphaned_tracks)} orphaned track(s)...")
+                try:
+                    # Remove in batches of 100 (Spotify API limit)
+                    for i in range(0, len(orphaned_tracks), 100):
+                        batch = orphaned_tracks[i:i+100]
+                        # Create snapshot with positions for removal
+                        sp.playlist_remove_all_occurrences_of_items(playlist_id, batch)
+
+                    print(f"{Fore.GREEN}✅ Removed {len(orphaned_tracks)} track(s) from Spotify playlist")
+
+                    # Update existing_tracks list
+                    existing_tracks = [uri for uri in existing_tracks if uri not in orphaned_tracks]
+                    logger.info(f"Updated playlist now has {len(existing_tracks)} tracks")
+                except Exception as e:
+                    print(f"{Fore.RED}✗ Error removing tracks: {e}")
+            else:
+                print(f"{Fore.YELLOW}Keeping orphaned tracks in Spotify playlist")
+
         # Find tracks to add (tracks in track_uris but not in existing_tracks)
         tracks_to_add = [uri for uri in track_uris if uri not in existing_tracks]
         duplicates_skipped = len(track_uris) - len(tracks_to_add)
@@ -3395,7 +3497,10 @@ def main():
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     parser.add_argument("--batch", action="store_true", help="Batch mode: auto-accept high confidence matches")
     parser.add_argument("--auto-threshold", type=int, default=85, help="Auto-accept threshold for batch mode (default: 85)")
-    parser.add_argument("--use-ai-boost", action="store_true", help="Use AI to boost medium-confidence matches (60-84 score) in batch mode")
+    parser.add_argument("--use-ai-boost", action="store_true",
+                        help="Enable AI-assisted matching: Uses AI models (Claude/Gemini/GPT-4) to help identify "
+                             "tracks with medium confidence (60-84 score) or when regular search fails. "
+                             "Improves accuracy but may incur API costs. Max 50 AI requests per batch.")
     parser.add_argument("--max-playlists", type=int, help="Maximum number of playlists to process")
     
     # New mode arguments
@@ -3469,7 +3574,10 @@ def main():
         print(f"{Fore.WHITE}• Will update existing playlists without duplicates")
         print(f"{Fore.WHITE}• Will apply learned matching patterns")
         if args.use_ai_boost:
-            print(f"{Fore.GREEN}• AI boost enabled for medium-confidence matches (60-{args.auto_threshold})")
+            print(f"{Fore.GREEN}• 🤖 AI Boost ENABLED:")
+            print(f"{Fore.GREEN}  - Uses AI models to identify hard-to-find tracks")
+            print(f"{Fore.GREEN}  - Activates for scores 60-{args.auto_threshold} or when no match found")
+            print(f"{Fore.GREEN}  - Limit: 50 AI requests per batch to control costs")
         print(f"{Fore.WHITE}• No user interaction required")
         print(f"{Fore.CYAN}{'='*60}\n")
         
@@ -3757,7 +3865,12 @@ def main():
         print(f"  • {auto_threshold}+ = Auto-accept")
         print(f"  • {manual_threshold}-{auto_threshold-1} = Manual review")
         print(f"  • <{manual_threshold} = Skip")
-        
+        if args.use_ai_boost:
+            print(f"\n🤖 AI Boost ENABLED:")
+            print(f"  • Uses AI to identify tracks with scores 60-{auto_threshold-1}")
+            print(f"  • Also tries AI when regular search finds nothing")
+            print(f"  • Max 50 AI requests per batch (cost control)")
+
         print("="*60)
     else:
         # For batch mode or when no interactive selection, use command line threshold

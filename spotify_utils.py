@@ -1026,6 +1026,39 @@ def is_karaoke_track(track_name, artist_name, album_name):
 
     return False
 
+def _get_strategy_name(query, idx):
+    """Convert search query to human-readable strategy name."""
+    # Parse the query to identify strategy type
+    if 'artist:' in query and 'album:' in query and 'track:' in query:
+        return "artist+album+track"
+    elif 'album:' in query and 'track:' in query:
+        return "album+track"
+    elif 'artist:' in query and 'track:' in query:
+        # Check if this is a swap strategy
+        if query.count('artist:"') > 0 and query.count('track:"') > 0:
+            # Extract values to detect swap
+            parts = query.split('"')
+            if len(parts) >= 4:
+                artist_val = parts[1]
+                track_val = parts[3]
+                # This is a heuristic - swap strategies have unusual artist/track combos
+                return "swap-search"
+        return "artist+track"
+    elif query.count('"') == 2 and ' ' in query.replace('"', ''):
+        # Two quoted parts like "artist" "title"
+        return "quoted-pair"
+    elif query.count('"') == 1:
+        # Single search term
+        if 'track:' in query:
+            return "track-only"
+        elif 'artist:' in query:
+            return "artist-only"
+        else:
+            # Combined "artist title" or title-only
+            return "combined" if ' ' in query.replace('"', '') else "title-only"
+    else:
+        return f"strategy-{idx+1}"
+
 def optimized_track_search_strategies(sp, artist, title, album=None, max_strategies=7):
     """
     Optimized track search using fewer, more effective strategies with higher limits.
@@ -1052,29 +1085,47 @@ def optimized_track_search_strategies(sp, artist, title, album=None, max_strateg
         return cached_result
     
     # Optimized search strategies (fewer, more effective)
+    # Ordered by specificity: most specific first
     strategies = []
-    
-    if artist and album and title:
-        strategies.append(f'artist:"{artist}" album:"{album}" track:"{title}"')
-    
-    if artist and title:
-        strategies.append(f'artist:"{artist}" track:"{title}"')
-        strategies.append(f'"{artist}" "{title}"')
-    
-    if album and title:
-        strategies.append(f'album:"{album}" track:"{title}"')
+
+    # Special handling for Various Artists compilations
+    various_artists = artist and artist.lower() in ['various', 'various artists', 'va']
+
+    if various_artists:
+        # For compilations, prioritize album+track over artist
+        if album and title:
+            strategies.append(f'album:"{album}" track:"{title}"')
+        if title:
+            strategies.append(f'"{title}"')  # Title-only for unique tracks
+    else:
+        # Normal artist-based search
+        if artist and album and title:
+            strategies.append(f'artist:"{artist}" album:"{album}" track:"{title}"')
+
+        # Album+track should come early when album is known
+        if album and title:
+            strategies.append(f'album:"{album}" track:"{title}"')
+
+        if artist and title:
+            strategies.append(f'artist:"{artist}" track:"{title}"')
+            strategies.append(f'"{artist}" "{title}"')
 
     # Simple fallback
-    strategies.append(f'"{artist} {title}"')
+    if artist and title:
+        strategies.append(f'"{artist} {title}"')
+
+    # Title-only search for unique titles
+    if title:
+        strategies.append(f'"{title}"')
 
     # Artist name spacing variation - for cases like "Soap Kills" vs "Soapkills"
-    if artist and title and ' ' in artist:
+    if artist and title and ' ' in artist and not various_artists:
         artist_no_space = artist.replace(' ', '')
         strategies.append(f'artist:"{artist_no_space}" track:"{title}"')
 
     # Swap strategy - for cases where artist and title are reversed in metadata
     # Only try if artist doesn't contain ' - ' (prevents double-swapping issues)
-    if artist and title and ' - ' not in artist:
+    if artist and title and ' - ' not in artist and not various_artists:
         strategies.append(f'artist:"{title}" track:"{artist}"')
 
     # Limit to max_strategies
@@ -1082,13 +1133,14 @@ def optimized_track_search_strategies(sp, artist, title, album=None, max_strateg
     
     # Use batch search for all strategies
     search_results = batch_search_tracks(sp, strategies, show_progress=False, cache_expiration=60*60)
-    
+
     # Find best match across all strategies using fuzzy matching
     from rapidfuzz import fuzz
     best_match = None
     best_score = 0
+    best_strategy = None
 
-    for strategy, results in search_results.items():
+    for idx, (strategy, results) in enumerate(search_results.items()):
         tracks = results.get('tracks', {}).get('items', [])
 
         for track in tracks:
@@ -1119,8 +1171,8 @@ def optimized_track_search_strategies(sp, artist, title, album=None, max_strateg
 
                 # Only accept if swap makes sense (high scores in both directions)
                 if title_to_artist_score > 60 and artist_to_title_score > 60:
-                    # Apply slight penalty for swapped metadata (metadata quality issue)
-                    score = score * 0.95
+                    # Apply penalty for swapped metadata (significant data quality issue)
+                    score = score * 0.85  # 15% penalty for swapped metadata
                     logger.debug(f"Detected swapped metadata: '{artist} - {title}' -> '{track_name}' by {track_artists_str} (swap validated)")
                 else:
                     # Not actually a swap, skip this result
@@ -1129,15 +1181,23 @@ def optimized_track_search_strategies(sp, artist, title, album=None, max_strateg
 
             if score > best_score:
                 best_score = score
+                # Create human-readable strategy name for lineage tracking
+                strategy_name = _get_strategy_name(strategy, idx)
+                best_strategy = strategy_name
                 best_match = {
                     'id': track['id'],
                     'name': track['name'],
                     'artists': [artist['name'] for artist in track['artists']],
                     'album': track['album']['name'] if track.get('album') else '',
                     'uri': track['uri'],
-                    'score': score
+                    'score': score,
+                    'strategy': strategy_name  # Track which strategy found this match
                 }
     
+    # Log which strategy found the match for debugging
+    if best_match and best_strategy:
+        logger.debug(f"Found match via strategy '{best_strategy}': {best_match['name']} by {', '.join(best_match['artists'])} (score: {best_score:.1f})")
+
     # Cache result
     save_to_cache(best_match, cache_key)
 
@@ -1262,6 +1322,13 @@ def consolidated_track_score(search_artist, search_title, result_artist, result_
             fuzz.partial_ratio(norm_search_album, norm_result_album)
         ]
         album_score = max(album_scores)
+    elif norm_search_album or norm_result_album:
+        # Partial credit when only one side has album info
+        # This helps when metadata is incomplete on one side
+        if norm_search_album:
+            album_score = 40  # Partial credit for search having album
+        else:
+            album_score = 30  # Partial credit for result having album
 
     # === BONUSES ===
     bonus = 0
@@ -1277,27 +1344,63 @@ def consolidated_track_score(search_artist, search_title, result_artist, result_
         if feat_score > 70:
             bonus += 10
 
-    # Substring match bonuses (smaller than before)
-    if norm_search_artist in norm_result_artist or norm_result_artist in norm_search_artist:
-        bonus += 5
-    if norm_search_title in norm_result_title or norm_result_title in norm_search_title:
-        bonus += 5
+    # Stronger substring match bonuses (length-weighted)
+    # Title substring matching
+    if norm_search_title in norm_result_title:
+        # Our search title is contained in result
+        length_ratio = len(norm_search_title) / len(norm_result_title) if norm_result_title else 0
+        bonus += 15 if length_ratio > 0.7 else 10
+    elif norm_result_title in norm_search_title:
+        bonus += 10
+
+    # Artist substring matching
+    if norm_search_artist in norm_result_artist:
+        length_ratio = len(norm_search_artist) / len(norm_result_artist) if norm_result_artist else 0
+        bonus += 12 if length_ratio > 0.7 else 8
+    elif norm_result_artist in norm_search_artist:
+        bonus += 8
 
     # === PENALTIES ===
     penalty = 0
 
-    # Remix mismatch penalty (-40, very strong)
-    search_is_remix = 'remix' in search_title.lower()
-    result_is_remix = 'remix' in result_title.lower()
-    if search_is_remix != result_is_remix:
-        penalty += 40
+    # Smarter remix mismatch penalty
+    remix_keywords = ['remix', 'rmx', 'mix', 'dub', 'vip', 'bootleg', 'mashup']
+    version_keywords_soft = ['radio edit', 'extended mix', 'version']
 
-    # Version mismatch penalty (-30)
-    version_keywords = ['live', 'acoustic', 'demo', 'alternate', 'radio edit', 'unplugged']
-    search_has_version = any(kw in search_title.lower() for kw in version_keywords)
-    result_has_version = any(kw in result_title.lower() for kw in version_keywords)
-    if search_has_version != result_has_version:
-        penalty += 30
+    search_is_remix = any(kw in search_title.lower() for kw in remix_keywords)
+    result_is_remix = any(kw in result_title.lower() for kw in remix_keywords)
+
+    if search_is_remix != result_is_remix:
+        # Check if both are just version variants (less severe)
+        search_has_version = any(kw in search_title.lower() for kw in version_keywords_soft)
+        result_has_version = any(kw in result_title.lower() for kw in version_keywords_soft)
+
+        if search_has_version or result_has_version:
+            penalty += 20  # Lighter penalty for version mismatches
+        else:
+            penalty += 40  # Heavier penalty for remix mismatches
+
+    # Version-aware mismatch penalty
+    version_categories = {
+        'major': ['live', 'acoustic'],           # Major version changes
+        'minor': ['demo', 'alternate'],          # Minor variations
+        'edit': ['radio edit', 'unplugged']      # Edit variants
+    }
+
+    def get_version_type(title):
+        for vtype, keywords in version_categories.items():
+            if any(kw in title.lower() for kw in keywords):
+                return vtype
+        return None
+
+    search_version = get_version_type(search_title)
+    result_version = get_version_type(result_title)
+
+    if search_version != result_version and (search_version or result_version):
+        if search_version in ['major', None] or result_version in ['major', None]:
+            penalty += 30  # Major mismatch (live vs studio)
+        else:
+            penalty += 15  # Minor mismatch (demo vs alternate)
 
     # Karaoke/backing track penalty (-80, very heavy to filter out karaoke versions)
     if is_karaoke_track(result_title, result_artist, result_album):
@@ -1308,8 +1411,29 @@ def consolidated_track_score(search_artist, search_title, result_artist, result_
     if artist_score < 50:  # Very different artists
         penalty += 30
 
-    # Calculate weighted composite score
-    base_score = (artist_score * 0.45) + (title_score * 0.40) + (album_score * 0.15)
+    # Calculate weighted composite score with dynamic normalization
+    # Don't waste weight on missing components - redistribute to available data
+    weights = {'artist': 0.45, 'title': 0.40, 'album': 0.15}
+    available_weight = 0
+
+    # Calculate total available weight
+    if artist_score > 0:
+        available_weight += weights['artist']
+    if title_score > 0:
+        available_weight += weights['title']
+    if album_score > 0:
+        available_weight += weights['album']
+
+    # Normalize weights based on available components
+    if available_weight > 0:
+        artist_weight = (weights['artist'] / available_weight) if artist_score > 0 else 0
+        title_weight = (weights['title'] / available_weight) if title_score > 0 else 0
+        album_weight = (weights['album'] / available_weight) if album_score > 0 else 0
+    else:
+        # No valid components
+        artist_weight = title_weight = album_weight = 0
+
+    base_score = (artist_score * artist_weight) + (title_score * title_weight) + (album_score * album_weight)
     final_score = base_score + bonus - penalty
 
     # Clamp to 0-100 range

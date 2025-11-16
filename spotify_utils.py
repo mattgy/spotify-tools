@@ -1026,7 +1026,7 @@ def is_karaoke_track(track_name, artist_name, album_name):
 
     return False
 
-def optimized_track_search_strategies(sp, artist, title, album=None, max_strategies=5):
+def optimized_track_search_strategies(sp, artist, title, album=None, max_strategies=7):
     """
     Optimized track search using fewer, more effective strategies with higher limits.
     
@@ -1066,6 +1066,11 @@ def optimized_track_search_strategies(sp, artist, title, album=None, max_strateg
 
     # Simple fallback
     strategies.append(f'"{artist} {title}"')
+
+    # Artist name spacing variation - for cases like "Soap Kills" vs "Soapkills"
+    if artist and title and ' ' in artist:
+        artist_no_space = artist.replace(' ', '')
+        strategies.append(f'artist:"{artist_no_space}" track:"{title}"')
 
     # Swap strategy - for cases where artist and title are reversed in metadata
     # Only try if artist doesn't contain ' - ' (prevents double-swapping issues)

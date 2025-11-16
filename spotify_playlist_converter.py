@@ -1610,7 +1610,7 @@ def search_track_on_spotify(sp, artist, title, album=None):
 
     # Use optimized search strategies - much faster than 13 individual searches
     try:
-        result = optimized_track_search_strategies(sp, artist, title, album, max_strategies=6)
+        result = optimized_track_search_strategies(sp, artist, title, album, max_strategies=7)
 
         if result:
             logger.debug(f"Optimized search found: {result['name']} by {result['artists']} (Score: {result['score']:.1f})")
@@ -1795,7 +1795,7 @@ def search_track_on_spotify(sp, artist, title, album=None):
                 # Recursively search for the original (but prevent infinite loops with a flag)
                 # We'll use a simple approach: search directly without recursive call
                 try:
-                    original_match = optimized_track_search_strategies(sp, artist, original_title, album, max_strategies=6)
+                    original_match = optimized_track_search_strategies(sp, artist, original_title, album, max_strategies=7)
 
                     if original_match and original_match.get('score', 0) >= 60:
                         # Found the original version

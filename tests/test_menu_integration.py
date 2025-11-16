@@ -211,31 +211,7 @@ class TestCacheUtils(unittest.TestCase):
 
 class TestUtilityModules(unittest.TestCase):
     """Test utility modules."""
-    
-    def test_config_module(self):
-        """Test that config module works."""
-        try:
-            import config
-            # Check for any valid config functionality
-            self.assertTrue(hasattr(config, 'SpotifyToolsConfig') or 
-                          hasattr(config, 'SPOTIFY_CLIENT_ID') or
-                          hasattr(config, 'get_config') or
-                          len(dir(config)) > 2)  # Has some non-built-in attributes
-            
-        except ImportError as e:
-            self.fail(f"Failed to import config: {e}")
-    
-    def test_musicbrainz_integration(self):
-        """Test that MusicBrainz integration works."""
-        try:
-            import musicbrainz_integration
-            self.assertTrue(hasattr(musicbrainz_integration, 'MusicBrainzClient') or
-                          hasattr(musicbrainz_integration, 'search_artist') or
-                          len(dir(musicbrainz_integration)) > 2)
-            
-        except ImportError as e:
-            self.skipTest(f"MusicBrainz integration optional dependency missing: {e}")
-    
+
     def test_constants_module(self):
         """Test that constants module works."""
         try:

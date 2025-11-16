@@ -25,7 +25,6 @@ sys.path.insert(0, script_dir)
 
 from credentials_manager import get_spotify_credentials
 from cache_utils import save_to_cache, load_from_cache
-from config import config, get_cache_expiration, get_batch_size
 from tqdm_utils import create_progress_bar, update_progress_bar, close_progress_bar
 from preferences_manager import get_cache_duration_seconds
 

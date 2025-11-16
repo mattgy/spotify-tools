@@ -8,6 +8,7 @@ import time
 import functools
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
+from colorama import Fore
 
 # Import centralized print functions (prevents circular imports)
 from print_utils import print_success, print_error, print_warning, print_info, print_header
@@ -953,8 +954,9 @@ def optimized_track_search_strategies(sp, artist, title, album=None, max_strateg
     # Create cache key
     cache_key = f"optimized_track_search_{hashlib.md5(f'{artist}_{title}_{album}'.encode()).hexdigest()[:16]}"
     cached_result = load_from_cache(cache_key, 7 * 24 * 60 * 60)  # 7 days
-    
-    if cached_result:
+
+    # Handle corrupted cache entries gracefully
+    if cached_result and isinstance(cached_result, dict):
         return cached_result
     
     # Optimized search strategies (fewer, more effective)
@@ -980,7 +982,7 @@ def optimized_track_search_strategies(sp, artist, title, album=None, max_strateg
     search_results = batch_search_tracks(sp, strategies, show_progress=False, cache_expiration=60*60)
     
     # Find best match across all strategies using fuzzy matching
-    from thefuzz import fuzz
+    from rapidfuzz import fuzz
     best_match = None
     best_score = 0
 
@@ -988,39 +990,20 @@ def optimized_track_search_strategies(sp, artist, title, album=None, max_strateg
         tracks = results.get('tracks', {}).get('items', [])
 
         for track in tracks:
-            # Fuzzy scoring based on name matching
-            track_artists_list = [a['name'] for a in track.get('artists', [])]
-            track_artists_str = ', '.join(track_artists_list).lower()
-            track_name = track.get('name', '').lower()
-            track_album = track.get('album', {}).get('name', '').lower()
+            # Use consolidated scoring function for consistent results
+            track_artists_str = ', '.join([a['name'] for a in track.get('artists', [])])
+            track_name = track.get('name', '')
+            track_album = track.get('album', {}).get('name', '') if track.get('album') else ''
 
-            # Calculate fuzzy match scores
-            artist_score = 0
-            if artist:
-                # Check against individual artists and joined string
-                for track_artist in track_artists_list:
-                    individual_score = fuzz.ratio(artist.lower(), track_artist.lower())
-                    artist_score = max(artist_score, individual_score)
-                # Also check the full artist string
-                full_artist_score = fuzz.partial_ratio(artist.lower(), track_artists_str)
-                artist_score = max(artist_score, full_artist_score)
-
-            # Title matching - use both ratio and partial_ratio for flexibility
-            title_score = 0
-            if title:
-                title_score = max(
-                    fuzz.ratio(title.lower(), track_name),
-                    fuzz.partial_ratio(title.lower(), track_name)
-                )
-
-            # Album matching
-            album_score = 0
-            if album and track_album:
-                album_score = fuzz.partial_ratio(album.lower(), track_album)
-
-            # Weighted composite score (0-100 scale)
-            # Artist match is most important (60%), title is critical (35%), album helps (5%)
-            score = (artist_score * 0.6) + (title_score * 0.35) + (album_score * 0.05)
+            # Calculate match score using the consolidated function
+            score = consolidated_track_score(
+                search_artist=artist or "",
+                search_title=title or "",
+                result_artist=track_artists_str,
+                result_title=track_name,
+                result_album=track_album,
+                search_album=album or ""
+            )
 
             if score > best_score:
                 best_score = score
@@ -1028,15 +1011,182 @@ def optimized_track_search_strategies(sp, artist, title, album=None, max_strateg
                     'id': track['id'],
                     'name': track['name'],
                     'artists': [artist['name'] for artist in track['artists']],
-                    'album': track['album']['name'],
+                    'album': track['album']['name'] if track.get('album') else '',
                     'uri': track['uri'],
                     'score': score
                 }
     
     # Cache result
     save_to_cache(best_match, cache_key)
-    
+
     return best_match
+
+def consolidated_track_score(search_artist, search_title, result_artist, result_title, result_album="", search_album=""):
+    """
+    Consolidated track matching score with advanced fuzzy matching and comprehensive penalties.
+
+    This function combines the best aspects of both previous scoring approaches:
+    - Advanced distance metrics (token_set_ratio, Jaro-Winkler, partial_ratio)
+    - Featuring artist extraction and matching
+    - Remix/version mismatch penalties
+    - Exact match bonuses
+    - Phonetic fallback matching
+
+    Weights: Artist 45%, Title 40%, Album 15%
+    Score range: 0-100
+
+    Args:
+        search_artist: Artist name from search query
+        search_title: Track title from search query
+        result_artist: Artist name from Spotify result
+        result_title: Track title from Spotify result
+        result_album: Album name from Spotify result (optional)
+        search_album: Album name from search query (optional)
+
+    Returns:
+        Float score 0-100 indicating match quality
+    """
+    from rapidfuzz import fuzz
+    from rapidfuzz.distance import JaroWinkler
+    import re
+
+    # Helper function to extract featuring info
+    def extract_featuring_info(text):
+        feat_patterns = [
+            r'\s+[\[\(](?:feat\.?|featuring|ft\.?)\s+([^\]\)]+)[\]\)]',
+            r'\s+(?:feat\.?|featuring|ft\.?)\s+(.+?)(?:\s*[\[\(]|$)',
+            r'\s+[\[\(](?:with|w\/)\s+([^\]\)]+)[\]\)]',
+        ]
+        main_text = text
+        featuring = ""
+        for pattern in feat_patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                featuring = match.group(1).strip()
+                main_text = re.sub(pattern, '', text, flags=re.IGNORECASE).strip()
+                break
+        return main_text, featuring
+
+    # Helper function to strip remaster tags
+    def strip_remaster_tags(text):
+        patterns = [
+            r'\s*[\(\[].*?(?:remaster|anniversary|deluxe|expanded|edition).*?[\)\]]',
+            r'\s*-\s*(?:remaster|anniversary|deluxe|expanded|edition).*$',
+        ]
+        clean = text
+        for pattern in patterns:
+            clean = re.sub(pattern, '', clean, flags=re.IGNORECASE)
+        return clean.strip()
+
+    # Extract featuring info
+    search_artist_main, search_artist_feat = extract_featuring_info(search_artist)
+    search_title_main, search_title_feat = extract_featuring_info(search_title)
+    result_artist_main, result_artist_feat = extract_featuring_info(result_artist)
+    result_title_main, result_title_feat = extract_featuring_info(result_title)
+
+    # Strip remaster tags
+    search_title_clean = strip_remaster_tags(search_title_main)
+    result_title_clean = strip_remaster_tags(result_title_main)
+
+    # Normalize for comparison (lowercase, remove extra spaces)
+    norm_search_artist = search_artist_main.lower().strip()
+    norm_search_title = search_title_clean.lower().strip()
+    norm_result_artist = result_artist_main.lower().strip()
+    norm_result_title = result_title_clean.lower().strip()
+    norm_search_album = search_album.lower().strip() if search_album else ""
+    norm_result_album = result_album.lower().strip() if result_album else ""
+
+    # === ARTIST MATCHING (45% weight) ===
+    # Use multiple distance metrics and take the best
+    artist_scores = []
+
+    if norm_search_artist and norm_result_artist:
+        # Exact ratio (good for similar strings)
+        artist_scores.append(fuzz.ratio(norm_search_artist, norm_result_artist))
+
+        # Token set ratio (handles word order, extra words)
+        artist_scores.append(fuzz.token_set_ratio(norm_search_artist, norm_result_artist))
+
+        # Partial ratio (handles substrings)
+        artist_scores.append(fuzz.partial_ratio(norm_search_artist, norm_result_artist))
+
+        # Jaro-Winkler (better for names with typos, favors matching prefixes)
+        jw_score = JaroWinkler.normalized_similarity(norm_search_artist, norm_result_artist) * 100
+        artist_scores.append(jw_score)
+
+    artist_score = max(artist_scores) if artist_scores else 0
+
+    # === TITLE MATCHING (40% weight) ===
+    title_scores = []
+
+    if norm_search_title and norm_result_title:
+        # Exact ratio
+        title_scores.append(fuzz.ratio(norm_search_title, norm_result_title))
+
+        # Token set ratio (very important for titles with extra info)
+        title_scores.append(fuzz.token_set_ratio(norm_search_title, norm_result_title))
+
+        # Partial ratio
+        title_scores.append(fuzz.partial_ratio(norm_search_title, norm_result_title))
+
+    title_score = max(title_scores) if title_scores else 0
+
+    # === ALBUM MATCHING (15% weight) ===
+    album_score = 0
+    if norm_search_album and norm_result_album:
+        album_scores = [
+            fuzz.ratio(norm_search_album, norm_result_album),
+            fuzz.token_set_ratio(norm_search_album, norm_result_album),
+            fuzz.partial_ratio(norm_search_album, norm_result_album)
+        ]
+        album_score = max(album_scores)
+
+    # === BONUSES ===
+    bonus = 0
+
+    # Exact match bonus (+20 points)
+    if (norm_search_artist == norm_result_artist and
+        norm_search_title == norm_result_title):
+        bonus += 20
+
+    # Featuring artist match bonus
+    if search_artist_feat and result_artist_feat:
+        feat_score = fuzz.ratio(search_artist_feat.lower(), result_artist_feat.lower())
+        if feat_score > 70:
+            bonus += 10
+
+    # Substring match bonuses (smaller than before)
+    if norm_search_artist in norm_result_artist or norm_result_artist in norm_search_artist:
+        bonus += 5
+    if norm_search_title in norm_result_title or norm_result_title in norm_search_title:
+        bonus += 5
+
+    # === PENALTIES ===
+    penalty = 0
+
+    # Remix mismatch penalty (-40, very strong)
+    search_is_remix = 'remix' in search_title.lower()
+    result_is_remix = 'remix' in result_title.lower()
+    if search_is_remix != result_is_remix:
+        penalty += 40
+
+    # Version mismatch penalty (-30)
+    version_keywords = ['live', 'acoustic', 'demo', 'alternate', 'radio edit', 'unplugged']
+    search_has_version = any(kw in search_title.lower() for kw in version_keywords)
+    result_has_version = any(kw in result_title.lower() for kw in version_keywords)
+    if search_has_version != result_has_version:
+        penalty += 30
+
+    # Different primary artist penalty (-30, major issue)
+    if artist_score < 50:  # Very different artists
+        penalty += 30
+
+    # Calculate weighted composite score
+    base_score = (artist_score * 0.45) + (title_score * 0.40) + (album_score * 0.15)
+    final_score = base_score + bonus - penalty
+
+    # Clamp to 0-100 range
+    return max(0, min(100, final_score))
 
 if __name__ == "__main__":
     print("Spotify Utils Test")

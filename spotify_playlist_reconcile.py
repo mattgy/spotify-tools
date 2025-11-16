@@ -22,7 +22,7 @@ import argparse
 from pathlib import Path
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
-from thefuzz import fuzz
+from rapidfuzz import fuzz
 import time
 import logging
 import json

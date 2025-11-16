@@ -51,6 +51,21 @@ DEFAULT_PREFERENCES = {
         "max_age_days": 7,
         "duration_hours": 24  # Global cache duration: 24, 6, 1, or 0 (no cache)
     },
+    "ai": {
+        "enable_ai_boost": False,  # Enable AI assistance for medium-confidence matches
+        "ai_service": "gemini",  # gemini, claude, gpt4, perplexity
+        "ai_confidence_threshold": 70,  # Minimum confidence before using AI
+        "ai_batch_limit": 50,  # Maximum AI requests per batch
+        "ai_auto_threshold": 85  # Auto-accept threshold for AI-boosted matches
+    },
+    "playlist_converter": {
+        "confidence_threshold": 70,  # Manual review threshold
+        "auto_threshold": 85,  # Auto-accept threshold
+        "min_score": 50,  # Minimum score to show recommendations
+        "duplicate_handling": "ask",  # ask, remove, keep
+        "batch_mode": False,  # Default to manual review mode
+        "use_ai_boost": False  # Enable AI boost by default
+    },
     "metadata": {
         "created": time.time(),
         "last_modified": time.time(),

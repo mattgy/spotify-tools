@@ -359,13 +359,17 @@ class TestErrorHandling(unittest.TestCase):
         """Set up mock Spotify client that can simulate errors."""
         self.mock_sp = Mock()
     
-    def test_handle_api_rate_limit(self):
+    @patch('spotify_playlist_converter.optimized_track_search_strategies')
+    @patch('spotify_playlist_converter.load_from_cache')
+    def test_handle_api_rate_limit(self, mock_load_cache, mock_optimized_search):
         """Test handling of Spotify API rate limits."""
-        # Mock rate limit error
-        self.mock_sp.search.side_effect = Exception("rate limit exceeded")
-        
+        # Ensure no cached results interfere
+        mock_load_cache.return_value = None
+        # Mock rate limit error in optimized search
+        mock_optimized_search.side_effect = Exception("rate limit exceeded")
+
         result = spc.search_track_on_spotify(self.mock_sp, "Artist", "Song")
-        
+
         # Should handle gracefully and return None
         self.assertIsNone(result)
     
@@ -377,13 +381,31 @@ class TestErrorHandling(unittest.TestCase):
         self.assertEqual(result['title'], '')
         self.assertEqual(result['path'], '')
     
-    def test_handle_corrupted_cache(self):
+    @patch('spotify_playlist_converter.save_to_cache')
+    @patch('spotify_playlist_converter.optimized_track_search_strategies')
+    @patch('spotify_playlist_converter.load_from_cache')
+    def test_handle_corrupted_cache(self, mock_load_cache, mock_optimized_search, mock_save_cache):
         """Test handling of corrupted cache data."""
-        with patch('spotify_playlist_converter.load_from_cache', return_value="corrupted_data"):
-            result = spc.search_track_on_spotify(self.mock_sp, "Artist", "Song")
-        
-        # Should handle corrupted cache gracefully
+        # Mock corrupted cache data
+        mock_load_cache.return_value = "corrupted_data"
+        # Prevent actual caching during test
+        mock_save_cache.return_value = True
+
+        # Mock the optimized search to return a valid result
+        mock_optimized_search.return_value = {
+            'id': 'track123',
+            'name': 'Song',
+            'artists': ['Artist'],
+            'album': 'Album',
+            'uri': 'spotify:track:track123',
+            'score': 95
+        }
+
+        result = spc.search_track_on_spotify(self.mock_sp, "Artist", "Song")
+
+        # Should handle corrupted cache gracefully and return fresh search result
         self.assertIsNotNone(result)  # Should attempt fresh search
+        self.assertEqual(result['name'], 'Song')
     
     def test_handle_missing_track_info(self):
         """Test handling of missing track information."""

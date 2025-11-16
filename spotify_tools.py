@@ -453,6 +453,205 @@ def manage_caches():
     else:
         print_warning("Invalid choice")
 
+def ai_configuration_menu():
+    """Sub-menu for AI assistance configuration."""
+    from preferences_manager import get_preference, set_preference
+
+    while True:
+        print_header("AI Assistance Configuration")
+
+        # Load current settings
+        ai_enabled = get_preference("ai.enable_ai_boost", False)
+        ai_service = get_preference("ai.ai_service", "gemini")
+        ai_threshold = get_preference("ai.ai_confidence_threshold", 70)
+        ai_limit = get_preference("ai.ai_batch_limit", 50)
+        ai_auto = get_preference("ai.ai_auto_threshold", 85)
+
+        print(f"{Fore.YELLOW}{Style.BRIGHT}CURRENT SETTINGS:")
+        print(f"{Fore.WHITE}AI Boost Enabled: {Fore.GREEN if ai_enabled else Fore.RED}{ai_enabled}")
+        print(f"{Fore.WHITE}AI Service: {Fore.CYAN}{ai_service}")
+        print(f"{Fore.WHITE}Confidence Threshold (min for AI): {Fore.CYAN}{ai_threshold}")
+        print(f"{Fore.WHITE}Auto-Accept Threshold (AI matches): {Fore.CYAN}{ai_auto}")
+        print(f"{Fore.WHITE}Batch Limit (max AI requests): {Fore.CYAN}{ai_limit}")
+
+        print(f"\n{Fore.YELLOW}{Style.BRIGHT}OPTIONS:")
+        print(f"{Fore.WHITE}1. Toggle AI boost (currently: {Fore.GREEN if ai_enabled else Fore.RED}{ai_enabled}{Fore.WHITE})")
+        print(f"{Fore.WHITE}2. Select AI service ({ai_service})")
+        print(f"{Fore.WHITE}3. Set confidence threshold ({ai_threshold})")
+        print(f"{Fore.WHITE}4. Set auto-accept threshold ({ai_auto})")
+        print(f"{Fore.WHITE}5. Set batch limit ({ai_limit})")
+        print(f"\n{Fore.WHITE}6. Back to playlist converter menu")
+
+        choice = input(f"\n{Fore.CYAN}Enter your choice (1-6): ")
+
+        if choice == "1":
+            # Toggle AI boost
+            new_value = not ai_enabled
+            set_preference("ai.enable_ai_boost", new_value)
+            print_success(f"AI boost {'enabled' if new_value else 'disabled'}")
+
+        elif choice == "2":
+            # Select AI service
+            print(f"\n{Fore.YELLOW}Available AI services:")
+            print(f"{Fore.WHITE}1. Gemini (Google)")
+            print(f"{Fore.WHITE}2. Claude (Anthropic)")
+            print(f"{Fore.WHITE}3. GPT-4 (OpenAI)")
+            print(f"{Fore.WHITE}4. Perplexity")
+
+            service_choice = input(f"\n{Fore.CYAN}Select service (1-4): ")
+            services = {
+                "1": "gemini",
+                "2": "claude",
+                "3": "gpt4",
+                "4": "perplexity"
+            }
+
+            if service_choice in services:
+                set_preference("ai.ai_service", services[service_choice])
+                print_success(f"AI service set to {services[service_choice]}")
+            else:
+                print_error("Invalid choice")
+
+        elif choice == "3":
+            # Set confidence threshold
+            try:
+                threshold = int(input(f"{Fore.CYAN}Enter minimum confidence threshold for AI (0-100, default 70): "))
+                if 0 <= threshold <= 100:
+                    set_preference("ai.ai_confidence_threshold", threshold)
+                    print_success(f"AI confidence threshold set to {threshold}")
+                else:
+                    print_error("Value must be between 0 and 100")
+            except ValueError:
+                print_error("Invalid number")
+
+        elif choice == "4":
+            # Set auto-accept threshold
+            try:
+                threshold = int(input(f"{Fore.CYAN}Enter auto-accept threshold for AI matches (0-100, default 85): "))
+                if 0 <= threshold <= 100:
+                    set_preference("ai.ai_auto_threshold", threshold)
+                    print_success(f"AI auto-accept threshold set to {threshold}")
+                else:
+                    print_error("Value must be between 0 and 100")
+            except ValueError:
+                print_error("Invalid number")
+
+        elif choice == "5":
+            # Set batch limit
+            try:
+                limit = int(input(f"{Fore.CYAN}Enter maximum AI requests per batch (1-1000, default 50): "))
+                if 1 <= limit <= 1000:
+                    set_preference("ai.ai_batch_limit", limit)
+                    print_success(f"AI batch limit set to {limit}")
+                else:
+                    print_error("Value must be between 1 and 1000")
+            except ValueError:
+                print_error("Invalid number")
+
+        elif choice == "6":
+            break
+
+        else:
+            print_error("Invalid choice. Please try again.")
+
+def playlist_converter_preferences_menu():
+    """Sub-menu for playlist converter preferences."""
+    from preferences_manager import get_preference, set_preference
+
+    while True:
+        print_header("Playlist Converter Preferences")
+
+        # Load current settings
+        conf_threshold = get_preference("playlist_converter.confidence_threshold", 70)
+        auto_threshold = get_preference("playlist_converter.auto_threshold", 85)
+        min_score = get_preference("playlist_converter.min_score", 50)
+        duplicate = get_preference("playlist_converter.duplicate_handling", "ask")
+        batch_mode = get_preference("playlist_converter.batch_mode", False)
+        use_ai = get_preference("playlist_converter.use_ai_boost", False)
+
+        print(f"{Fore.YELLOW}{Style.BRIGHT}CURRENT SETTINGS:")
+        print(f"{Fore.WHITE}Confidence Threshold (manual review): {Fore.CYAN}{conf_threshold}")
+        print(f"{Fore.WHITE}Auto-Accept Threshold: {Fore.CYAN}{auto_threshold}")
+        print(f"{Fore.WHITE}Minimum Score (show results): {Fore.CYAN}{min_score}")
+        print(f"{Fore.WHITE}Duplicate Handling: {Fore.CYAN}{duplicate}")
+        print(f"{Fore.WHITE}Batch Mode Default: {Fore.GREEN if batch_mode else Fore.RED}{batch_mode}")
+        print(f"{Fore.WHITE}Use AI Boost: {Fore.GREEN if use_ai else Fore.RED}{use_ai}")
+
+        print(f"\n{Fore.YELLOW}{Style.BRIGHT}OPTIONS:")
+        print(f"{Fore.WHITE}1. Set confidence threshold ({conf_threshold})")
+        print(f"{Fore.WHITE}2. Set auto-accept threshold ({auto_threshold})")
+        print(f"{Fore.WHITE}3. Set minimum score ({min_score})")
+        print(f"{Fore.WHITE}4. Set duplicate handling ({duplicate})")
+        print(f"{Fore.WHITE}5. Toggle batch mode default ({batch_mode})")
+        print(f"{Fore.WHITE}6. Toggle AI boost default ({use_ai})")
+        print(f"\n{Fore.WHITE}7. Back to playlist converter menu")
+
+        choice = input(f"\n{Fore.CYAN}Enter your choice (1-7): ")
+
+        if choice == "1":
+            try:
+                threshold = int(input(f"{Fore.CYAN}Enter confidence threshold (0-100, default 70): "))
+                if 0 <= threshold <= 100:
+                    set_preference("playlist_converter.confidence_threshold", threshold)
+                    print_success(f"Confidence threshold set to {threshold}")
+                else:
+                    print_error("Value must be between 0 and 100")
+            except ValueError:
+                print_error("Invalid number")
+
+        elif choice == "2":
+            try:
+                threshold = int(input(f"{Fore.CYAN}Enter auto-accept threshold (0-100, default 85): "))
+                if 0 <= threshold <= 100:
+                    set_preference("playlist_converter.auto_threshold", threshold)
+                    print_success(f"Auto-accept threshold set to {threshold}")
+                else:
+                    print_error("Value must be between 0 and 100")
+            except ValueError:
+                print_error("Invalid number")
+
+        elif choice == "3":
+            try:
+                score = int(input(f"{Fore.CYAN}Enter minimum score (0-100, default 50): "))
+                if 0 <= score <= 100:
+                    set_preference("playlist_converter.min_score", score)
+                    print_success(f"Minimum score set to {score}")
+                else:
+                    print_error("Value must be between 0 and 100")
+            except ValueError:
+                print_error("Invalid number")
+
+        elif choice == "4":
+            print(f"\n{Fore.YELLOW}Duplicate handling options:")
+            print(f"{Fore.WHITE}1. Ask (prompt for each playlist)")
+            print(f"{Fore.WHITE}2. Remove (auto-remove duplicates)")
+            print(f"{Fore.WHITE}3. Keep (keep all duplicates)")
+
+            dup_choice = input(f"\n{Fore.CYAN}Select option (1-3): ")
+            dup_map = {"1": "ask", "2": "remove", "3": "keep"}
+
+            if dup_choice in dup_map:
+                set_preference("playlist_converter.duplicate_handling", dup_map[dup_choice])
+                print_success(f"Duplicate handling set to {dup_map[dup_choice]}")
+            else:
+                print_error("Invalid choice")
+
+        elif choice == "5":
+            new_value = not batch_mode
+            set_preference("playlist_converter.batch_mode", new_value)
+            print_success(f"Batch mode default {'enabled' if new_value else 'disabled'}")
+
+        elif choice == "6":
+            new_value = not use_ai
+            set_preference("playlist_converter.use_ai_boost", new_value)
+            print_success(f"AI boost default {'enabled' if new_value else 'disabled'}")
+
+        elif choice == "7":
+            break
+
+        else:
+            print_error("Invalid choice. Please try again.")
+
 def playlist_converter_menu():
     """Sub-menu for playlist converter options."""
     while True:
@@ -469,10 +668,14 @@ def playlist_converter_menu():
         print(f"\n{Fore.YELLOW}{Style.BRIGHT}MAINTENANCE:")
         print(f"{Fore.WHITE}5. Clear processed playlist cache")
         print(f"{Fore.WHITE}6. Remove .m3u suffixes from Spotify playlists")
-        
-        print(f"\n{Fore.WHITE}7. Back to main menu")
-        
-        choice = input(f"\n{Fore.CYAN}Enter your choice (1-7): ")
+
+        print(f"\n{Fore.YELLOW}{Style.BRIGHT}AI & PREFERENCES:")
+        print(f"{Fore.WHITE}7. Configure AI assistance settings")
+        print(f"{Fore.WHITE}8. Configure playlist converter preferences")
+
+        print(f"\n{Fore.WHITE}9. Back to main menu")
+
+        choice = input(f"\n{Fore.CYAN}Enter your choice (1-9): ")
         
         if choice == "1":
             # Auto-sync mode - fully autonomous
@@ -541,10 +744,18 @@ def playlist_converter_menu():
             # Remove .m3u suffixes from Spotify playlists
             print_info("\nRemoving .m3u suffixes from Spotify playlists...")
             run_script(PLAYLIST_RECONCILE_SCRIPT, ["--remove-suffixes-mode"])
-            
+
         elif choice == "7":
+            # Configure AI assistance settings
+            ai_configuration_menu()
+
+        elif choice == "8":
+            # Configure playlist converter preferences
+            playlist_converter_preferences_menu()
+
+        elif choice == "9":
             break
-        
+
         else:
             print_error("Invalid choice. Please try again.")
 

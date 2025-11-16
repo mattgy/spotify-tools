@@ -23,12 +23,12 @@ import argparse
 from pathlib import Path
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
-from thefuzz import fuzz, process
+from rapidfuzz import fuzz, process
 import time
 import logging
 import json
 from tqdm_utils import create_progress_bar, update_progress_bar, close_progress_bar
-from spotify_utils import optimized_track_search_strategies
+from spotify_utils import optimized_track_search_strategies, consolidated_track_score
 import traceback
 from datetime import datetime, timedelta
 import colorama
@@ -104,6 +104,39 @@ TRACK_NUMBER_PATTERNS = [
     r'^\(\d+\)\s*',       # "(01) "
     r'^Track\s*\d+[\s\-:]+',  # "Track 01 - "
     r'^\d+\.\s*-\s*',     # "01. - "
+]
+
+# Additional filename patterns to clean (YouTube, quality tags, disc numbers, years)
+FILENAME_CLEANUP_PATTERNS = [
+    # YouTube video indicators
+    r'\s*[\(\[](?:Official\s+)?(?:Music\s+)?Video[\)\]]\s*',  # [Official Music Video], (Video), etc.
+    r'\s*[\(\[](?:Official\s+)?(?:Audio|Lyric(?:s)?|HD)[\)\]]\s*',  # [Official Audio], [Lyrics], [HD]
+    r'\s*[\(\[](?:Music\s+)?Video\s+Official[\)\]]\s*',  # [Music Video Official]
+    r'\s*[\(\[]Visuali[sz]er[\)\]]\s*',  # [Visualizer]
+
+    # Quality tags
+    r'\s*[\(\[](?:\d+)?kbps[\)\]]\s*',  # [320kbps], [kbps]
+    r'\s*[\(\[](?:FLAC|WAV|MP3|M4A|AAC|ALAC)[\)\]]\s*',  # [FLAC], [MP3], etc.
+    r'\s*[\(\[](?:HQ|HD|High\s+Quality|Lossless)[\)\]]\s*',  # [HQ], [High Quality]
+    r'\s*[\(\[](?:\d+bit|\d+kHz)[\)\]]\s*',  # [24bit], [44.1kHz]
+
+    # Disc/CD numbers (at start or in middle)
+    r'^\s*(?:CD|Disc|Disk)\s*\d+[-\s]+\d+[-\s]+',  # "CD1-01 ", "Disc 1-01 "
+    r'\s*[-\s](?:CD|Disc|Disk)\s*\d+\s*$',  # " - CD1", " - Disc 1"
+    r'^\s*\d+[-\.]\d+\s+',  # "01-01 ", "1.01 " (disc-track format)
+
+    # Year patterns (but be careful not to remove artist names like "1975")
+    r'\s*[\(\[]\d{4}[\)\]]\s*$',  # (2023), [2023] at end only
+
+    # Common download/streaming tags
+    r'\s*[\(\[](?:Free\s+)?Download[\)\]]\s*',  # [Download], [Free Download]
+    r'\s*[\(\[]Full\s+(?:Album|Song|Track)[\)\]]\s*',  # [Full Album]
+    r'\s*[\(\[](?:No\s+)?Copyright[\)\]]\s*',  # [Copyright], [No Copyright]
+    r'\s*[\(\[]NCS\s+Release[\)\]]\s*',  # [NCS Release] (No Copyright Sounds)
+
+    # Explicit/Clean tags
+    r'\s*[\(\[]Explicit[\)\]]\s*',  # [Explicit]
+    r'\s*[\(\[]Clean[\)\]]\s*',  # [Clean]
 ]
 
 def create_decision_cache_key(track_info, match_info):
@@ -1374,6 +1407,12 @@ def remove_track_numbers(text):
         text = re.sub(pattern, '', text, flags=re.IGNORECASE)
     return text.strip()
 
+def clean_filename_tags(text):
+    """Remove YouTube, quality tags, disc numbers, and other filename artifacts."""
+    for pattern in FILENAME_CLEANUP_PATTERNS:
+        text = re.sub(pattern, '', text, flags=re.IGNORECASE)
+    return text.strip()
+
 def strip_remaster_tags(text):
     """Remove remaster tags but keep remix tags."""
     # Remove remaster tags but keep remix
@@ -1447,105 +1486,6 @@ def extract_featuring_info(text):
     
     return main_text, featuring
 
-def calculate_match_score(search_artist, search_title, result_artist, result_title, result_album=""):
-    """Calculate a comprehensive match score between search terms and result."""
-    # Extract featuring info from both search and result
-    search_artist_main, search_artist_feat = extract_featuring_info(search_artist)
-    search_title_main, search_title_feat = extract_featuring_info(search_title)
-    result_artist_main, result_artist_feat = extract_featuring_info(result_artist)
-    result_title_main, result_title_feat = extract_featuring_info(result_title)
-    
-    # Combine featuring info
-    if search_artist_feat and not search_title_feat:
-        search_title_feat = search_artist_feat
-    if search_title_feat and not search_artist_feat:
-        search_artist_feat = search_title_feat
-    if result_artist_feat and not result_title_feat:
-        result_title_feat = result_artist_feat
-    if result_title_feat and not result_artist_feat:
-        result_artist_feat = result_title_feat
-    
-    # Apply variations normalization
-    search_artist_var = normalize_for_variations(search_artist_main)
-    search_title_var = normalize_for_variations(search_title_main)
-    result_artist_var = normalize_for_variations(result_artist_main)
-    result_title_var = normalize_for_variations(result_title_main)
-    
-    # Strip remaster tags for comparison
-    search_title_clean = strip_remaster_tags(search_title_var)
-    result_title_clean = strip_remaster_tags(result_title_var)
-    
-    # Then normalize for comparison
-    norm_search_artist = normalize_string(search_artist_var)
-    norm_search_title = normalize_string(search_title_clean)
-    norm_result_artist = normalize_string(result_artist_var)
-    norm_result_title = normalize_string(result_title_clean)
-    norm_result_album = normalize_string(result_album)
-    
-    # Artist matching (40% weight)
-    artist_score = fuzz.ratio(norm_search_artist, norm_result_artist)
-    
-    # If artist score is low, try phonetic matching
-    if artist_score < 70:
-        phonetic_artist_score = phonetic_match(search_artist_main, result_artist_main)
-        if phonetic_artist_score > artist_score:
-            artist_score = (artist_score + phonetic_artist_score) / 2
-    
-    # Title matching (50% weight)
-    title_score = fuzz.ratio(norm_search_title, norm_result_title)
-    
-    # If title score is low, try phonetic matching
-    if title_score < 70:
-        phonetic_title_score = phonetic_match(search_title_clean, result_title_clean)
-        if phonetic_title_score > title_score:
-            title_score = (title_score + phonetic_title_score) / 2
-    
-    # Bonus points for partial matches (10% weight)
-    bonus_score = 0
-    if norm_search_artist in norm_result_artist or norm_result_artist in norm_search_artist:
-        bonus_score += 20
-    if norm_search_title in norm_result_title or norm_result_title in norm_search_title:
-        bonus_score += 30
-    
-    # Bonus for matching featuring artists (don't penalize if missing)
-    if search_artist_feat and result_artist_feat:
-        feat_score = fuzz.ratio(normalize_string(search_artist_feat), normalize_string(result_artist_feat))
-        if feat_score > 70:
-            bonus_score += 10
-    elif search_artist_feat or result_artist_feat:
-        # Don't penalize if featuring info is only on one side
-        bonus_score += 5
-    
-    # Special handling for remix vs non-remix
-    search_is_remix = 'remix' in search_title.lower()
-    result_is_remix = 'remix' in result_title.lower()
-    
-    # Penalty if remix status doesn't match
-    if search_is_remix != result_is_remix:
-        bonus_score -= 15
-    
-    # Reduced penalty for different versions (live, acoustic, etc)
-    version_keywords = ['live', 'acoustic', 'demo', 'alternate', 'radio edit']
-    search_has_version = any(kw in search_title.lower() for kw in version_keywords)
-    result_has_version = any(kw in result_title.lower() for kw in version_keywords)
-    
-    if search_has_version != result_has_version:
-        bonus_score -= 10  # Less penalty than remix
-    
-    # Don't penalize for length differences due to featuring info
-    length_penalty = 0
-    if not ('remaster' in result_title.lower() and 'remaster' not in search_title.lower()):
-        # Only apply length penalty if the difference isn't due to featuring/brackets
-        if not (search_title_feat or result_title_feat or '[' in search_title or '[' in result_title or
-                '(' in search_title or '(' in result_title):
-            title_len_diff = abs(len(norm_search_title) - len(norm_result_title))
-            if title_len_diff > 20:  # Very tolerant of length differences
-                length_penalty = min(10, title_len_diff - 20)  # Minimal penalty
-    
-    # Calculate weighted score
-    total_score = (artist_score * 0.4 + title_score * 0.5 + bonus_score * 0.1) - length_penalty
-    return max(0, min(100, total_score))
-
 def process_search_results(results, search_artist, search_title, search_album, candidates, weight=1.0):
     """Process search results and add candidates with scores."""
     if not results or 'tracks' not in results or not results['tracks']['items']:
@@ -1558,9 +1498,16 @@ def process_search_results(results, search_artist, search_title, search_album, c
         result_artists = ', '.join([artist['name'] for artist in track['artists']])
         result_title = track['name']
         result_album = track['album']['name'] if track['album'] else ""
-        
-        # Calculate match score
-        score = calculate_match_score(search_artist or "", search_title, result_artists, result_title, result_album)
+
+        # Calculate match score using consolidated scoring function
+        score = consolidated_track_score(
+            search_artist=search_artist or "",
+            search_title=search_title or "",
+            result_artist=result_artists,
+            result_title=result_title,
+            result_album=result_album,
+            search_album=search_album or ""
+        )
         
         # Apply weight and check if it's a meaningful match
         weighted_score = score * weight
@@ -1607,14 +1554,27 @@ def search_track_on_spotify(sp, artist, title, album=None):
     # Try to load from cache first
     cached_result = load_from_cache(cache_key, CACHE_EXPIRATION['medium'])
     if cached_result:
-        logger.debug(f"Using cached result for '{artist} - {title}'")
-        return cached_result
+        # Check if this is a negative cache entry (track not found)
+        # Handle corrupted cache gracefully - negative cache entries must be dicts
+        if isinstance(cached_result, dict) and cached_result.get('__negative_cache__'):
+            logger.debug(f"Using cached negative result (not found) for '{artist} - {title}'")
+            return None
+        # Validate cache entry is a dict (not corrupted string data)
+        if not isinstance(cached_result, dict):
+            logger.warning(f"Corrupted cache entry for '{artist} - {title}', ignoring")
+        else:
+            logger.debug(f"Using cached result for '{artist} - {title}'")
+            return cached_result
     
     # Clean up the title and artist while preserving Unicode characters
     # Remove common file extensions and numbering
     title = re.sub(r'\.mp3$|\.flac$|\.wav$|\.m4a$|\.ogg$|\.wma$|\.aac$|\.opus$', '', title, flags=re.IGNORECASE)
     title = remove_track_numbers(title)
-    
+    # Remove YouTube, quality tags, and other filename artifacts
+    title = clean_filename_tags(title)
+    if artist:
+        artist = clean_filename_tags(artist)
+
     # Ensure proper Unicode handling
     if isinstance(title, bytes):
         title = title.decode('utf-8', errors='ignore')
@@ -1645,15 +1605,19 @@ def search_track_on_spotify(sp, artist, title, album=None):
     
     # Log the search parameters
     logger.debug(f"Searching for: Artist='{artist}', Album='{album}', Title='{title}'")
-    
+
     # Use optimized search strategies - much faster than 13 individual searches
-    result = optimized_track_search_strategies(sp, artist, title, album, max_strategies=6)
-    
-    if result:
-        logger.debug(f"Optimized search found: {result['name']} by {result['artists']} (Score: {result['score']:.1f})")
-        save_to_cache(result, cache_key)
-        return result
-    
+    try:
+        result = optimized_track_search_strategies(sp, artist, title, album, max_strategies=6)
+
+        if result:
+            logger.debug(f"Optimized search found: {result['name']} by {result['artists']} (Score: {result['score']:.1f})")
+            save_to_cache(result, cache_key)
+            return result
+    except Exception as e:
+        logger.error(f"Error in optimized search: {e}")
+        # Continue to fallback strategies
+
     # Fallback to original complex strategies for edge cases
     candidates = []
     
@@ -1763,72 +1727,32 @@ def search_track_on_spotify(sp, artist, title, album=None):
                         })
         except Exception as e:
             logger.error(f"Error in search strategy 8d: {e}")
-    
-    # Strategy 9: Try with just the album name and artist
-    if artist and album:
-        query9 = f"artist:\"{artist}\" album:\"{album}\""
-        logger.debug(f"Strategy 9: {query9}")
-        try:
-            results9 = sp.search(q=query9, type='track', limit=20)
-            # For this strategy, we'll check each track to see if the title is similar
-            if results9['tracks']['items']:
-                for track in results9['tracks']['items']:
-                    track_name = track['name']
-                    title_score = fuzz.ratio(title.lower(), track_name.lower())
-                    if title_score > 70:  # Only add if title is somewhat similar
-                        track_artists = [a['name'] for a in track['artists']]
-                        track_album = track['album']['name']
-                        
-                        # Create a candidate with high weight if it's a good match
-                        candidates.append({
-                            'track': track,
-                            'score': title_score * 1.2,  # Boost the score
-                            'title_score': title_score,
-                            'artist_score': 100 if any(a.lower() == artist.lower() for a in track_artists) else 0,
-                            'album_score': 100 if album.lower() == track_album.lower() else 0
-                        })
-        except Exception as e:
-            logger.error(f"Error in search strategy 9: {e}")
-    
-    # Strategy 10: Handle "Various Artists" cases by searching title + album
+
+    # Strategy 9: Handle "Various Artists" cases by searching title + album
     if artist and artist.lower() in ['various', 'various artists', 'va'] and album:
         # Search for the title in the specific album/compilation
-        query10 = f"album:\"{album}\" \"{title}\""
-        logger.debug(f"Strategy 10 (Various Artists): {query10}")
+        query9 = f"album:\"{album}\" \"{title}\""
+        logger.debug(f"Strategy 9 (Various Artists): {query9}")
         try:
             apply_rate_limit()
-            results10 = sp.search(q=query10, type='track', limit=20)
-            process_search_results(results10, artist, title, album, candidates, weight=1.3)
+            results9 = sp.search(q=query9, type='track', limit=20)
+            process_search_results(results9, artist, title, album, candidates, weight=1.3)
         except Exception as e:
-            logger.error(f"Error in search strategy 10: {e}")
-    
-    # Strategy 11: Title-only search for Various Artists compilations
+            logger.error(f"Error in search strategy 9: {e}")
+
+    # Strategy 10: Title-only search for Various Artists compilations
     if artist and artist.lower() in ['various', 'various artists', 'va']:
         # Just search the title and let fuzzy matching handle the artist detection
-        query11 = f"\"{title}\""
-        logger.debug(f"Strategy 11 (Various Artists title-only): {query11}")
+        query10 = f"\"{title}\""
+        logger.debug(f"Strategy 10 (Various Artists title-only): {query10}")
         try:
             apply_rate_limit()
-            results11 = sp.search(q=query11, type='track', limit=25)
-            process_search_results(results11, None, title, album, candidates, weight=1.1)
+            results10 = sp.search(q=query10, type='track', limit=25)
+            process_search_results(results10, None, title, album, candidates, weight=1.1)
         except Exception as e:
-            logger.error(f"Error in search strategy 11: {e}")
-    
-    # Strategy 12: Enhanced featuring artist handling
-    if artist and ('feat' in title.lower() or 'ft.' in title.lower() or 'featuring' in title.lower()):
-        # Extract the main title without featuring info
-        main_title = re.sub(r'\s*(feat\.?|ft\.?|featuring)\s+.*', '', title, flags=re.IGNORECASE).strip()
-        if main_title != title and main_title:
-            query12 = f"artist:\"{artist}\" \"{main_title}\""
-            logger.debug(f"Strategy 12 (featuring stripped): {query12}")
-            try:
-                apply_rate_limit()
-                results12 = sp.search(q=query12, type='track', limit=15)
-                process_search_results(results12, artist, main_title, album, candidates, weight=1.2)
-            except Exception as e:
-                logger.error(f"Error in search strategy 12: {e}")
-    
-    # Strategy 13: Try variations of artist names (handle common misspellings)
+            logger.error(f"Error in search strategy 10: {e}")
+
+    # Strategy 11: Try variations of artist names (handle common misspellings)
     if artist:
         artist_variations = []
         # Handle common variations like "Cee-Lo" vs "CeeLo"
@@ -1838,22 +1762,30 @@ def search_track_on_spotify(sp, artist, title, album=None):
         # Handle "X Plastaz" vs "Xplastaz"
         if ' ' in artist:
             artist_variations.append(artist.replace(' ', ''))
-        
+
         for alt_artist in artist_variations:
             if alt_artist != artist:
-                query13 = f"artist:\"{alt_artist}\" \"{title}\""
-                logger.debug(f"Strategy 13 (artist variation): {query13}")
+                query11 = f"artist:\"{alt_artist}\" \"{title}\""
+                logger.debug(f"Strategy 11 (artist variation): {query11}")
                 try:
                     apply_rate_limit()
-                    results13 = sp.search(q=query13, type='track', limit=10)
-                    process_search_results(results13, alt_artist, title, album, candidates, weight=1.15)
+                    results11 = sp.search(q=query11, type='track', limit=10)
+                    process_search_results(results11, alt_artist, title, album, candidates, weight=1.15)
                 except Exception as e:
-                    logger.error(f"Error in search strategy 13: {e}")
+                    logger.error(f"Error in search strategy 11: {e}")
                 break  # Only try one variation to avoid too many API calls
     
-    # If we have no candidates, return None
+    # If we have no candidates, cache the negative result and return None
     if not candidates:
         logger.debug("No candidates found for this track")
+        # Save negative cache entry to prevent retry spam for tracks that don't exist
+        # Uses a marker so we can distinguish negative results from positive ones
+        negative_cache_entry = {
+            '__negative_cache__': True,
+            'timestamp': time.time(),
+            'search_params': {'artist': artist, 'title': title, 'album': album}
+        }
+        save_to_cache(negative_cache_entry, cache_key)
         return None
     
     # Remove duplicates (same track ID)

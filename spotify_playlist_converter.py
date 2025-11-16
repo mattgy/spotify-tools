@@ -2461,7 +2461,11 @@ def process_tracks_batch(sp, tracks_batch, confidence_threshold, batch_mode=Fals
             score = match.get('score', 0)
 
             # Check if AI boost should be used for medium-confidence matches
-            if use_ai_boost and batch_mode and 60 <= score < auto_threshold and ai_boost_count < ai_boost_limit:
+            # Skip medium-confidence if ai_only_for_no_match is enabled
+            from preferences_manager import get_preference
+            ai_only_for_no_match = get_preference("ai.ai_only_for_no_match", False)
+
+            if use_ai_boost and batch_mode and 60 <= score < auto_threshold and ai_boost_count < ai_boost_limit and not ai_only_for_no_match:
                 try:
                     progress_bar.set_description(f"AI boosting: {original_line[:45]}")
                     from ai_track_matcher import ai_assisted_search
@@ -3139,8 +3143,14 @@ def process_playlist_file_auto_mode(sp, file_path, user_id, auto_threshold=85, u
         score = match.get('score', 0) if match else 0
 
         # Try AI boost for medium-confidence matches or no matches
+        # Check preference to see if AI should only run for no-match cases
+        from preferences_manager import get_preference
+        ai_only_for_no_match = get_preference("ai.ai_only_for_no_match", False)
+
         if use_ai_boost and ai_boost_count < ai_boost_limit:
-            if (match and 60 <= score < auto_threshold) or not match:
+            # Use AI if: no match found, OR (match exists with medium score AND not restricted to no-match only)
+            should_use_ai = not match or (match and 60 <= score < auto_threshold and not ai_only_for_no_match)
+            if should_use_ai:
                 try:
                     from ai_track_matcher import ai_assisted_search
                     ai_match = ai_assisted_search(sp, track['artist'], track['title'], track.get('album'), min_confidence=0.7)
@@ -3623,8 +3633,14 @@ def main():
                     score = match.get('score', 0) if match else 0
 
                     # Try AI boost for medium-confidence matches or no matches
+                    # Check preference to see if AI should only run for no-match cases
+                    from preferences_manager import get_preference
+                    ai_only_for_no_match = get_preference("ai.ai_only_for_no_match", False)
+
                     if args.use_ai_boost and ai_boost_count < ai_boost_limit:
-                        if (match and 60 <= score < args.auto_threshold) or not match:
+                        # Use AI if: no match found, OR (match exists with medium score AND not restricted to no-match only)
+                        should_use_ai = not match or (match and 60 <= score < args.auto_threshold and not ai_only_for_no_match)
+                        if should_use_ai:
                             try:
                                 update_progress_bar(pbar, 0, f"🤖 AI boosting: {track['artist'][:30]} - {track['title'][:30]}")
                                 from ai_track_matcher import ai_assisted_search

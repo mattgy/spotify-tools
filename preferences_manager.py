@@ -53,10 +53,11 @@ DEFAULT_PREFERENCES = {
     },
     "ai": {
         "enable_ai_boost": False,  # Enable AI assistance for medium-confidence matches
-        "ai_service": "gemini",  # gemini, claude, gpt4, perplexity
+        "ai_service": "gemini",  # gemini, claude, gpt4, perplexity, openai
         "ai_confidence_threshold": 70,  # Minimum confidence before using AI
         "ai_batch_limit": 50,  # Maximum AI requests per batch
-        "ai_auto_threshold": 85  # Auto-accept threshold for AI-boosted matches
+        "ai_auto_threshold": 85,  # Auto-accept threshold for AI-boosted matches
+        "ai_only_for_no_match": False  # Only use AI when regular search finds nothing
     },
     "playlist_converter": {
         "confidence_threshold": 70,  # Manual review threshold

@@ -3854,13 +3854,55 @@ def main():
                 break
             else:
                 print("❌ Please enter 1, 2, or 3")
-        
+
+        # Ask about AI boost if not already set via command line
+        if not args.use_ai_boost:
+            print("\n" + "="*60)
+            print("AI BOOST - INTELLIGENT TRACK MATCHING")
+            print("="*60)
+            print("AI Boost uses AI models to help identify hard-to-find tracks.")
+            print()
+            print("🤖 How it works:")
+            print("  • Activates when regular search scores 60-84 (medium confidence)")
+            print("  • Also tries when regular search finds nothing")
+            print("  • AI analyzes metadata and suggests corrections for:")
+            print("    - Swapped artist/title")
+            print("    - Typos and alternative spellings")
+            print("    - Cover versions vs originals")
+            print("    - Alternative titles or featuring artists")
+            print()
+            print("⚙️  AI Service (configured in preferences):")
+            from preferences_manager import get_preference
+            ai_service = get_preference("ai.ai_service", "gemini")
+            print(f"  • Current: {ai_service}")
+            print(f"  • Gemini: Free tier available (recommended)")
+            print(f"  • Claude/OpenAI/Perplexity: Paid API credits required")
+            print()
+            print("💰 Cost control: Max 50 AI requests per batch")
+            print()
+
+            while True:
+                ai_choice = input("Enable AI Boost? (y/n, default: n): ").strip().lower()
+                if ai_choice in ['', 'n']:
+                    args.use_ai_boost = False
+                    print("✅ AI Boost disabled - using regular search only")
+                    break
+                elif ai_choice == 'y':
+                    args.use_ai_boost = True
+                    print(f"✅ AI Boost enabled using {ai_service}")
+                    break
+                else:
+                    print("❌ Please enter 'y' or 'n'")
+
         # Set up batch mode with dual thresholds
         args.batch = True
         args.auto_threshold = auto_threshold
         args.manual_threshold = manual_threshold
         confidence_threshold = manual_threshold
-        
+
+        print("\n" + "="*60)
+        print("SUMMARY")
+        print("="*60)
         print(f"✅ Batch mode enabled:")
         print(f"  • {auto_threshold}+ = Auto-accept")
         print(f"  • {manual_threshold}-{auto_threshold-1} = Manual review")

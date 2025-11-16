@@ -6,6 +6,7 @@ Includes rate limiting, error handling, and common patterns.
 
 import time
 import functools
+import logging
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 from colorama import Fore
@@ -15,6 +16,9 @@ from print_utils import print_success, print_error, print_warning, print_info, p
 
 # Import centralized constants
 from constants import CACHE_EXPIRATION, SPOTIFY_SCOPES, RATE_LIMITS
+
+# Initialize logger
+logger = logging.getLogger(__name__)
 
 def show_spotify_setup_help():
     """Show standardized help for setting up Spotify API credentials."""

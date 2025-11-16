@@ -232,16 +232,16 @@ If you cannot identify the track with reasonable confidence, return:
         api_key = self.available_services.get('openai')
         if not api_key:
             return None
-            
+
         url = "https://api.openai.com/v1/chat/completions"
-        
+
         headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json"
         }
-        
+
         prompt = self._create_prompt(artist, title, album)
-        
+
         payload = {
             "model": "gpt-4o",
             "messages": [
@@ -251,19 +251,44 @@ If you cannot identify the track with reasonable confidence, return:
             "temperature": 0.2,
             "max_tokens": 1024
         }
-        
-        try:
-            response = requests.post(url, headers=headers, json=payload, timeout=30)
-            response.raise_for_status()
-            
-            data = response.json()
-            if 'choices' in data and data['choices']:
-                text = data['choices'][0]['message']['content']
-                return self._parse_ai_response(text)
-                
-        except Exception as e:
-            logger.error(f"OpenAI API error: {e}")
-            
+
+        # OpenAI rate limits vary by tier
+        # Conservative approach: 2s between requests (allows 30/min)
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                # Rate limiting: wait 2 seconds between requests
+                if attempt > 0:
+                    wait_time = 2 * (2 ** (attempt - 1))  # Exponential backoff: 2s, 4s, 8s
+                    logger.info(f"Rate limit retry {attempt}/{max_retries}, waiting {wait_time}s...")
+                    time.sleep(wait_time)
+                else:
+                    time.sleep(2)  # Always wait 2s to respect rate limits
+
+                response = requests.post(url, headers=headers, json=payload, timeout=30)
+                response.raise_for_status()
+
+                data = response.json()
+                if 'choices' in data and data['choices']:
+                    text = data['choices'][0]['message']['content']
+                    return self._parse_ai_response(text)
+
+            except requests.exceptions.HTTPError as e:
+                if e.response.status_code == 429:  # Rate limit
+                    if attempt < max_retries - 1:
+                        logger.warning(f"OpenAI rate limit hit, retrying...")
+                        continue
+                    else:
+                        logger.error("OpenAI rate limit exceeded after retries")
+                        logger.error("Check your OpenAI API tier at https://platform.openai.com/settings/organization/billing/overview")
+                        return None
+                else:
+                    logger.error(f"OpenAI API HTTP error: {e.response.status_code}")
+                    return None
+            except Exception as e:
+                logger.error(f"OpenAI API error: {type(e).__name__}")
+                return None
+
         return None
     
     def _query_anthropic(self, artist: str, title: str, album: Optional[str] = None) -> Optional[Dict]:

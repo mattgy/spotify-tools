@@ -321,33 +321,49 @@ If you cannot identify the track with reasonable confidence, return:
         return None
 
 
-def ai_assisted_search(sp, artist: str, title: str, album: Optional[str] = None, 
+def ai_assisted_search(sp, artist: str, title: str, album: Optional[str] = None,
                       min_confidence: float = 0.7) -> Optional[Dict]:
     """
     Try AI-assisted search when regular search fails.
-    
+
     Args:
         sp: Spotify client
         artist: Artist name
-        title: Track title  
+        title: Track title
         album: Album name if available
         min_confidence: Minimum AI confidence to attempt search
-        
+
     Returns:
         Spotify track match or None
     """
     from spotify_playlist_converter import search_track_on_spotify
-    
+    from preferences_manager import get_preference
+
     # Initialize AI matcher
     ai_matcher = AITrackMatcher()
-    
+
     if not ai_matcher.get_available_services():
         return None
-        
+
+    # Get preferred AI service from user preferences
+    preferred_service = get_preference("ai.ai_service", "gemini")
+
+    # Check if preferred service is available
+    available_services = ai_matcher.get_available_services()
+    if preferred_service not in available_services:
+        logger.warning(f"Preferred AI service '{preferred_service}' not available (no API key configured)")
+        if available_services:
+            preferred_service = available_services[0]
+            logger.info(f"Falling back to first available service: {preferred_service}")
+        else:
+            logger.error("No AI services available - check credentials_manager.py for API keys")
+            return None
+
     logger.info(f"Attempting AI-assisted match for: {artist} - {title}")
-    
-    # Get AI suggestion
-    ai_result = ai_matcher.match_track(artist, title, album)
+    logger.info(f"Using AI service: {preferred_service}")
+
+    # Get AI suggestion with preferred service
+    ai_result = ai_matcher.match_track(artist, title, album, service=preferred_service)
     
     if not ai_result or ai_result.get('confidence', 0) < min_confidence:
         return None

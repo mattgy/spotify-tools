@@ -266,10 +266,10 @@ def apply_learning_patterns(artist, title):
     """Apply learned patterns to improve matching."""
     learning_key = "playlist_converter_learning_data"
     learning_data = load_from_cache(learning_key, 365 * 24 * 60 * 60)
-    
-    if not learning_data:
+
+    if not learning_data or not isinstance(learning_data, dict):
         return artist, title
-    
+
     patterns = learning_data.get('patterns', {})
     artist_variations = patterns.get('artist_variations', {})
     
@@ -605,6 +605,7 @@ def extract_track_info_from_extinf_and_path(extinf_line, file_path):
     """
     Extract track information from both EXTINF line and file path.
     EXTINF format: #EXTINF:duration,Artist - Title
+    BUT for Various Artists compilations, format is: #EXTINF:duration,Title - Artist
     """
     track_info = {
         'artist': '',
@@ -612,30 +613,134 @@ def extract_track_info_from_extinf_and_path(extinf_line, file_path):
         'title': '',
         'path': file_path
     }
-    
+
     # First extract info from the file path
     path_info = extract_track_info_from_path(file_path)
     track_info.update(path_info)
-    
+
+    # Store path-based data for comparison
+    path_artist = track_info.get('artist', '').strip()
+    path_title = track_info.get('title', '').strip()
+    path_album = track_info.get('album', '').strip()
+
+    # Check if this is a Various Artists compilation
+    is_compilation = False
+    if path_artist and path_artist.lower().startswith('various'):
+        is_compilation = True
+    elif path_album and path_album.lower().startswith('various'):
+        is_compilation = True
+    # Also check file path for "Various" directory
+    elif 'various' in file_path.lower():
+        path_parts = file_path.lower().split('/')
+        if any('various' in part for part in path_parts):
+            is_compilation = True
+
     # Then try to extract from EXTINF line which might have better info
     try:
         # Format is typically: #EXTINF:duration,Artist - Title
-        # or sometimes: #EXTINF:duration,Title
+        # BUT for compilations: #EXTINF:duration,Title - Artist
         extinf_parts = extinf_line.split(',', 1)
         if len(extinf_parts) > 1:
             info_part = extinf_parts[1].strip()
-            
+
             # Check if it contains artist - title format
             if ' - ' in info_part:
-                artist, title = info_part.split(' - ', 1)
-                track_info['artist'] = artist.strip()
-                track_info['title'] = title.strip()
+                first_part, second_part = info_part.split(' - ', 1)
+                first_part = first_part.strip()
+                second_part = second_part.strip()
+
+                # For compilations, assume format is "Title - Artist"
+                if is_compilation:
+                    extinf_artist = second_part
+                    extinf_title = first_part
+                    logger.debug(f"Compilation detected - using Title-Artist format: {extinf_title} by {extinf_artist}")
+                else:
+                    extinf_artist = first_part
+                    extinf_title = second_part
+
+                # For compilations, we've already correctly parsed as "Title - Artist"
+                # So just use the data directly without backwards checking
+                if is_compilation:
+                    track_info['artist'] = extinf_artist
+                    track_info['title'] = extinf_title
+                else:
+                    # When EXTINF is present, prefer it over path parsing but check if it's backwards
+                    # Get just the filename (not full path) for comparison
+                    filename_only = file_path.replace('\\', '/').split('/')[-1].lower()
+
+                    # Check ordering in filename to detect if EXTINF is backwards
+                    # Look for "artist - title" vs "title - artist" pattern
+                    extinf_artist_lower = extinf_artist.lower()
+                    extinf_title_lower = extinf_title.lower()
+
+                    # Find positions in filename
+                    artist_pos = filename_only.find(extinf_artist_lower)
+                    title_pos = filename_only.find(extinf_title_lower)
+
+                    # Score based on presence AND order
+                    extinf_normal_score = 0
+                    extinf_swapped_score = 0
+
+                    if artist_pos >= 0 and title_pos >= 0:
+                        # Both found - check order
+                        if artist_pos < title_pos:
+                            # Artist comes before title (normal)
+                            extinf_normal_score = 100
+                            extinf_swapped_score = 0
+                        else:
+                            # Title comes before artist (swapped)
+                            extinf_normal_score = 0
+                            extinf_swapped_score = 100
+                    elif artist_pos >= 0 or title_pos >= 0:
+                        # Only one found - can't determine order, use presence
+                        extinf_normal_score = len(extinf_artist) if artist_pos >= 0 else 0
+                        extinf_normal_score += len(extinf_title) if title_pos >= 0 else 0
+                        extinf_swapped_score = extinf_normal_score  # Can't tell which is better
+                    # else: neither found, both scores stay 0
+
+                    # If we have both artist and title from path, compare with EXTINF
+                    if path_artist and path_title:
+                        # Path data score (using filename only, not full path)
+                        path_score = 0
+                        if path_artist.lower() in filename_only:
+                            path_score += len(path_artist)
+                        if path_title.lower() in filename_only:
+                            path_score += len(path_title)
+
+                        # If path data strongly matches filename AND beats both EXTINF orderings, keep path
+                        # Require path to score well (at least 70% of potential)
+                        path_potential = len(path_artist) + len(path_title)
+                        path_confidence = path_score / path_potential if path_potential > 0 else 0
+
+                        if path_confidence >= 0.7 and path_score > extinf_normal_score and path_score > extinf_swapped_score:
+                            # Path data is strongly supported by filename, keep it
+                            pass
+                        elif extinf_swapped_score > extinf_normal_score:
+                            # EXTINF appears backwards, swap it
+                            track_info['artist'] = extinf_title
+                            track_info['title'] = extinf_artist
+                            logger.debug(f"Swapped EXTINF data for better match: {extinf_title} - {extinf_artist}")
+                        else:
+                            # Use EXTINF as-is (it's the authoritative source when present)
+                            track_info['artist'] = extinf_artist
+                            track_info['title'] = extinf_title
+                    else:
+                        # No path data, check if EXTINF is backwards
+                        if extinf_swapped_score > extinf_normal_score:
+                            track_info['artist'] = extinf_title
+                            track_info['title'] = extinf_artist
+                            logger.debug(f"Swapped EXTINF data: {extinf_title} - {extinf_artist}")
+                        else:
+                            # Trust EXTINF as-is
+                            track_info['artist'] = extinf_artist
+                            track_info['title'] = extinf_title
             else:
                 # If no separator, assume it's just the title
-                track_info['title'] = info_part.strip()
+                if not path_title:
+                    track_info['title'] = info_part.strip()
     except Exception as e:
         logger.debug(f"Error parsing EXTINF line: {e}")
-    
+
     return track_info
 
 def extract_track_info_from_path(path):

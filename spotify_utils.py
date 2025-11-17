@@ -1118,19 +1118,15 @@ def optimized_track_search_strategies(sp, artist, title, album=None, max_strateg
     if artist and title:
         strategies.append(f'"{artist} {title}"')
 
-    # Title-only search for unique titles
-    if title:
-        strategies.append(f'"{title}"')
-
     # Artist name spacing variation - for cases like "Soap Kills" vs "Soapkills"
     if artist and title and ' ' in artist and not various_artists:
         artist_no_space = artist.replace(' ', '')
         strategies.append(f'artist:"{artist_no_space}" track:"{title}"')
 
-    # Swap strategy - for cases where artist and title are reversed in metadata
-    # Only try if artist doesn't contain ' - ' (prevents double-swapping issues)
-    if artist and title and ' - ' not in artist and not various_artists:
-        strategies.append(f'artist:"{title}" track:"{artist}"')
+    # REMOVED: Title-only and swap strategies - too loose, cause false matches
+    # Title-only can match "Stars" by Simply Red when searching for "Stars - Wasted Daylight"
+    # Swap strategy was useful when EXTINF parsing was broken, but now causes more harm than good
+    # If these are needed in the future, they should only run as last resort with stricter validation
 
     # Limit to max_strategies
     strategies = strategies[:max_strategies]
@@ -1274,13 +1270,36 @@ def consolidated_track_score(search_artist, search_title, result_artist, result_
     search_title_clean = strip_remaster_tags(search_title_main)
     result_title_clean = strip_remaster_tags(result_title_main)
 
-    # Normalize for comparison (lowercase, remove extra spaces)
-    norm_search_artist = search_artist_main.lower().strip()
-    norm_search_title = search_title_clean.lower().strip()
-    norm_result_artist = result_artist_main.lower().strip()
-    norm_result_title = result_title_clean.lower().strip()
-    norm_search_album = search_album.lower().strip() if search_album else ""
-    norm_result_album = result_album.lower().strip() if result_album else ""
+    # Helper function to normalize text (accents, special chars, common substitutions)
+    def normalize_text(text):
+        import unicodedata
+        # Convert to lowercase
+        text = text.lower().strip()
+        # Remove accents/diacritics (ü→u, é→e, etc.)
+        text = ''.join(c for c in unicodedata.normalize('NFD', text)
+                      if unicodedata.category(c) != 'Mn')
+
+        # Normalize common word variations (language differences)
+        # Replace standalone words to handle "and" in different languages
+        words = text.split()
+        normalized_words = []
+        for word in words:
+            # Normalize "and" across languages: y/e/and → &
+            if word in ['y', 'e', 'and', '&', 'et']:
+                normalized_words.append('&')
+            else:
+                normalized_words.append(word)
+        text = ' '.join(normalized_words)
+
+        return text
+
+    # Normalize for comparison (lowercase, remove accents, etc.)
+    norm_search_artist = normalize_text(search_artist_main)
+    norm_search_title = normalize_text(search_title_clean)
+    norm_result_artist = normalize_text(result_artist_main)
+    norm_result_title = normalize_text(result_title_clean)
+    norm_search_album = normalize_text(search_album) if search_album else ""
+    norm_result_album = normalize_text(result_album) if result_album else ""
 
     # === ARTIST MATCHING (45% weight) ===
     # Use multiple distance metrics and take the best
@@ -1411,9 +1430,13 @@ def consolidated_track_score(search_artist, search_title, result_artist, result_
         penalty += 80
         logger.debug(f"Applied karaoke penalty to: '{result_title}' by {result_artist} from '{result_album}'")
 
-    # Different primary artist penalty (-30, major issue)
-    if artist_score < 50:  # Very different artists
-        penalty += 30
+    # Different primary artist penalty (严格 - much harsher for bad artist matches)
+    if artist_score < 30:  # Completely different artists
+        penalty += 60  # Massive penalty - likely wrong track entirely
+    elif artist_score < 50:  # Very different artists
+        penalty += 45  # Heavy penalty
+    elif artist_score < 70:  # Somewhat different artists
+        penalty += 25  # Moderate penalty
 
     # Calculate weighted composite score with dynamic normalization
     # Don't waste weight on missing components - redistribute to available data
@@ -1439,6 +1462,17 @@ def consolidated_track_score(search_artist, search_title, result_artist, result_
 
     base_score = (artist_score * artist_weight) + (title_score * title_weight) + (album_score * album_weight)
     final_score = base_score + bonus - penalty
+
+    # CRITICAL: For high-confidence matches (85+), require BOTH artist AND title to be good
+    # This prevents matches like "Ugly Duckling" by Yena matching "Ugly Duckling" by Ugly Duckling
+    if final_score >= 85:
+        # Require strong artist match (at least 60) for auto-accept
+        if artist_score < 60:
+            # Severely cap the score if artist doesn't match well enough
+            final_score = min(final_score, 75)  # Can't be auto-accepted
+        # Also require reasonable title match
+        if title_score < 60:
+            final_score = min(final_score, 75)  # Can't be auto-accepted
 
     # Clamp to 0-100 range
     return max(0, min(100, final_score))

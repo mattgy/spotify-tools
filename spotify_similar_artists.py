@@ -299,7 +299,7 @@ def main():
     print_header("Find Artists to Follow That You Probably Like")
     
     # Get user preferences
-    print_info("\n🎛️ Discovery Preferences:")
+    print_info("\n🎛️  Discovery Preferences:")
     
     # Ask for maximum recommendations
     max_recs_input = input("Maximum recommendations to find (default: 50, max: 500): ").strip()

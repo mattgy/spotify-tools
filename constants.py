@@ -175,6 +175,45 @@ GEOGRAPHIC_REGIONS = {
     'africa': ['ZA', 'NG', 'EG', 'MA']
 }
 
+# Visual styling constants (Option 2: Minimalist with Icons & Color Blocks)
+MENU_ICONS = {
+    'app': '🎵',
+    'playlist': '📝',
+    'heart': '❤️',
+    'liked': '💙',
+    'artist': '👥',
+    'search': '🔍',
+    'cleanup': '🧹',
+    'backup': '💾',
+    'settings': '⚙️',
+    'cache': '📦',
+    'exit': '🚪',
+    'music': '🎧',
+    'warning': '⚠️',
+    'success': '✓',
+    'error': '✗',
+    'info': 'ℹ',
+    'processing': '🔄',
+    'stats': '📊'
+}
+
+BOX_CHARS = {
+    'double_h': '═',
+    'single_h': '─',
+    'bullet': '',  # Removed cluttered bullet character
+    'arrow': '▸',
+    'diamond': '◆',
+    'dot': '•'
+}
+
+# Progress bar styling
+PROGRESS_STYLES = {
+    'processing': {'color': 'cyan', 'icon': '🔄'},
+    'success': {'color': 'green', 'icon': '✓'},
+    'warning': {'color': 'yellow', 'icon': '⚠'},
+    'error': {'color': 'red', 'icon': '✗'}
+}
+
 # Error messages
 ERROR_MESSAGES = {
     'auth_failed': "Failed to authenticate with Spotify. Please check your credentials.",

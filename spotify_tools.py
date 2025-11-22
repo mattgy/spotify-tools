@@ -32,10 +32,11 @@ colorama.init(autoreset=True)
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # Import constants
-from constants import CONFIG_DIR, CREDENTIALS_FILE, CACHE_DIR, CLEANUP_THRESHOLDS
+from constants import CONFIG_DIR, CREDENTIALS_FILE, CACHE_DIR, CLEANUP_THRESHOLDS, MENU_ICONS, BOX_CHARS
 
 # Define paths to other scripts
 FOLLOW_ARTISTS_SCRIPT = os.path.join(SCRIPT_DIR, "spotify_follow_artists.py")
+FOLLOW_ARTISTS_FROM_LIKED_SCRIPT = os.path.join(SCRIPT_DIR, "spotify_follow_artists_from_liked.py")
 LIKE_SONGS_SCRIPT = os.path.join(SCRIPT_DIR, "spotify_like_songs.py")
 LIBRARY_CLEANUP_SCRIPT = os.path.join(SCRIPT_DIR, "spotify_library_cleanup.py")
 SIMILAR_ARTISTS_SCRIPT = os.path.join(SCRIPT_DIR, "spotify_similar_artists.py")
@@ -54,7 +55,11 @@ INSTALL_DEPENDENCIES_SCRIPT = os.path.join(SCRIPT_DIR, "install_dependencies.py"
 DEFAULT_MAX_CACHE_AGE = CLEANUP_THRESHOLDS['stale_cache_days']
 
 # Import print functions from centralized module
-from print_utils import print_header, print_success, print_error, print_warning, print_info
+from print_utils import (
+    print_header, print_success, print_error, print_warning, print_info,
+    print_box_header, print_section_header, print_menu_item, print_status,
+    print_separator
+)
 
 def run_script(script_path, args=None):
     """Run a Python script with optional arguments."""
@@ -458,7 +463,7 @@ def ai_configuration_menu():
     from preferences_manager import get_preference, set_preference
 
     while True:
-        print_header("AI Assistance Configuration")
+        print_box_header("AI Assistance Configuration", icon=MENU_ICONS['settings'])
 
         # Load current settings
         ai_enabled = get_preference("ai.enable_ai_boost", False)
@@ -467,22 +472,23 @@ def ai_configuration_menu():
         ai_limit = get_preference("ai.ai_batch_limit", 50)
         ai_auto = get_preference("ai.ai_auto_threshold", 85)
 
-        print(f"{Fore.YELLOW}{Style.BRIGHT}CURRENT SETTINGS:")
-        print(f"{Fore.WHITE}AI Boost Enabled: {Fore.GREEN if ai_enabled else Fore.RED}{ai_enabled}")
-        print(f"{Fore.WHITE}AI Service: {Fore.CYAN}{ai_service}")
-        print(f"{Fore.WHITE}Confidence Threshold (min for AI): {Fore.CYAN}{ai_threshold}")
-        print(f"{Fore.WHITE}Auto-Accept Threshold (AI matches): {Fore.CYAN}{ai_auto}")
-        print(f"{Fore.WHITE}Batch Limit (max AI requests): {Fore.CYAN}{ai_limit}")
+        print_section_header("CURRENT SETTINGS", color=Fore.YELLOW)
+        print(f"  {Fore.WHITE}AI Boost Enabled: {Fore.GREEN if ai_enabled else Fore.RED}{ai_enabled}")
+        print(f"  {Fore.WHITE}AI Service: {Fore.CYAN}{ai_service}")
+        print(f"  {Fore.WHITE}Confidence Threshold (min for AI): {Fore.CYAN}{ai_threshold}")
+        print(f"  {Fore.WHITE}Auto-Accept Threshold (AI matches): {Fore.CYAN}{ai_auto}")
+        print(f"  {Fore.WHITE}Batch Limit (max AI requests): {Fore.CYAN}{ai_limit}")
 
-        print(f"\n{Fore.YELLOW}{Style.BRIGHT}OPTIONS:")
-        print(f"{Fore.WHITE}1. Toggle AI boost (currently: {Fore.GREEN if ai_enabled else Fore.RED}{ai_enabled}{Fore.WHITE})")
-        print(f"{Fore.WHITE}2. Select AI service ({ai_service})")
-        print(f"{Fore.WHITE}3. Set confidence threshold ({ai_threshold})")
-        print(f"{Fore.WHITE}4. Set auto-accept threshold ({ai_auto})")
-        print(f"{Fore.WHITE}5. Set batch limit ({ai_limit})")
-        print(f"\n{Fore.WHITE}6. Back to playlist converter menu")
+        print_section_header("OPTIONS")
+        print_menu_item(1, f"Toggle AI boost (currently: {Fore.GREEN if ai_enabled else Fore.RED}{ai_enabled}{Fore.WHITE})", icon=BOX_CHARS['bullet'])
+        print_menu_item(2, f"Select AI service (current: {ai_service})", icon=BOX_CHARS['bullet'])
+        print_menu_item(3, f"Set confidence threshold (current: {ai_threshold})", icon=BOX_CHARS['bullet'])
+        print_menu_item(4, f"Set auto-accept threshold (current: {ai_auto})", icon=BOX_CHARS['bullet'])
+        print_menu_item(5, f"Set batch limit (current: {ai_limit})", icon=BOX_CHARS['bullet'])
+        print("")
+        print_menu_item(6, "Back to playlist converter menu", icon=BOX_CHARS['arrow'])
 
-        choice = input(f"\n{Fore.CYAN}Enter your choice (1-6): ")
+        choice = input(f"\n{Fore.CYAN}{BOX_CHARS['arrow']} Enter your choice (1-6): ")
 
         if choice == "1":
             # Toggle AI boost
@@ -559,7 +565,7 @@ def playlist_converter_preferences_menu():
     from preferences_manager import get_preference, set_preference
 
     while True:
-        print_header("Playlist Converter Preferences")
+        print_box_header("Playlist Converter Preferences", icon=MENU_ICONS['settings'])
 
         # Load current settings
         conf_threshold = get_preference("playlist_converter.confidence_threshold", 70)
@@ -569,24 +575,25 @@ def playlist_converter_preferences_menu():
         batch_mode = get_preference("playlist_converter.batch_mode", False)
         use_ai = get_preference("playlist_converter.use_ai_boost", False)
 
-        print(f"{Fore.YELLOW}{Style.BRIGHT}CURRENT SETTINGS:")
-        print(f"{Fore.WHITE}Confidence Threshold (manual review): {Fore.CYAN}{conf_threshold}")
-        print(f"{Fore.WHITE}Auto-Accept Threshold: {Fore.CYAN}{auto_threshold}")
-        print(f"{Fore.WHITE}Minimum Score (show results): {Fore.CYAN}{min_score}")
-        print(f"{Fore.WHITE}Duplicate Handling: {Fore.CYAN}{duplicate}")
-        print(f"{Fore.WHITE}Batch Mode Default: {Fore.GREEN if batch_mode else Fore.RED}{batch_mode}")
-        print(f"{Fore.WHITE}Use AI Boost: {Fore.GREEN if use_ai else Fore.RED}{use_ai}")
+        print_section_header("CURRENT SETTINGS", color=Fore.YELLOW)
+        print(f"  {Fore.WHITE}Confidence Threshold (manual review): {Fore.CYAN}{conf_threshold}")
+        print(f"  {Fore.WHITE}Auto-Accept Threshold: {Fore.CYAN}{auto_threshold}")
+        print(f"  {Fore.WHITE}Minimum Score (show results): {Fore.CYAN}{min_score}")
+        print(f"  {Fore.WHITE}Duplicate Handling: {Fore.CYAN}{duplicate}")
+        print(f"  {Fore.WHITE}Batch Mode Default: {Fore.GREEN if batch_mode else Fore.RED}{batch_mode}")
+        print(f"  {Fore.WHITE}Use AI Boost: {Fore.GREEN if use_ai else Fore.RED}{use_ai}")
 
-        print(f"\n{Fore.YELLOW}{Style.BRIGHT}OPTIONS:")
-        print(f"{Fore.WHITE}1. Set confidence threshold ({conf_threshold})")
-        print(f"{Fore.WHITE}2. Set auto-accept threshold ({auto_threshold})")
-        print(f"{Fore.WHITE}3. Set minimum score ({min_score})")
-        print(f"{Fore.WHITE}4. Set duplicate handling ({duplicate})")
-        print(f"{Fore.WHITE}5. Toggle batch mode default ({batch_mode})")
-        print(f"{Fore.WHITE}6. Toggle AI boost default ({use_ai})")
-        print(f"\n{Fore.WHITE}7. Back to playlist converter menu")
+        print_section_header("OPTIONS")
+        print_menu_item(1, f"Set confidence threshold (current: {conf_threshold})", icon=BOX_CHARS['bullet'])
+        print_menu_item(2, f"Set auto-accept threshold (current: {auto_threshold})", icon=BOX_CHARS['bullet'])
+        print_menu_item(3, f"Set minimum score (current: {min_score})", icon=BOX_CHARS['bullet'])
+        print_menu_item(4, f"Set duplicate handling (current: {duplicate})", icon=BOX_CHARS['bullet'])
+        print_menu_item(5, f"Toggle batch mode default (current: {batch_mode})", icon=BOX_CHARS['bullet'])
+        print_menu_item(6, f"Toggle AI boost default (current: {use_ai})", icon=BOX_CHARS['bullet'])
+        print("")
+        print_menu_item(7, "Back to playlist converter menu", icon=BOX_CHARS['arrow'])
 
-        choice = input(f"\n{Fore.CYAN}Enter your choice (1-7): ")
+        choice = input(f"\n{Fore.CYAN}{BOX_CHARS['arrow']} Enter your choice (1-7): ")
 
         if choice == "1":
             try:
@@ -655,27 +662,28 @@ def playlist_converter_preferences_menu():
 def playlist_converter_menu():
     """Sub-menu for playlist converter options."""
     while True:
-        print_header("Playlist Converter & Management")
-        
-        print(f"{Fore.YELLOW}{Style.BRIGHT}PLAYLIST SYNC OPTIONS:")
-        print(f"{Fore.WHITE}1. Auto-sync only (add missing playlists & tracks automatically)")
-        print(f"{Fore.WHITE}2. Auto-sync + manual review (review matches below threshold)")
-        
-        print(f"\n{Fore.YELLOW}{Style.BRIGHT}CLEANUP OPTIONS:")
-        print(f"{Fore.WHITE}3. Clean up Spotify playlists to match local ones exactly")
-        print(f"{Fore.WHITE}4. Delete duplicate Spotify playlists (same name as local)")
-        
-        print(f"\n{Fore.YELLOW}{Style.BRIGHT}MAINTENANCE:")
-        print(f"{Fore.WHITE}5. Clear processed playlist cache")
-        print(f"{Fore.WHITE}6. Remove .m3u suffixes from Spotify playlists")
+        print_box_header("Playlist Converter & Management", icon=MENU_ICONS['playlist'])
 
-        print(f"\n{Fore.YELLOW}{Style.BRIGHT}AI & PREFERENCES:")
-        print(f"{Fore.WHITE}7. Configure AI assistance settings")
-        print(f"{Fore.WHITE}8. Configure playlist converter preferences")
+        print_section_header("PLAYLIST SYNC OPTIONS")
+        print_menu_item(1, "Auto-sync only (add missing playlists and tracks automatically)", icon=BOX_CHARS['bullet'])
+        print_menu_item(2, "Auto-sync with manual review (review matches below threshold)", icon=BOX_CHARS['bullet'])
 
-        print(f"\n{Fore.WHITE}9. Back to main menu")
+        print_section_header("CLEANUP OPTIONS")
+        print_menu_item(3, "Clean up Spotify playlists to match local ones exactly", icon=BOX_CHARS['bullet'])
+        print_menu_item(4, "Delete duplicate Spotify playlists (same name as local)", icon=BOX_CHARS['bullet'])
 
-        choice = input(f"\n{Fore.CYAN}Enter your choice (1-9): ")
+        print_section_header("MAINTENANCE")
+        print_menu_item(5, "Clear processed playlist cache", icon=BOX_CHARS['bullet'])
+        print_menu_item(6, "Remove .m3u suffixes from Spotify playlists", icon=BOX_CHARS['bullet'])
+
+        print_section_header("AI AND PREFERENCES")
+        print_menu_item(7, "Configure AI assistance settings", icon=BOX_CHARS['bullet'])
+        print_menu_item(8, "Configure playlist converter preferences", icon=BOX_CHARS['bullet'])
+
+        print("")
+        print_menu_item(9, "Back to main menu", icon=BOX_CHARS['arrow'])
+
+        choice = input(f"\n{Fore.CYAN}{BOX_CHARS['arrow']} Enter your choice (1-9): ")
         
         if choice == "1":
             # Auto-sync mode - fully autonomous
@@ -858,6 +866,53 @@ def check_cache_age():
             except ValueError:
                 print_error("Invalid input. Please enter a number.")
 
+def library_cleanup_menu():
+    """Sub-menu for library cleanup options."""
+    while True:
+        print_box_header("Clean up and optimize your library", icon=MENU_ICONS['cleanup'])
+
+        print_section_header("SONG CLEANUP")
+        print_menu_item(1, "Analyze and clean up your library (songs only)", icon=BOX_CHARS['bullet'])
+        print_menu_item(2, "Remove Christmas songs from Liked Songs", icon=BOX_CHARS['bullet'])
+
+        print_section_header("PLAYLIST CLEANUP")
+        print_menu_item(3, "Find and manage playlists by track count", icon=BOX_CHARS['bullet'])
+
+        print_section_header("ARTIST CLEANUP")
+        print_menu_item(4, "Remove followed artists that you probably don't like", icon=BOX_CHARS['bullet'])
+
+        print("")
+        print_menu_item(5, "Back to main menu", icon=BOX_CHARS['arrow'])
+
+        choice = input(f"\n{Fore.CYAN}{BOX_CHARS['arrow']} Enter your choice (1-5): ")
+
+        if choice == "1":
+            # Run the library cleanup script
+            print_info("\nRunning library cleanup functionality...")
+            run_script(LIBRARY_CLEANUP_SCRIPT)
+
+        elif choice == "2":
+            # Run the Christmas cleanup script
+            print_info("\nRemoving Christmas songs from Liked Songs...")
+            run_script(CHRISTMAS_CLEANUP_SCRIPT)
+
+        elif choice == "3":
+            # Run the playlist size manager script
+            print_info("\nManaging playlists by track count...")
+            run_script(PLAYLIST_SIZE_MANAGER_SCRIPT)
+
+        elif choice == "4":
+            # Run the artist cleanup script
+            print_info("\nRemoving followed artists that you probably don't like...")
+            run_script(CLEANUP_ARTISTS_SCRIPT)
+
+        elif choice == "5":
+            # Back to main menu
+            break
+
+        else:
+            print_error("Invalid choice. Please enter a number between 1 and 5.")
+
 def main():
     """Main function to run the master script."""
     # Check cache age on startup
@@ -875,28 +930,28 @@ def main():
     
     # Display menu
     while True:
-        print_header("Matt Y's Spotify Tools")
-        
-        # Group 1: Playlist Management
-        print(f"{Fore.WHITE}1. Convert local playlists to Spotify playlists")
-        print(f"{Fore.WHITE}2. Add all songs from your created playlists to Liked Songs")
-        print(f"{Fore.WHITE}3. Find and manage playlists by track count")
-        print(f"{Fore.WHITE}4. Clean up and optimize your library (songs only)")
-        print(f"{Fore.WHITE}5. Remove Christmas songs from Liked Songs")
+        print_box_header("SPOTIFY TOOLS  v2.0", icon=MENU_ICONS['app'])
 
-        # Group 2: Artist Management
-        print(f"{Fore.WHITE}6. Follow all artists in your created playlists")
-        print(f"{Fore.WHITE}7. Find Artists to Follow That You Probably Like")
-        print(f"{Fore.WHITE}8. Remove followed artists that you probably don't like")
+        print_section_header("PLAYLIST MANAGEMENT", icon=MENU_ICONS['music'])
+        print_menu_item(1, "Convert local playlists to Spotify playlists", icon=BOX_CHARS['bullet'])
+        print_menu_item(2, "Add all songs from your created playlists to Liked Songs", icon=BOX_CHARS['bullet'])
 
-        # Group 3: System & Data Management
-        print(f"{Fore.WHITE}9. Backup & export your music library")
-        print(f"{Fore.WHITE}10. Manage caches")
-        print(f"{Fore.WHITE}11. Manage API credentials")
-        print(f"{Fore.WHITE}12. Reset environment (reinstall dependencies)")
-        print(f"{Fore.WHITE}13. Exit")
+        print_section_header("ARTIST MANAGEMENT", icon=MENU_ICONS['artist'])
+        print_menu_item(3, "Follow all artists in your created playlists", icon=BOX_CHARS['bullet'])
+        print_menu_item(4, "Follow all artists from your Liked Songs", icon=BOX_CHARS['bullet'])
+        print_menu_item(5, "Find artists to follow that you probably like", icon=BOX_CHARS['bullet'])
 
-        choice = input(f"\n{Fore.CYAN}Enter your choice (1-13): ")
+        print_section_header("LIBRARY CLEANUP", icon=MENU_ICONS['cleanup'])
+        print_menu_item(6, "Clean up and optimize your library", icon=BOX_CHARS['bullet'])
+
+        print_section_header("SYSTEM & DATA MANAGEMENT", icon=MENU_ICONS['settings'])
+        print_menu_item(7, "Backup and export your music library", icon=BOX_CHARS['bullet'])
+        print_menu_item(8, "Manage caches", icon=BOX_CHARS['bullet'])
+        print_menu_item(9, "Manage API credentials", icon=BOX_CHARS['bullet'])
+        print_menu_item(10, "Reset environment (reinstall dependencies)", icon=BOX_CHARS['bullet'])
+        print_menu_item(11, "Exit", icon=BOX_CHARS['bullet'])
+
+        choice = input(f"\n{Fore.CYAN}{BOX_CHARS['arrow']} Enter your choice (1-11): ")
         
         if choice == "1":
             # Playlist converter sub-menu
@@ -908,53 +963,42 @@ def main():
             run_script(LIKE_SONGS_SCRIPT)
 
         elif choice == "3":
-            # Run the playlist size manager script
-            print_info("\nManaging playlists by track count...")
-            run_script(PLAYLIST_SIZE_MANAGER_SCRIPT)
-
-        elif choice == "4":
-            # Run the library cleanup script
-            print_info("\nRunning library cleanup functionality...")
-            run_script(LIBRARY_CLEANUP_SCRIPT)
-
-        elif choice == "5":
-            # Run the Christmas cleanup script
-            print_info("\nRemoving Christmas songs from Liked Songs...")
-            run_script(CHRISTMAS_CLEANUP_SCRIPT)
-
-        elif choice == "6":
             # Run the follow artists script
             print_info("\nRunning follow artists functionality...")
             run_script(FOLLOW_ARTISTS_SCRIPT)
 
-        elif choice == "7":
+        elif choice == "4":
+            # Run the follow artists from liked songs script
+            print_info("\nFollowing artists from your Liked Songs...")
+            run_script(FOLLOW_ARTISTS_FROM_LIKED_SCRIPT)
+
+        elif choice == "5":
             # Run the similar artists script
             print_info("\nFinding artists to follow that you probably like...")
             run_script(SIMILAR_ARTISTS_SCRIPT)
 
-        elif choice == "8":
-            # Run the artist cleanup script
-            print_info("\nRemoving followed artists that you probably don't like...")
-            run_script(CLEANUP_ARTISTS_SCRIPT)
+        elif choice == "6":
+            # Library cleanup sub-menu
+            library_cleanup_menu()
 
-        elif choice == "9":
+        elif choice == "7":
             # Run the backup script
             print_info("\nRunning backup & export functionality...")
             run_script(BACKUP_SCRIPT)
 
-        elif choice == "10":
+        elif choice == "8":
             # Manage caches
             manage_caches()
 
-        elif choice == "11":
+        elif choice == "9":
             # Manage API credentials
             manage_api_credentials()
 
-        elif choice == "12":
+        elif choice == "10":
             # Reset environment
             reset_environment()
 
-        elif choice == "13":
+        elif choice == "11":
             print_success("Exiting...")
             break
 

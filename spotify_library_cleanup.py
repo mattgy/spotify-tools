@@ -490,7 +490,7 @@ def main_menu():
         print_header("Library Cleanup")
         print_info("\nWhat would you like to do?\n")
         print_info("  1. Smart cleanup (choose categories to remove)")
-        print_info("  2. Remove orphaned songs only")
+        print_info("  2. Remove orphaned songs only (Liked Songs not in any of your playlists)")
         print_info("  3. Remove unavailable tracks only")
         print_info("  4. Remove podcast episodes only")
         print_info("  5. View exclusion list stats")

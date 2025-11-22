@@ -31,7 +31,8 @@ from spotify_utils import (
     create_spotify_client, COMMON_SCOPES, print_success, print_error, print_warning, print_info,
     fetch_user_playlists, fetch_user_saved_tracks, fetch_playlist_tracks, fetch_followed_artists
 )
-from constants import BATCH_SIZES, CONFIDENCE_THRESHOLDS
+from constants import BATCH_SIZES, CONFIDENCE_THRESHOLDS, DEFAULT_CACHE_EXPIRATION, MENU_ICONS, BOX_CHARS
+from print_utils import print_box_header, print_section_header, print_menu_item
 
 # Import tqdm_utils for progress bars
 from tqdm_utils import create_progress_bar, update_progress_bar, close_progress_bar
@@ -199,44 +200,53 @@ def like_tracks(sp, tracks, saved_tracks):
     
     # Set up progress tracking using centralized utilities
     progress_bar = create_progress_bar(total=len(new_tracks), desc="Liking tracks", unit="track")
-    
+
     # Like tracks in batches of 50 (Spotify API limit)
     batch_size = 50
-    processed = 0
-    
+    successfully_liked = 0
+    failed_tracks = 0
+
     for i in range(0, len(new_tracks), batch_size):
         batch = new_tracks[i:i+batch_size]
         track_ids = [t['id'] for t in batch]
-        
+
         try:
             sp.current_user_saved_tracks_add(track_ids)
-            processed += len(batch)
-            
+            successfully_liked += len(batch)
+
             # Update progress bar
             update_progress_bar(progress_bar, len(batch))
-            
+
             # SafeSpotifyClient handles rate limiting automatically
         except Exception as e:
-            print(f"Error liking tracks: {e}")
-            print("Continuing with next batch...")
+            print_error(f"\nError liking batch of {len(batch)} tracks: {e}")
+            failed_tracks += len(batch)
             # Still update progress even on error
             update_progress_bar(progress_bar, len(batch))
-    
+
     # Close progress bar
     close_progress_bar(progress_bar)
-    
-    print(f"Successfully liked {len(new_tracks)} new tracks!")
-    
+
+    # Report results
+    if failed_tracks > 0:
+        print_warning(f"Successfully liked {successfully_liked} tracks, {failed_tracks} failed")
+    else:
+        print_success(f"Successfully liked {successfully_liked} new tracks!")
+
     # Invalidate the saved tracks cache
-    save_to_cache(None, "all_liked_songs", force_expire=True)
+    save_to_cache(None, STANDARD_CACHE_KEYS['liked_songs'], force_expire=True)
     
     return new_tracks  # Return the liked tracks for analysis
 
 def analyze_artist_frequency(tracks):
     """Analyze which artists appear frequently in liked tracks."""
+    return analyze_artist_frequency_with_progress(tracks, None)
+
+def analyze_artist_frequency_with_progress(tracks, progress_bar=None):
+    """Analyze which artists appear frequently in liked tracks, with optional progress tracking."""
     artist_counts = defaultdict(int)
     artist_tracks = defaultdict(list)
-    
+
     for track in tracks:
         for artist in track['artists']:
             # Use centralized artist validation (handles old cache formats)
@@ -251,7 +261,11 @@ def analyze_artist_frequency(tracks):
                 'track_name': track['name'],
                 'artist_name': artist_name
             })
-    
+
+        # Update progress bar if provided
+        if progress_bar:
+            update_progress_bar(progress_bar, 1)
+
     return artist_counts, artist_tracks
 
 def get_followed_artists(sp):
@@ -271,10 +285,16 @@ def get_followed_artists(sp):
 
 def suggest_artists_to_follow(sp, liked_tracks, min_songs=3):
     """Suggest artists to follow based on liked songs frequency."""
-    print(f"\nAnalyzing artists from your newly liked songs...")
-    
+    print_info(f"\nAnalyzing artists from your newly liked songs...")
+
+    # Create progress bar for artist analysis
+    analysis_progress = create_progress_bar(total=len(liked_tracks), desc="Analyzing artists", unit="track")
+
     # Analyze artist frequency
-    artist_counts, artist_tracks = analyze_artist_frequency(liked_tracks)
+    artist_counts, artist_tracks = analyze_artist_frequency_with_progress(liked_tracks, analysis_progress)
+
+    # Close progress bar
+    close_progress_bar(analysis_progress)
     
     # Get currently followed artists
     followed_artists = get_followed_artists(sp)
@@ -431,15 +451,17 @@ def is_christmas_song(track):
         'advent', 'nativity', 'bethlehem', 'peace on earth', 'goodwill', 'sleigh ride',
         'winter song', 'holiday song', 'christmas song', 'xmas song', 'carol'
     ]
-    
+
     # Combine all text to search
-    search_text = f"{track['name']} {' '.join(track['artists'])} {track['album']}".lower()
-    
+    # Extract artist names from artist objects
+    artist_names = ' '.join([artist['name'] for artist in track.get('artists', [])])
+    search_text = f"{track['name']} {artist_names} {track['album']}".lower()
+
     # Check for Christmas keywords
     for keyword in christmas_keywords:
         if keyword in search_text:
             return True
-    
+
     return False
 
 def filter_christmas_songs(tracks, exclude_christmas=False):
@@ -469,19 +491,24 @@ def filter_christmas_songs(tracks, exclude_christmas=False):
 
 def main():
     """Main function to run the script."""
-    print("Spotify Like Songs")
-    print("=================")
-    
+    print_box_header("Add Songs to Liked Songs", icon=MENU_ICONS['heart'])
+
     # Ask user about Christmas filtering
-    print("\nOptions:")
-    print("1. Add all songs from playlists (including Christmas songs)")
-    print("2. Add all songs except Christmas songs")
-    
+    print_section_header("OPTIONS")
+    print_menu_item(1, "Add all songs from playlists (including Christmas songs)")
+    print_menu_item(2, "Add all songs except Christmas songs")
+    print("")
+    print_menu_item(3, "Back to main menu", icon=BOX_CHARS['arrow'])
+
     while True:
-        choice = input("\nEnter your choice (1-2): ").strip()
-        if choice in ['1', '2']:
+        choice = input(f"\n{BOX_CHARS['arrow']} Enter your choice (1-3): ").strip()
+        if choice in ['1', '2', '3']:
             break
-        print("Please enter 1 or 2")
+        print_warning("Please enter 1, 2, or 3")
+
+    # Return to main menu if requested
+    if choice == '3':
+        return
     
     exclude_christmas = (choice == '2')
     
@@ -518,6 +545,9 @@ def main():
             print_error(f"Error analyzing artists for auto-follow: {e}")
             print_warning("This may be due to cache corruption. Try clearing caches with menu option 9.")
             print_info("The track liking operation completed successfully despite this error.")
+
+    # Pause before returning to main menu
+    input("\nPress Enter to return to main menu...")
 
 if __name__ == "__main__":
     main()

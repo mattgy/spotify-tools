@@ -46,7 +46,8 @@ SCOPES = [
 ]
 
 # Import cache expiration from constants
-from constants import STANDARD_CACHE_KEYS, CLEANUP_THRESHOLDS
+from constants import STANDARD_CACHE_KEYS, CLEANUP_THRESHOLDS, DEFAULT_CACHE_EXPIRATION, MENU_ICONS
+from print_utils import print_box_header
 from preferences_manager import get_cache_duration_seconds
 
 def setup_spotify_client():
@@ -241,23 +242,25 @@ def follow_artists(sp, artists, followed_artists):
 
 def main():
     """Main function to run the script."""
-    print("Spotify Follow Artists")
-    print("======================")
-    
+    print_box_header("Follow Artists from Playlists", icon=MENU_ICONS['artist'])
+
     # Set up Spotify client
     sp = setup_spotify_client()
-    
+
     # Get user playlists
     playlists = get_user_playlists(sp)
-    
+
     # Get artists from playlists
     artists = get_artists_from_playlists(sp, playlists)
-    
+
     # Get followed artists
     followed_artists = get_followed_artists(sp)
-    
+
     # Follow new artists
     follow_artists(sp, artists, followed_artists)
+
+    # Pause before returning to main menu
+    input("\nPress Enter to return to main menu...")
 
 if __name__ == "__main__":
     main()

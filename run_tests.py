@@ -57,7 +57,8 @@ def test_all_imports():
     """Test that all main modules can be imported."""
     modules_to_test = [
         'spotify_tools',
-        'spotify_follow_artists', 
+        'spotify_follow_artists',
+        'spotify_follow_artists_from_liked',
         'spotify_like_songs',
         'spotify_similar_artists',
         'spotify_backup',
@@ -104,6 +105,7 @@ def test_menu_script_functions():
     scripts_to_test = [
         ('spotify_tools', ['main', 'run_script']),
         ('spotify_follow_artists', ['main']),
+        ('spotify_follow_artists_from_liked', ['main']),
         ('spotify_like_songs', ['main']),
         ('spotify_similar_artists', ['main']),
         ('spotify_backup', ['main']),

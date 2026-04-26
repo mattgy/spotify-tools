@@ -172,7 +172,7 @@ def main():
         artist_name = artist['name']
 
         # Skip if excluded
-        if is_excluded('artist', artist_id, artist_name):
+        if is_excluded(artist_id, 'artist'):
             excluded_count += 1
             continue
 

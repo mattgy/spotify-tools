@@ -273,7 +273,7 @@ def get_followed_artists(sp):
     # Use centralized function which handles caching, progress, and rate limiting
     followed_artists_data = fetch_followed_artists(
         sp,
-        show_progress=False,
+        show_progress=True,
         cache_key="followed_artists_for_autofollow",
         cache_expiration=get_cache_duration_seconds()
     )
@@ -537,14 +537,23 @@ def main():
     
     # Auto-follow artists based on liked tracks
     if liked_tracks and len(liked_tracks) > 0:
-        try:
-            suggestions = suggest_artists_to_follow(sp, liked_tracks, min_songs=3)
-            if suggestions:
-                auto_follow_artists(sp, suggestions, auto_threshold=5)
-        except Exception as e:
-            print_error(f"Error analyzing artists for auto-follow: {e}")
-            print_warning("This may be due to cache corruption. Try clearing caches with menu option 9.")
-            print_info("The track liking operation completed successfully despite this error.")
+        print_info(f"\nWould you like to analyze artists for follow suggestions?")
+        print_info("This can help you find artists to follow based on your newly liked songs.")
+        analyze_choice = input("Analyze artists? (y/n, default: y): ").strip().lower()
+        
+        if analyze_choice != 'n':
+            try:
+                suggestions = suggest_artists_to_follow(sp, liked_tracks, min_songs=3)
+                if suggestions:
+                    auto_follow_artists(sp, suggestions, auto_threshold=5)
+                else:
+                    print_info("No new artists to suggest following based on these tracks.")
+            except Exception as e:
+                print_error(f"Error analyzing artists for auto-follow: {e}")
+                print_warning("This may be due to cache corruption. Try clearing caches with menu option 9.")
+                print_info("The track liking operation completed successfully despite this error.")
+        else:
+            print_info("Skipping artist analysis.")
 
     # Pause before returning to main menu
     input("\nPress Enter to return to main menu...")

@@ -46,7 +46,8 @@ from spotify_playlist_converter import (
     parse_playlist_file as original_parse_playlist_file, authenticate_spotify, get_user_playlists, 
     get_playlist_tracks, normalize_string, SUPPORTED_EXTENSIONS,
     find_playlist_files as converter_find_playlist_files, 
-    is_text_playlist_file as converter_is_text_playlist_file
+    is_text_playlist_file as converter_is_text_playlist_file,
+    parse_text_playlist_file as converter_parse_text_playlist_file
 )
 from spotify_utils import batch_process_items, safe_spotify_call
 
@@ -639,54 +640,8 @@ def reconcile_playlist_pair(sp, local_path, spotify_playlists, user_id):
 is_text_playlist_file = converter_is_text_playlist_file
 
 def parse_text_playlist_file(file_path):
-    """Parse a text file containing artist/song pairs."""
-    tracks = []
-    
-    try:
-        with open(file_path, 'r', encoding='utf-8') as f:
-            lines = f.readlines()
-        
-        for line in lines:
-            line = line.strip()
-            if not line:  # Skip empty lines
-                continue
-            
-            # Try different separator patterns
-            separators = [' - ', ' – ', ' — ', ' : ', ' :: ', '\t']
-            artist = None
-            title = None
-            
-            for sep in separators:
-                if sep in line:
-                    parts = line.split(sep, 1)
-                    if len(parts) == 2:
-                        artist = parts[0].strip()
-                        title = parts[1].strip()
-                        break
-            
-            # If no separator found, assume space-separated (artist first words, song rest)
-            if not artist and len(line.split()) >= 2:
-                words = line.split()
-                # Simple heuristic: first 1-2 words are artist, rest is title
-                if len(words) > 4:
-                    artist = ' '.join(words[:2])
-                    title = ' '.join(words[2:])
-                else:
-                    artist = words[0]
-                    title = ' '.join(words[1:])
-            
-            if artist and title:
-                tracks.append({
-                    'artist': artist,
-                    'title': title,
-                    'album': None,
-                    'duration': None
-                })
-    
-    except Exception as e:
-        logger.error(f"Error parsing text playlist file {file_path}: {e}")
-    
-    return tracks
+    """Parse a text file containing artist/song pairs using the enhanced converter parser."""
+    return converter_parse_text_playlist_file(file_path)
 
 def parse_playlist_file(file_path):
     """Parse a playlist file, supporting both standard formats and text files."""

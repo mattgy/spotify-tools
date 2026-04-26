@@ -176,38 +176,54 @@ class TestCacheUtils(unittest.TestCase):
         import shutil
         shutil.rmtree(self.temp_dir, ignore_errors=True)
     
-    @patch('cache_utils.CACHE_DIR', '/tmp/test_cache')
     def test_cache_save_load(self):
         """Test that cache save and load works."""
         from cache_utils import save_to_cache, load_from_cache
+        import cache_utils
         
-        test_data = {'test': 'data', 'number': 123}
-        cache_key = 'test_cache'
+        # Patch CACHE_DIR to use our temp directory
+        original_cache_dir = cache_utils.CACHE_DIR
+        cache_utils.CACHE_DIR = self.cache_dir
         
-        # Save data to cache
-        save_to_cache(test_data, cache_key)
-        
-        # Load data from cache
-        loaded_data = load_from_cache(cache_key, expiration=3600)
-        
-        self.assertEqual(test_data, loaded_data)
+        try:
+            test_data = {'test': 'data', 'number': 123}
+            cache_key = 'test_cache'
+            
+            # Save data to cache
+            save_to_cache(test_data, cache_key)
+            
+            # Load data from cache
+            loaded_data = load_from_cache(cache_key, expiration=3600)
+            
+            self.assertEqual(test_data, loaded_data)
+        finally:
+            # Restore original CACHE_DIR
+            cache_utils.CACHE_DIR = original_cache_dir
     
-    @patch('cache_utils.CACHE_DIR', '/tmp/test_cache')
     def test_cache_expiration(self):
         """Test that cache expiration works."""
         from cache_utils import save_to_cache, load_from_cache
+        import cache_utils
         
-        test_data = {'test': 'data'}
-        cache_key = 'test_expiry'
+        # Patch CACHE_DIR to use our temp directory
+        original_cache_dir = cache_utils.CACHE_DIR
+        cache_utils.CACHE_DIR = self.cache_dir
         
-        # Save data to cache
-        save_to_cache(test_data, cache_key)
-        
-        # Try to load with zero expiration (should be expired)
-        loaded_data = load_from_cache(cache_key, expiration=0)
-        
-        # Should return None for expired cache
-        self.assertIsNone(loaded_data)
+        try:
+            test_data = {'test': 'data'}
+            cache_key = 'test_expiry'
+            
+            # Save data to cache
+            save_to_cache(test_data, cache_key)
+            
+            # Try to load with zero expiration (should be expired)
+            loaded_data = load_from_cache(cache_key, expiration=0)
+            
+            # Should return None for expired cache
+            self.assertIsNone(loaded_data)
+        finally:
+            # Restore original CACHE_DIR
+            cache_utils.CACHE_DIR = original_cache_dir
 
 class TestUtilityModules(unittest.TestCase):
     """Test utility modules."""

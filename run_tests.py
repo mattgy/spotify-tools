@@ -68,6 +68,7 @@ def test_all_imports():
         'spotify_playlist_manager',
         'spotify_playlist_converter',
         'spotify_playlist_size_manager',
+        'spotify_create_from_list',
         'cache_utils',
         'credentials_manager',
         'constants',
@@ -114,7 +115,8 @@ def test_menu_script_functions():
         ('spotify_identify_skipped', ['main']),
         ('spotify_playlist_manager', ['main']),
         ('spotify_playlist_converter', ['main']),
-        ('spotify_playlist_size_manager', ['main', 'PlaylistSizeManager'])
+        ('spotify_playlist_size_manager', ['main', 'PlaylistSizeManager']),
+        ('spotify_create_from_list', ['main'])
     ]
     
     print("\nTesting script functions...")

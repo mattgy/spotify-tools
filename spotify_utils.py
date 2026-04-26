@@ -410,9 +410,11 @@ def fetch_followed_artists(sp, show_progress=True, cache_key="followed_artists",
         if show_progress:
             update_progress_bar(progress_bar, len(batch_artists))
         
+        # Followed artists use cursor-based pagination with 'after'
         if results['artists']['next']:
+            after = results['artists']['cursors']['after']
             time.sleep(0.05)  # Rate limiting (20 req/s)
-            results = sp.next(results['artists'])
+            results = sp.current_user_followed_artists(limit=limit, after=after)
         else:
             break
     

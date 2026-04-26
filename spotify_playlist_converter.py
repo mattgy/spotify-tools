@@ -1181,14 +1181,23 @@ def is_text_playlist_file(file_path):
         return False
 
 def parse_text_playlist_file(file_path):
-    """Parse a text file containing artist/song pairs."""
+    """
+    Parse a text file containing artist/song pairs.
+    Supports:
+    - Artist - Title
+    - Hierarchical: Artist line followed by song lines (indented or bulleted)
+    - Bullet points: •, *, -, ▪, ◦
+    - Standard playlist separators: -, :, tab
+    """
     tracks = []
+    last_artist = None
     
     try:
         with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
             lines = f.readlines()
         
-        for line in lines:
+        for line_idx, line in enumerate(lines):
+            raw_line = line
             line = line.strip()
             if not line:  # Skip empty lines
                 continue
@@ -1196,80 +1205,124 @@ def parse_text_playlist_file(file_path):
             # Store original line for display
             original_line = line
             
-            # Try different separator patterns
-            separators = [' - ', ' – ', ' — ', ' : ', ' :: ', '\t']
             artist = None
             title = None
             
+            # 1. Check for explicit separators (Artist - Title)
+            separators = [' - ', ' – ', ' — ', ' : ', ' :: ', '\t']
             for sep in separators:
                 if sep in line:
                     parts = line.split(sep, 1)
                     if len(parts) == 2:
                         artist = parts[0].strip()
                         title = parts[1].strip()
+                        # Update last_artist for future hierarchical lines
+                        last_artist = artist
                         break
             
-            # Handle special cases before falling back to space-separated
+            # 2. Check for bullet points (Hierarchical)
+            if not artist:
+                bullet_points = ['•', '*', '-', '▪', '◦']
+                for bullet in bullet_points:
+                    if line.startswith(bullet):
+                        title = line[len(bullet):].strip()
+                        # Clean up quotes if present
+                        if (title.startswith('"') and title.endswith('"')) or \
+                           (title.startswith("'") and title.endswith("'")):
+                            title = title[1:-1].strip()
+                        
+                        if last_artist:
+                            artist = last_artist
+                        else:
+                            artist = 'Unknown Artist'
+                        break
+
+            # 3. Check for indentation-based hierarchical (indented line after a non-indented one)
+            if not artist and raw_line.startswith(('  ', '\t')):
+                title = line
+                if (title.startswith('"') and title.endswith('"')) or \
+                   (title.startswith("'") and title.endswith("'")):
+                    title = title[1:-1].strip()
+                
+                if last_artist:
+                    artist = last_artist
+                else:
+                    artist = 'Unknown Artist'
+
+            # 4. Handle other special cases (Various Artists, file paths, etc.)
             if not artist:
                 # Check for "Various -" or "- Track X" patterns
                 if line.startswith('Various -') or line.startswith('Various Artists -'):
                     artist = 'Various Artists'
                     title = line.split('-', 1)[1].strip() if '-' in line else line
                 elif line.startswith('- '):
-                    # Just a title, no artist
                     artist = 'Unknown Artist'
                     title = line[2:].strip()
-                # Check for album info in the line (e.g., "Album Name - Artist - Title")
+                # Check for album info in the line
                 elif line.count(' - ') >= 2:
                     parts = line.split(' - ')
-                    # Could be Album - Artist - Title or Artist - Album - Title
-                    # Try to guess based on common patterns
                     if len(parts) >= 3:
-                        # Assume first part is less likely to be artist if it has 'disc', 'album', 'vol' etc
                         first_lower = parts[0].lower()
                         if any(word in first_lower for word in ['disc', 'album', 'vol', 'collection', 'anniversary']):
-                            # Likely Album - Artist - Title
                             artist = parts[1].strip()
                             title = parts[2].strip()
                         else:
-                            # Likely Artist - Album - Title or Artist - Title - Extra
                             artist = parts[0].strip()
-                            title = parts[1].strip()  # Use second part as title
-                # Handle file path entries (extract from filename)
+                            title = parts[1].strip()
+                        last_artist = artist
+                # Handle file path entries
                 elif '/' in line or '\\' in line:
-                    # Extract just the filename
                     filename = os.path.basename(line)
-                    filename = os.path.splitext(filename)[0]  # Remove extension
-                    # Now parse the filename
+                    filename = os.path.splitext(filename)[0]
                     if ' - ' in filename:
                         parts = filename.split(' - ', 1)
                         artist = parts[0].strip()
                         title = parts[1].strip()
+                        last_artist = artist
                     else:
                         artist = 'Unknown Artist'
                         title = filename
-                # Default space-separated fallback
-                elif len(line.split()) >= 2:
-                    words = line.split()
-                    # Simple heuristic: first 1-2 words are artist, rest is title
-                    if len(words) > 4:
-                        artist = ' '.join(words[:2])
-                        title = ' '.join(words[2:])
-                    else:
-                        artist = words[0]
-                        title = ' '.join(words[1:])
+
+            # 5. Default: Treat as Artist (Hierarchical start) or Fallback to split
+            if not artist:
+                # If next lines look like songs, this line is likely just an artist name
+                has_songs_following = False
+                if line_idx + 1 < len(lines):
+                    next_lines = [l.strip() for l in lines[line_idx+1:line_idx+4] if l.strip()]
+                    if next_lines:
+                        next_line = next_lines[0]
+                        # If next line is indented or has a bullet, this line is an artist
+                        actual_next_raw = ""
+                        for l in lines[line_idx+1:line_idx+4]:
+                            if l.strip():
+                                actual_next_raw = l
+                                break
+                        if next_line.startswith(('•', '*', '-', '▪', '◦')) or actual_next_raw.startswith(('  ', '\t')):
+                            has_songs_following = True
+                
+                if has_songs_following:
+                    last_artist = line
+                    continue # Don't add as a track yet, it's just the header
                 else:
-                    # Single word or unrecognized format
-                    artist = 'Unknown Artist'
-                    title = line
-            
+                    # Fallback space-separated
+                    if len(line.split()) >= 2:
+                        words = line.split()
+                        if len(words) > 4:
+                            artist = ' '.join(words[:2])
+                            title = ' '.join(words[2:])
+                        else:
+                            artist = words[0]
+                            title = ' '.join(words[1:])
+                    else:
+                        artist = last_artist if last_artist else 'Unknown Artist'
+                        title = line
+
             if artist and title:
                 # Clean up common issues
-                # Remove track numbers from beginning
                 title = remove_track_numbers(title)
                 artist = remove_track_numbers(artist)
                 
-                # Remove file extensions that might have been included
+                # Remove file extensions
                 for ext in ['.mp3', '.m4a', '.flac', '.wav', '.ogg', '.wma']:
                     if title.lower().endswith(ext):
                         title = title[:-len(ext)]
@@ -1277,7 +1330,6 @@ def parse_text_playlist_file(file_path):
                         artist = artist[:-len(ext)]
                 
                 # Handle accented characters and special encoding
-                # Common replacements
                 replacements = {
                     '%B4': "'",  # Apostrophe
                     '%E9': 'é',   # e acute
@@ -1304,6 +1356,7 @@ def parse_text_playlist_file(file_path):
         logger.error(f"Error parsing text playlist file {file_path}: {e}")
     
     return tracks
+
 
 def parse_playlist_file(file_path):
     """Parse a playlist file based on its extension or content."""

@@ -8,7 +8,7 @@ import time
 import functools
 import logging
 import spotipy
-from spotipy.oauth2 import SpotifyOAuth
+from spotipy.oauth2 import SpotifyOAuth, SpotifyOauthError
 from colorama import Fore
 
 # Import centralized print functions (prevents circular imports)
@@ -157,6 +157,34 @@ def create_spotify_client(scopes, cache_path_suffix="", auto_open_browser=True):
         try:
             sp.current_user()
             print_success("✅ Successfully authenticated with Spotify!")
+        except SpotifyOauthError as auth_error:
+            error_str = str(auth_error).lower()
+            if "invalid_grant" in error_str or "invalid refresh token" in error_str:
+                # Saved refresh token was rejected (expired, revoked, or the
+                # July 2026 dev-mode token expiry) - clear it and re-auth.
+                print_warning("⚠️  Your saved Spotify login has expired and needs to be renewed.")
+                if os.path.exists(cache_path):
+                    os.remove(cache_path)
+
+                print_info("🔐 Opening browser to re-authenticate with Spotify...")
+                auth_manager = SpotifyOAuth(
+                    client_id=client_id,
+                    client_secret=client_secret,
+                    redirect_uri=redirect_uri,
+                    scope=" ".join(scopes),
+                    open_browser=auto_open_browser,
+                    cache_path=cache_path
+                )
+                sp = spotipy.Spotify(
+                    auth_manager=auth_manager,
+                    requests_timeout=30,
+                    retries=3,
+                    backoff_factor=0.3
+                )
+                sp.current_user()
+                print_success("✅ Successfully re-authenticated with Spotify!")
+            else:
+                raise
         except Exception as auth_error:
             if auto_open_browser:
                 print_info("🔐 Opening browser for Spotify authentication...")
@@ -164,7 +192,7 @@ def create_spotify_client(scopes, cache_path_suffix="", auto_open_browser=True):
                 print_info("🔐 Authentication required. Please follow the prompts.")
             # Re-raise to let spotipy handle the auth flow
             raise
-        
+
         return SafeSpotifyClient(sp)
         
     except Exception as e:

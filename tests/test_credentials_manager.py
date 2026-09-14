@@ -39,19 +39,20 @@ class TestCredentialsManager(unittest.TestCase):
             shutil.rmtree(self.test_config_dir)
     
     def test_get_spotify_credentials_with_file(self):
-        """Test getting Spotify credentials when file exists."""
-        # Create test credentials file
+        """Test getting Spotify credentials from file when no env vars are set."""
         test_credentials = {
             "SPOTIFY_CLIENT_ID": "test_client_id",
             "SPOTIFY_CLIENT_SECRET": "test_client_secret",
             "SPOTIFY_REDIRECT_URI": "http://localhost:8888/callback"
         }
-        
+
         with open(self.test_credentials_file, 'w') as f:
             json.dump(test_credentials, f)
-        
-        client_id, client_secret, redirect_uri = get_spotify_credentials()
-        
+
+        # clear=True ensures real SPOTIFY_* env vars from ~/.secrets don't interfere
+        with patch.dict(os.environ, {}, clear=True):
+            client_id, client_secret, redirect_uri = get_spotify_credentials()
+
         self.assertEqual(client_id, "test_client_id")
         self.assertEqual(client_secret, "test_client_secret")
         self.assertEqual(redirect_uri, "http://localhost:8888/callback")
@@ -108,38 +109,35 @@ class TestCredentialsManager(unittest.TestCase):
                 api_key = get_lastfm_api_key()
                 self.assertIsNone(api_key)
     
-    def test_credentials_file_priority_over_env(self):
-        """Test that credentials file takes priority over environment variables."""
-        # Set environment variables
+    def test_env_priority_over_credentials_file(self):
+        """Test that environment variables take priority over the credentials file."""
+        # Write file with different values to confirm env wins
+        with open(self.test_credentials_file, 'w') as f:
+            json.dump({
+                "SPOTIFY_CLIENT_ID": "file_client_id",
+                "SPOTIFY_CLIENT_SECRET": "file_client_secret",
+                "SPOTIFY_REDIRECT_URI": "http://file-redirect.com/callback"
+            }, f)
+
         with patch.dict(os.environ, {
             'SPOTIFY_CLIENT_ID': 'env_client_id',
             'SPOTIFY_CLIENT_SECRET': 'env_client_secret',
             'SPOTIFY_REDIRECT_URI': 'http://env-redirect.com/callback'
         }):
-            # Create credentials file with different values
-            test_credentials = {
-                "SPOTIFY_CLIENT_ID": "file_client_id",
-                "SPOTIFY_CLIENT_SECRET": "file_client_secret",
-                "SPOTIFY_REDIRECT_URI": "http://file-redirect.com/callback"
-            }
-            
-            with open(self.test_credentials_file, 'w') as f:
-                json.dump(test_credentials, f)
-            
             client_id, client_secret, redirect_uri = get_spotify_credentials()
-            
-            # Should use file values, not environment values
-            self.assertEqual(client_id, "file_client_id")
-            self.assertEqual(client_secret, "file_client_secret")
-            self.assertEqual(redirect_uri, "http://file-redirect.com/callback")
+
+        # Env vars must win — primary source of truth is ~/.secrets
+        self.assertEqual(client_id, "env_client_id")
+        self.assertEqual(client_secret, "env_client_secret")
+        self.assertEqual(redirect_uri, "http://env-redirect.com/callback")
     
     def test_credentials_file_secure_permissions(self):
         """Test that credentials file is created with secure permissions."""
-        # Mock user input for credentials
         test_inputs = ['test_client_id', 'test_client_secret', '']
-        
-        # Temporarily disable test mode for this test to allow credential creation
-        with patch.dict(os.environ, {'SPOTIFY_TOOLS_TEST_MODE': ''}, clear=False):
+
+        # clear=True removes real SPOTIFY_* env vars so the code reaches the prompt
+        # and writes a new credentials file we can inspect.
+        with patch.dict(os.environ, {}, clear=True):
             with patch('builtins.input', side_effect=test_inputs):
                 get_spotify_credentials()
         

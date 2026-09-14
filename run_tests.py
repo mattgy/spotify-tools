@@ -69,6 +69,7 @@ def test_all_imports():
         'spotify_playlist_converter',
         'spotify_playlist_size_manager',
         'spotify_create_from_list',
+        'spotify_concerts',
         'cache_utils',
         'credentials_manager',
         'constants',
@@ -116,7 +117,9 @@ def test_menu_script_functions():
         ('spotify_playlist_manager', ['main']),
         ('spotify_playlist_converter', ['main']),
         ('spotify_playlist_size_manager', ['main', 'PlaylistSizeManager']),
-        ('spotify_create_from_list', ['main'])
+        ('spotify_create_from_list', ['main']),
+        ('spotify_concerts', ['main', 'get_followed_artists', 'refresh_followed_artists',
+                               'fetch_all_concerts', 'display_concerts', 'build_html_digest'])
     ]
     
     print("\nTesting script functions...")

@@ -21,227 +21,107 @@ from constants import CONFIG_DIR, CREDENTIALS_FILE
 def get_spotify_credentials():
     """
     Get Spotify API credentials.
-    
+
+    Checks environment variables first (populated from ~/.secrets), then falls
+    back to the JSON credentials file, then prompts interactively.
+
     Returns:
         tuple: (client_id, client_secret, redirect_uri)
     """
-    # Create config directory if it doesn't exist
     os.makedirs(CONFIG_DIR, exist_ok=True)
-    
-    # Check if credentials file exists
-    if not os.path.exists(CREDENTIALS_FILE):
-        # Check environment variables first
-        client_id = os.environ.get("SPOTIFY_CLIENT_ID", "")
-        client_secret = os.environ.get("SPOTIFY_CLIENT_SECRET", "")
-        redirect_uri = os.environ.get("SPOTIFY_REDIRECT_URI", "http://127.0.0.1:8888/callback")
-        
-        if not client_id or not client_secret:
-            # Check if we're in test mode
-            if os.environ.get('SPOTIFY_TOOLS_TEST_MODE'):
-                return (None, None, None)
-            
-            # Prompt for credentials
-            print("Spotify API credentials not found.")
-            print("Please enter your Spotify API credentials:")
-            
-            try:
-                if not client_id:
-                    client_id = input("Client ID: ").strip()
-                if not client_secret:
-                    client_secret = input("Client Secret: ").strip()
-                if not redirect_uri:
-                    redirect_uri = input("Redirect URI [http://127.0.0.1:8888/callback]: ").strip()
-                
-                if not redirect_uri:
-                    redirect_uri = "http://127.0.0.1:8888/callback"
-            except EOFError:
-                # Handle case where input is not available (like in tests)
-                return None, None, None
-        
-        # Save credentials
-        credentials = {
-            "SPOTIFY_CLIENT_ID": client_id,
-            "SPOTIFY_CLIENT_SECRET": client_secret,
-            "SPOTIFY_REDIRECT_URI": redirect_uri
-        }
-        
-        # Set secure file permissions before writing
-        old_umask = os.umask(0o077)
+
+    # Environment variables take precedence (primary source of truth: ~/.secrets)
+    client_id    = os.environ.get("SPOTIFY_CLIENT_ID", "")
+    client_secret = os.environ.get("SPOTIFY_CLIENT_SECRET", "")
+    redirect_uri  = os.environ.get("SPOTIFY_REDIRECT_URI", "http://127.0.0.1:8888/callback")
+
+    if client_id and client_secret:
+        return client_id, client_secret, redirect_uri
+
+    # Fall back to credentials file
+    if os.path.exists(CREDENTIALS_FILE):
         try:
-            with open(CREDENTIALS_FILE, "w") as f:
-                json.dump(credentials, f, indent=2)
-            os.chmod(CREDENTIALS_FILE, stat.S_IRUSR | stat.S_IWUSR)
-        finally:
-            os.umask(old_umask)
-        
-        return client_id, client_secret, redirect_uri
-    
-    # Load credentials from file
+            with open(CREDENTIALS_FILE, "r") as f:
+                stored = json.load(f)
+            client_id     = stored.get("SPOTIFY_CLIENT_ID", "")
+            client_secret = stored.get("SPOTIFY_CLIENT_SECRET", "")
+            redirect_uri  = stored.get("SPOTIFY_REDIRECT_URI", redirect_uri) or redirect_uri
+            if client_id and client_secret:
+                return client_id, client_secret, redirect_uri
+        except Exception:
+            pass
+
+    # Test mode — skip prompts
+    if os.environ.get("SPOTIFY_TOOLS_TEST_MODE"):
+        return None, None, None
+
+    # Interactive prompt as last resort
+    print("Spotify API credentials not found.")
+    print("Please enter your Spotify API credentials:")
     try:
-        with open(CREDENTIALS_FILE, "r") as f:
-            credentials = json.load(f)
-        
-        client_id = credentials.get("SPOTIFY_CLIENT_ID", "")
-        client_secret = credentials.get("SPOTIFY_CLIENT_SECRET", "")
-        redirect_uri = credentials.get("SPOTIFY_REDIRECT_URI", "http://127.0.0.1:8888/callback")
-        
-        # Check if credentials are valid
-        if not client_id or not client_secret:
-            raise ValueError("Invalid Spotify credentials")
-        
-        return client_id, client_secret, redirect_uri
-    
-    except Exception as e:
-        print(f"Error loading Spotify credentials: {e}")
-        
-        # Prompt for credentials
-        print("Please enter your Spotify API credentials:")
-        
-        client_id = input("Client ID: ").strip()
+        client_id     = input("Client ID: ").strip()
         client_secret = input("Client Secret: ").strip()
-        redirect_uri = input("Redirect URI [http://127.0.0.1:8888/callback]: ").strip()
-        
+        redirect_uri  = input("Redirect URI [http://127.0.0.1:8888/callback]: ").strip()
         if not redirect_uri:
             redirect_uri = "http://127.0.0.1:8888/callback"
-        
-        # Save credentials
-        credentials = {
-            "SPOTIFY_CLIENT_ID": client_id,
-            "SPOTIFY_CLIENT_SECRET": client_secret,
-            "SPOTIFY_REDIRECT_URI": redirect_uri
-        }
-        
-        # Set secure file permissions before writing
-        old_umask = os.umask(0o077)
-        try:
-            with open(CREDENTIALS_FILE, "w") as f:
-                json.dump(credentials, f, indent=2)
-            os.chmod(CREDENTIALS_FILE, stat.S_IRUSR | stat.S_IWUSR)
-        finally:
-            os.umask(old_umask)
-        
-        return client_id, client_secret, redirect_uri
+    except EOFError:
+        return None, None, None
+
+    # Persist for future runs
+    old_umask = os.umask(0o077)
+    try:
+        with open(CREDENTIALS_FILE, "w") as f:
+            json.dump({
+                "SPOTIFY_CLIENT_ID":     client_id,
+                "SPOTIFY_CLIENT_SECRET": client_secret,
+                "SPOTIFY_REDIRECT_URI":  redirect_uri,
+            }, f, indent=2)
+        os.chmod(CREDENTIALS_FILE, stat.S_IRUSR | stat.S_IWUSR)
+    finally:
+        os.umask(old_umask)
+
+    return client_id, client_secret, redirect_uri
 
 def get_lastfm_api_key():
     """
     Get Last.fm API key.
-    
+
+    Checks environment variables first (populated from ~/.secrets), then the
+    JSON credentials file, then prompts interactively.
+
     Returns:
-        str: Last.fm API key
+        str: Last.fm API key, or None if unavailable
     """
-    # Create config directory if it doesn't exist
     os.makedirs(CONFIG_DIR, exist_ok=True)
-    
-    # Check if credentials file exists
-    if not os.path.exists(CREDENTIALS_FILE):
-        # Check environment variable first
-        api_key = os.environ.get("LASTFM_API_KEY", "")
-        
-        if not api_key:
-            # Prompt for API key
-            print("Last.fm API key not found.")
-            print("Please enter your Last.fm API key:")
-            
-            try:
-                api_key = input("API Key: ").strip()
-            except EOFError:
-                # Handle case where input is not available (like in tests)
-                return None
-        
-        # Save credentials
-        credentials = {
-            "LASTFM_API_KEY": api_key
-        }
-        
-        # Set secure file permissions before writing
-        old_umask = os.umask(0o077)
-        try:
-            with open(CREDENTIALS_FILE, "w") as f:
-                json.dump(credentials, f, indent=2)
-            os.chmod(CREDENTIALS_FILE, stat.S_IRUSR | stat.S_IWUSR)
-        finally:
-            os.umask(old_umask)
-        
+
+    # Environment variable takes precedence
+    api_key = os.environ.get("LASTFM_API_KEY", "")
+    if api_key:
         return api_key
-    
-    # Load credentials from file
-    try:
-        with open(CREDENTIALS_FILE, "r") as f:
-            credentials = json.load(f)
-        
-        api_key = credentials.get("LASTFM_API_KEY", "")
-        
-        # If API key is not found or empty, check environment first
-        if not api_key:
-            api_key = os.environ.get("LASTFM_API_KEY", "")
-            
-            if not api_key:
-                # Check if we're in test mode
-                if os.environ.get('SPOTIFY_TOOLS_TEST_MODE'):
-                    return None
-                
-                print("Last.fm API key not found.")
-                print("Please enter your Last.fm API key:")
-                
-                try:
-                    api_key = input("API Key: ").strip()
-                    
-                    # Update credentials
-                    credentials["LASTFM_API_KEY"] = api_key
-                    
-                    # Set secure file permissions before writing
-                    old_umask = os.umask(0o077)
-                    try:
-                        with open(CREDENTIALS_FILE, "w") as f:
-                            json.dump(credentials, f, indent=2)
-                        os.chmod(CREDENTIALS_FILE, stat.S_IRUSR | stat.S_IWUSR)
-                    finally:
-                        os.umask(old_umask)
-                except EOFError:
-                    # Handle case where input is not available (like in tests)
-                    return None
-        
-        return api_key
-    
-    except Exception as e:
-        print(f"Error loading Last.fm API key: {e}")
-        
-        # Check environment variable first
-        api_key = os.environ.get("LASTFM_API_KEY", "")
-        
-        if not api_key:
-            # Check if we're in test mode
-            if os.environ.get('SPOTIFY_TOOLS_TEST_MODE'):
-                return None
-            
-            # Prompt for API key
-            print("Please enter your Last.fm API key:")
-            
-            try:
-                api_key = input("API Key: ").strip()
-            except EOFError:
-                # Handle case where input is not available (like in tests)
-                return None
-        
-        # Save credentials
+
+    # Fall back to credentials file
+    if os.path.exists(CREDENTIALS_FILE):
         try:
             with open(CREDENTIALS_FILE, "r") as f:
-                credentials = json.load(f)
-        except (FileNotFoundError, json.JSONDecodeError):
-            credentials = {}
-        
-        credentials["LASTFM_API_KEY"] = api_key
-        
-        # Set secure file permissions before writing
-        old_umask = os.umask(0o077)
-        try:
-            with open(CREDENTIALS_FILE, "w") as f:
-                json.dump(credentials, f, indent=2)
-            os.chmod(CREDENTIALS_FILE, stat.S_IRUSR | stat.S_IWUSR)
-        finally:
-            os.umask(old_umask)
-        
-        return api_key
+                stored = json.load(f)
+            api_key = stored.get("LASTFM_API_KEY", "")
+            if api_key:
+                return api_key
+        except Exception:
+            pass
+
+    # Test mode — skip prompts
+    if os.environ.get("SPOTIFY_TOOLS_TEST_MODE"):
+        return None
+
+    # Interactive prompt as last resort
+    print("Last.fm API key not found. Please enter your Last.fm API key:")
+    try:
+        api_key = input("API Key: ").strip()
+    except EOFError:
+        return None
+
+    return api_key or None
 
 def save_credentials(credentials_dict):
     """
@@ -273,35 +153,43 @@ def save_credentials(credentials_dict):
         os.umask(old_umask)
 
 def get_credentials():
-    """Get all credentials from file and environment."""
+    """Get all credentials, with environment variables taking precedence over the JSON file.
+
+    Primary source of truth is ~/.secrets (sourced in ~/.zshrc).  The JSON file
+    at ~/.spotify-tools/credentials.json is kept as a fallback for values not
+    present in the environment.
+    """
     credentials = {}
-    
-    # Load from file if exists
+
+    # Load file as baseline (lowest priority)
     if os.path.exists(CREDENTIALS_FILE):
         try:
             with open(CREDENTIALS_FILE, 'r') as f:
                 credentials = json.load(f)
         except Exception as e:
             print(f"Warning: Could not load credentials file: {e}")
-    
-    # Override with environment variables if they exist
+
+    # Environment variables win — covers everything in ~/.secrets
     env_vars = [
         'SPOTIFY_CLIENT_ID',
-        'SPOTIFY_CLIENT_SECRET', 
+        'SPOTIFY_CLIENT_SECRET',
         'SPOTIFY_REDIRECT_URI',
         'LASTFM_API_KEY',
-        'SONGKICK_API_KEY',
+        'LASTFM_USERNAME',
+        'TICKETMASTER_CONSUMER_KEY',
+        'TICKETMASTER_CONSUMER_SECRET',
+        'BANDSINTOWN_APP_ID',
         # AI service credentials
         'GEMINI_API_KEY',
         'OPENAI_API_KEY',
         'ANTHROPIC_API_KEY',
-        'PERPLEXITY_API_KEY'
+        'PERPLEXITY_API_KEY',
     ]
-    
+
     for var in env_vars:
-        if var in os.environ:
+        if os.environ.get(var):
             credentials[var] = os.environ[var]
-    
+
     return credentials
 
 def get_ai_credentials(service=None):

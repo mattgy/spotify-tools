@@ -223,7 +223,7 @@ def should_create_backup():
 
 def get_cache_duration_hours():
     """Get the global cache duration in hours."""
-    return get_preference("cache.duration_hours", 24)
+    return get_preference("cache.duration_hours", 168)  # 7 days
 
 def get_cache_duration_seconds():
     """Get the global cache duration in seconds."""

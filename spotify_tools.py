@@ -44,6 +44,7 @@ SIMILAR_ARTISTS_SCRIPT = os.path.join(SCRIPT_DIR, "spotify_similar_artists.py")
 PLAYLIST_CONVERTER_SCRIPT = os.path.join(SCRIPT_DIR, "spotify_playlist_converter.py")
 CREATE_FROM_LIST_SCRIPT = os.path.join(SCRIPT_DIR, "spotify_create_from_list.py")
 CLEANUP_ARTISTS_SCRIPT = os.path.join(SCRIPT_DIR, "spotify_cleanup_artists.py")
+CONCERTS_SCRIPT = os.path.join(SCRIPT_DIR, "spotify_concerts.py")
 BACKUP_SCRIPT = os.path.join(SCRIPT_DIR, "spotify_backup.py")
 CHRISTMAS_CLEANUP_SCRIPT = os.path.join(SCRIPT_DIR, "spotify_remove_christmas.py")
 PLAYLIST_MANAGER_SCRIPT = os.path.join(SCRIPT_DIR, "spotify_playlist_manager.py")
@@ -119,15 +120,19 @@ def setup_config_directory():
     os.makedirs(CACHE_DIR, exist_ok=True)
 
 def export_credentials_to_env():
-    """Export credentials to environment variables."""
+    """Export credentials from JSON file to environment variables.
+
+    Env vars already set (e.g. from ~/.secrets) take precedence — we never
+    overwrite them so the single source of truth stays in ~/.secrets.
+    """
     if os.path.exists(CREDENTIALS_FILE):
         try:
             with open(CREDENTIALS_FILE, "r") as f:
                 credentials = json.load(f)
-            
-            # Export credentials to environment variables
+
             for key, value in credentials.items():
-                os.environ[key] = value
+                if value and key not in os.environ:
+                    os.environ[key] = value
         except Exception as e:
             print_warning(f"Warning: Could not load credentials: {e}")
 
@@ -942,18 +947,19 @@ def main():
         print_menu_item(4, "Follow all artists in your created playlists", icon=BOX_CHARS['bullet'])
         print_menu_item(5, "Follow all artists from your Liked Songs", icon=BOX_CHARS['bullet'])
         print_menu_item(6, "Find artists to follow that you probably like", icon=BOX_CHARS['bullet'])
+        print_menu_item(7, "Find upcoming concerts for all followed artists", icon=BOX_CHARS['bullet'])
 
         print_section_header("LIBRARY CLEANUP", icon=MENU_ICONS['cleanup'])
-        print_menu_item(7, "Clean up and optimize your library", icon=BOX_CHARS['bullet'])
+        print_menu_item(8, "Clean up and optimize your library", icon=BOX_CHARS['bullet'])
 
         print_section_header("SYSTEM & DATA MANAGEMENT", icon=MENU_ICONS['settings'])
-        print_menu_item(8, "Backup and export your music library", icon=BOX_CHARS['bullet'])
-        print_menu_item(9, "Manage caches", icon=BOX_CHARS['bullet'])
-        print_menu_item(10, "Manage API credentials", icon=BOX_CHARS['bullet'])
-        print_menu_item(11, "Reset environment (reinstall dependencies)", icon=BOX_CHARS['bullet'])
-        print_menu_item(12, "Exit", icon=BOX_CHARS['bullet'])
+        print_menu_item(9, "Backup and export your music library", icon=BOX_CHARS['bullet'])
+        print_menu_item(10, "Manage caches", icon=BOX_CHARS['bullet'])
+        print_menu_item(11, "Manage API credentials", icon=BOX_CHARS['bullet'])
+        print_menu_item(12, "Reset environment (reinstall dependencies)", icon=BOX_CHARS['bullet'])
+        print_menu_item(13, "Exit", icon=BOX_CHARS['bullet'])
 
-        choice = input(f"\n{Fore.CYAN}{BOX_CHARS['arrow']} Enter your choice (1-12): ")
+        choice = input(f"\n{Fore.CYAN}{BOX_CHARS['arrow']} Enter your choice (1-13): ")
         
         if choice == "1":
             # Playlist converter sub-menu
@@ -985,27 +991,32 @@ def main():
             run_script(SIMILAR_ARTISTS_SCRIPT)
 
         elif choice == "7":
+            # Run the concert finder
+            print_info("\nFinding upcoming concerts for all followed artists...")
+            run_script(CONCERTS_SCRIPT)
+
+        elif choice == "8":
             # Library cleanup sub-menu
             library_cleanup_menu()
 
-        elif choice == "8":
+        elif choice == "9":
             # Run the backup script
             print_info("\nRunning backup & export functionality...")
             run_script(BACKUP_SCRIPT)
 
-        elif choice == "9":
+        elif choice == "10":
             # Manage caches
             manage_caches()
 
-        elif choice == "10":
+        elif choice == "11":
             # Manage API credentials
             manage_api_credentials()
 
-        elif choice == "11":
+        elif choice == "12":
             # Reset environment
             reset_environment()
 
-        elif choice == "12":
+        elif choice == "13":
             print_success("Exiting...")
             break
 

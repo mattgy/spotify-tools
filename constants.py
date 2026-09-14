@@ -21,17 +21,16 @@ PREFERENCES_FILE = os.path.join(CONFIG_DIR, "preferences.json")
 EXCLUSIONS_FILE = os.path.join(CONFIG_DIR, "exclusions.json")
 
 # Cache expiration times (in seconds)
-# Updated to more reasonable defaults - user data changes frequently
-DEFAULT_CACHE_EXPIRATION = 24 * 60 * 60  # 24 hours (more reasonable default)
+DEFAULT_CACHE_EXPIRATION = 7 * 24 * 60 * 60  # 7 days
 
 CACHE_EXPIRATION = {
-    'short': 1 * 60 * 60,                # 1 hour (user playlists, liked songs - changes frequently)
-    'medium': 6 * 60 * 60,               # 6 hours (playlist tracks)
-    'long': 7 * 24 * 60 * 60,            # 7 days (artist info, relatively static)
-    'default': DEFAULT_CACHE_EXPIRATION, # 24 hours (reasonable default)
-    'very_long': 30 * 24 * 60 * 60,      # 30 days (static data only)
-    'personal': 1 * 60 * 60,             # 1 hour (user data changes frequently)
-    'external': 7 * 24 * 60 * 60         # 7 days (external API data)
+    'short': 1 * 60 * 60,                # 1 hour  (search results, recently played)
+    'medium': 7 * 24 * 60 * 60,          # 7 days  (playlists, playlist tracks, followed artists)
+    'long': 7 * 24 * 60 * 60,            # 7 days  (artist info)
+    'default': DEFAULT_CACHE_EXPIRATION, # 7 days
+    'very_long': 30 * 24 * 60 * 60,      # 30 days (static data: converter history, user decisions)
+    'personal': 7 * 24 * 60 * 60,        # 7 days  (liked songs, saved tracks, top items)
+    'external': 7 * 24 * 60 * 60         # 7 days  (external API data)
 }
 
 # Standardized cache keys for consistent reuse across the app

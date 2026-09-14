@@ -60,7 +60,6 @@ def test_all_imports():
         'spotify_follow_artists',
         'spotify_follow_artists_from_liked',
         'spotify_like_songs',
-        'spotify_similar_artists',
         'spotify_backup',
         'spotify_cleanup_artists',
         'spotify_remove_christmas',
@@ -69,7 +68,6 @@ def test_all_imports():
         'spotify_playlist_converter',
         'spotify_playlist_size_manager',
         'spotify_create_from_list',
-        'spotify_concerts',
         'cache_utils',
         'credentials_manager',
         'constants',
@@ -109,7 +107,6 @@ def test_menu_script_functions():
         ('spotify_follow_artists', ['main']),
         ('spotify_follow_artists_from_liked', ['main']),
         ('spotify_like_songs', ['main']),
-        ('spotify_similar_artists', ['main']),
         ('spotify_backup', ['main']),
         ('spotify_cleanup_artists', ['main']),
         ('spotify_remove_christmas', ['main']),
@@ -117,9 +114,7 @@ def test_menu_script_functions():
         ('spotify_playlist_manager', ['main']),
         ('spotify_playlist_converter', ['main']),
         ('spotify_playlist_size_manager', ['main', 'PlaylistSizeManager']),
-        ('spotify_create_from_list', ['main']),
-        ('spotify_concerts', ['main', 'get_followed_artists', 'refresh_followed_artists',
-                               'fetch_all_concerts', 'display_concerts', 'build_html_digest'])
+        ('spotify_create_from_list', ['main'])
     ]
     
     print("\nTesting script functions...")

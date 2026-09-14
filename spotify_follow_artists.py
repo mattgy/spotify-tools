@@ -42,6 +42,7 @@ from spotify_utils import print_warning, print_info, print_success, print_error,
 SCOPES = [
     "user-library-read",
     "playlist-read-private",
+    "user-follow-read",
     "user-follow-modify"
 ]
 

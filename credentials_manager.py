@@ -176,9 +176,6 @@ def get_credentials():
         'SPOTIFY_REDIRECT_URI',
         'LASTFM_API_KEY',
         'LASTFM_USERNAME',
-        'TICKETMASTER_CONSUMER_KEY',
-        'TICKETMASTER_CONSUMER_SECRET',
-        'BANDSINTOWN_APP_ID',
         # AI service credentials
         'GEMINI_API_KEY',
         'OPENAI_API_KEY',

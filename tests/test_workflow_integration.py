@@ -208,7 +208,6 @@ class TestWorkflowIntegration(unittest.TestCase):
             'spotify_playlist_size_manager',
             'spotify_remove_christmas',
             'spotify_cleanup_artists',
-            'spotify_similar_artists',
             'spotify_backup',
             'spotify_identify_skipped',
             'spotify_playlist_converter'
@@ -307,102 +306,6 @@ class TestImportConsistency(unittest.TestCase):
                     hasattr(exclusion_manager, func_name),
                     f"exclusion_manager missing expected function: {func_name}"
                 )
-
-    @patch('spotify_concerts.setup_spotify_client')
-    @patch('spotify_concerts.refresh_followed_artists')
-    @patch('spotify_concerts.get_followed_artists')
-    @patch('spotify_concerts.fetch_all_concerts')
-    @patch('spotify_concerts.get_credentials')
-    @patch('builtins.input', side_effect=['New York City', '90'])
-    def test_concerts_workflow(self, mock_input, mock_creds, mock_fetch,
-                               mock_followed, mock_refresh, mock_client):
-        """Test that spotify_concerts main() runs without NameError."""
-        import spotify_concerts
-
-        mock_client.return_value = Mock()
-        mock_refresh.return_value = None
-        mock_followed.return_value = [
-            {'id': 'a1', 'name': 'Test Artist 1'},
-            {'id': 'a2', 'name': 'Test Artist 2'},
-        ]
-        mock_creds.return_value = {
-            'BANDSINTOWN_APP_ID': 'test',
-            'TICKETMASTER_CONSUMER_KEY': '',
-            'LASTFM_API_KEY': '',
-        }
-
-        import datetime
-        mock_fetch.return_value = [
-            {
-                'artist':     'Test Artist 1',
-                'date':       datetime.datetime(2026, 7, 15, 20, 0),
-                'venue_name': 'Madison Square Garden',
-                'city':       'New York',
-                'region':     'NY',
-                'country':    'United States',
-                'ticket_url': 'https://example.com/tickets',
-                'source':     'Bandsintown',
-                'dedup_key':  'test artist 1|madison square garden|2026-07-15',
-            }
-        ]
-
-        with patch('sys.stdout', new_callable=StringIO):
-            with patch('spotify_concerts.display_concerts') as mock_display:
-                try:
-                    spotify_concerts.main()
-                except SystemExit:
-                    pass
-                # display_concerts should have been called with the mocked events
-                self.assertTrue(
-                    mock_display.called or mock_fetch.called,
-                    "Concert workflow did not execute fetch step"
-                )
-
-    def test_concerts_location_resolution(self):
-        """Test that city aliases resolve to correct metro areas."""
-        import spotify_concerts
-
-        cities, tm_city, state = spotify_concerts.resolve_location("NYC")
-        self.assertIn("new york", cities)
-        self.assertEqual(tm_city, "New York")
-        self.assertEqual(state, "NY")
-
-        cities2, tm_city2, _ = spotify_concerts.resolve_location("new york city")
-        self.assertIn("brooklyn", cities2)
-        self.assertEqual(tm_city2, "New York")
-
-        # Unknown city passes through unchanged
-        cities3, tm_city3, state3 = spotify_concerts.resolve_location("Tulsa")
-        self.assertEqual(tm_city3, "Tulsa")
-        self.assertEqual(state3, "")
-
-    def test_concerts_html_digest(self):
-        """Test that build_html_digest produces valid HTML with event data."""
-        import datetime
-        import spotify_concerts
-
-        events = [
-            {
-                'artist':     'Radiohead',
-                'date':       datetime.datetime(2026, 8, 10, 20, 0),
-                'venue_name': 'Forest Hills Stadium',
-                'city':       'Queens',
-                'region':     'NY',
-                'country':    'United States',
-                'ticket_url': 'https://example.com',
-                'source':     'Bandsintown',
-                'dedup_key':  'radiohead|forest hills stadium|2026-08-10',
-            }
-        ]
-        rankings = {'radiohead': 5420}
-
-        html = spotify_concerts.build_html_digest(events, "New York City",
-                                                   "Next 90 days", rankings)
-        self.assertIn('Radiohead', html)
-        self.assertIn('Forest Hills Stadium', html)
-        self.assertIn('5,420 plays', html)
-        self.assertIn('August', html)
-        self.assertIn('<!DOCTYPE html>', html)
 
 
 if __name__ == '__main__':

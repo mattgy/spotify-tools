@@ -2354,7 +2354,7 @@ def create_or_update_spotify_playlist(sp, playlist_name, track_uris, user_id):
                 except Exception as e:
                     if "insufficient client scope" in str(e).lower():
                         logger.error("Insufficient permissions to modify playlists. Please re-authenticate with proper scopes.")
-                        logger.error("Go to menu option 10 to re-enter your Spotify credentials.")
+                        logger.error("Go to menu option 9 to re-enter your Spotify credentials.")
                         raise Exception("Spotify authentication needs to be refreshed with playlist modification permissions.")
                     else:
                         raise e

@@ -25,13 +25,13 @@ sys.path.insert(0, script_dir)
 
 # Import custom modules
 from credentials_manager import get_spotify_credentials
-from cache_utils import save_to_cache, load_from_cache, validate_artist_data
+from cache_utils import save_to_cache, load_from_cache
 from exclusion_manager import is_excluded, add_bulk_exclusions, get_exclusion_count
 from spotify_utils import (
     create_spotify_client, COMMON_SCOPES, print_success, print_error, print_warning, print_info,
-    fetch_user_playlists, fetch_user_saved_tracks, fetch_playlist_tracks, fetch_followed_artists
+    fetch_user_playlists, fetch_user_saved_tracks, fetch_playlist_tracks
 )
-from constants import BATCH_SIZES, CONFIDENCE_THRESHOLDS, DEFAULT_CACHE_EXPIRATION, MENU_ICONS, BOX_CHARS
+from constants import DEFAULT_CACHE_EXPIRATION, MENU_ICONS, BOX_CHARS
 from print_utils import print_box_header, print_section_header, print_menu_item
 
 # Import tqdm_utils for progress bars
@@ -41,9 +41,7 @@ from tqdm_utils import create_progress_bar, update_progress_bar, close_progress_
 SCOPES = [
     "user-library-read",
     "user-library-modify",
-    "playlist-read-private",
-    "user-follow-read",
-    "user-follow-modify"
+    "playlist-read-private"
 ]
 
 # Import cache expiration from constants
@@ -236,209 +234,7 @@ def like_tracks(sp, tracks, saved_tracks):
     # Invalidate the saved tracks cache
     save_to_cache(None, STANDARD_CACHE_KEYS['liked_songs'], force_expire=True)
     
-    return new_tracks  # Return the liked tracks for analysis
-
-def analyze_artist_frequency(tracks):
-    """Analyze which artists appear frequently in liked tracks."""
-    return analyze_artist_frequency_with_progress(tracks, None)
-
-def analyze_artist_frequency_with_progress(tracks, progress_bar=None):
-    """Analyze which artists appear frequently in liked tracks, with optional progress tracking."""
-    artist_counts = defaultdict(int)
-    artist_tracks = defaultdict(list)
-
-    for track in tracks:
-        for artist in track['artists']:
-            # Use centralized artist validation (handles old cache formats)
-            validated_artist = validate_artist_data(artist, silent=True)
-            if not validated_artist:
-                continue
-
-            artist_id = validated_artist['id']
-            artist_name = validated_artist['name']
-            artist_counts[artist_id] += 1
-            artist_tracks[artist_id].append({
-                'track_name': track['name'],
-                'artist_name': artist_name
-            })
-
-        # Update progress bar if provided
-        if progress_bar:
-            update_progress_bar(progress_bar, 1)
-
-    return artist_counts, artist_tracks
-
-def get_followed_artists(sp):
-    """Get list of currently followed artists using centralized fetch function."""
-    # Use centralized function which handles caching, progress, and rate limiting
-    followed_artists_data = fetch_followed_artists(
-        sp,
-        show_progress=True,
-        cache_key="followed_artists_for_autofollow",
-        cache_expiration=get_cache_duration_seconds()
-    )
-    
-    # Convert to set of artist IDs for efficient lookup
-    followed_artists = {artist['id'] for artist in followed_artists_data}
-    
-    return followed_artists
-
-def suggest_artists_to_follow(sp, liked_tracks, min_songs=3):
-    """Suggest artists to follow based on liked songs frequency."""
-    print_info(f"\nAnalyzing artists from your newly liked songs...")
-
-    # Create progress bar for artist analysis
-    analysis_progress = create_progress_bar(total=len(liked_tracks), desc="Analyzing artists", unit="track")
-
-    # Analyze artist frequency
-    artist_counts, artist_tracks = analyze_artist_frequency_with_progress(liked_tracks, analysis_progress)
-
-    # Close progress bar
-    close_progress_bar(analysis_progress)
-    
-    # Get currently followed artists
-    followed_artists = get_followed_artists(sp)
-    
-    # Find artists with multiple songs that aren't followed
-    candidate_artist_ids = [artist_id for artist_id, count in artist_counts.items() 
-                           if count >= min_songs and artist_id not in followed_artists]
-    
-    if not candidate_artist_ids:
-        return []
-    
-    # Use batch function to get artist details efficiently
-    from spotify_utils import batch_get_artist_details
-    
-    artist_details = batch_get_artist_details(
-        sp,
-        candidate_artist_ids,
-        show_progress=True,
-        cache_key_prefix="follow_suggestion_artist_details",
-        cache_expiration=get_cache_duration_seconds()
-    )
-    
-    # Build suggestions from batch results
-    suggestions = []
-    for artist_id in candidate_artist_ids:
-        if artist_id in artist_details:
-            artist = artist_details[artist_id]
-            suggestions.append({
-                'id': artist_id,
-                'name': artist['name'],
-                'song_count': artist_counts[artist_id],
-                'popularity': artist['popularity'],
-                'genres': artist['genres'],
-                'tracks': artist_tracks[artist_id]
-            })
-    
-    # Sort by song count (most frequent first)
-    suggestions.sort(key=lambda x: x['song_count'], reverse=True)
-    
-    return suggestions
-
-def auto_follow_artists(sp, suggestions, auto_threshold=5):
-    """Auto-follow artists based on suggestions."""
-    if not suggestions:
-        print("No new artists to follow based on your liked songs.")
-        return
-    
-    print(f"\nFound {len(suggestions)} artists you might want to follow:")
-    
-    auto_follow_list = []
-    manual_review_list = []
-    
-    # Categorize suggestions
-    for suggestion in suggestions:
-        song_count = suggestion['song_count']
-        if song_count >= auto_threshold:
-            auto_follow_list.append(suggestion)
-        else:
-            manual_review_list.append(suggestion)
-    
-    # Auto-follow artists with high song count
-    if auto_follow_list:
-        print(f"\nAuto-following {len(auto_follow_list)} artists (you liked {auto_threshold}+ songs from them):")
-        
-        for artist in auto_follow_list:
-            print(f"  ✓ {artist['name']} ({artist['song_count']} songs)")
-        
-        confirm_auto = input(f"\nProceed with auto-following these {len(auto_follow_list)} artists? (y/n): ")
-        
-        if confirm_auto.lower() == 'y':
-            try:
-                # Follow artists in batches
-                artist_ids = [artist['id'] for artist in auto_follow_list]
-                batch_size = BATCH_SIZES['spotify_artists']
-                
-                for i in range(0, len(artist_ids), batch_size):
-                    batch = artist_ids[i:i + batch_size]
-                    sp.user_follow_artists(batch)
-                    # SafeSpotifyClient handles rate limiting automatically
-                
-                print(f"Successfully followed {len(auto_follow_list)} artists!")
-                
-                # Clear followed artists cache
-                save_to_cache(None, "followed_artists_for_autofollow", force_expire=True)
-                
-            except Exception as e:
-                print(f"Error following artists: {e}")
-    
-    # Present manual review list
-    if manual_review_list:
-        print(f"\nArtists to review manually ({len(manual_review_list)} artists with {auto_threshold-1} or fewer songs):")
-        
-        for i, artist in enumerate(manual_review_list[:10], 1):  # Show top 10
-            print(f"{i:2d}. {artist['name']} ({artist['song_count']} songs)")
-            if artist['genres']:
-                print(f"     Genres: {', '.join(artist['genres'][:3])}")
-            print(f"     Tracks: {', '.join([t['track_name'] for t in artist['tracks'][:3]])}")
-        
-        if len(manual_review_list) > 10:
-            print(f"     ... and {len(manual_review_list) - 10} more")
-        
-        follow_manual = input(f"\nWould you like to manually select artists to follow? (y/n): ")
-        
-        if follow_manual.lower() == 'y':
-            manual_follow_selection(sp, manual_review_list)
-
-def manual_follow_selection(sp, artists):
-    """Allow user to manually select artists to follow."""
-    print("\nEnter the numbers of artists you want to follow (e.g., '1,3,5' or 'all' or 'none'):")
-    
-    choice = input("Your selection: ").strip().lower()
-    
-    if choice == 'none':
-        print("No artists selected for following.")
-        return
-    elif choice == 'all':
-        selected_artists = artists
-    else:
-        try:
-            indices = [int(x.strip()) - 1 for x in choice.split(',')]
-            selected_artists = [artists[i] for i in indices if 0 <= i < len(artists)]
-        except ValueError:
-            print("Invalid selection. No artists followed.")
-            return
-    
-    if selected_artists:
-        print(f"\nFollowing {len(selected_artists)} selected artists...")
-        
-        try:
-            artist_ids = [artist['id'] for artist in selected_artists]
-            batch_size = BATCH_SIZES['spotify_artists']
-            
-            for i in range(0, len(artist_ids), batch_size):
-                batch = artist_ids[i:i + batch_size]
-                sp.user_follow_artists(batch)
-                # SafeSpotifyClient handles rate limiting automatically
-            
-            print(f"Successfully followed {len(selected_artists)} artists!")
-            
-            # Clear followed artists cache
-            save_to_cache(None, "followed_artists_for_autofollow", force_expire=True)
-            
-        except Exception as e:
-            print(f"Error following artists: {e}")
+    return new_tracks
 
 def is_christmas_song(track):
     """Check if a track is Christmas-related based on title, artist, or album."""
@@ -533,27 +329,7 @@ def main():
     saved_tracks = get_saved_tracks(sp)
     
     # Like new tracks
-    liked_tracks = like_tracks(sp, tracks, saved_tracks)
-    
-    # Auto-follow artists based on liked tracks
-    if liked_tracks and len(liked_tracks) > 0:
-        print_info(f"\nWould you like to analyze artists for follow suggestions?")
-        print_info("This can help you find artists to follow based on your newly liked songs.")
-        analyze_choice = input("Analyze artists? (y/n, default: y): ").strip().lower()
-        
-        if analyze_choice != 'n':
-            try:
-                suggestions = suggest_artists_to_follow(sp, liked_tracks, min_songs=3)
-                if suggestions:
-                    auto_follow_artists(sp, suggestions, auto_threshold=5)
-                else:
-                    print_info("No new artists to suggest following based on these tracks.")
-            except Exception as e:
-                print_error(f"Error analyzing artists for auto-follow: {e}")
-                print_warning("This may be due to cache corruption. Try clearing caches with menu option 9.")
-                print_info("The track liking operation completed successfully despite this error.")
-        else:
-            print_info("Skipping artist analysis.")
+    like_tracks(sp, tracks, saved_tracks)
 
     # Pause before returning to main menu
     input("\nPress Enter to return to main menu...")

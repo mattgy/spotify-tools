@@ -71,15 +71,6 @@ class TestMenuIntegration(unittest.TestCase):
         except ImportError as e:
             self.fail(f"Failed to import spotify_like_songs: {e}")
     
-    def test_import_similar_artists(self):
-        """Test that spotify_similar_artists can be imported."""
-        try:
-            import spotify_similar_artists
-            self.assertTrue(hasattr(spotify_similar_artists, 'main'))
-        except ImportError as e:
-            self.fail(f"Failed to import spotify_similar_artists: {e}")
-    
-    
     def test_import_backup(self):
         """Test that spotify_backup can be imported."""
         try:
@@ -310,7 +301,6 @@ class TestMenuFunctionality(unittest.TestCase):
         required_scripts = [
             'spotify_follow_artists.py',
             'spotify_like_songs.py', 
-            'spotify_similar_artists.py',
             'spotify_playlist_converter.py',
             'spotify_cleanup_artists.py',
             'spotify_backup.py',
@@ -363,7 +353,6 @@ class TestIndividualScripts(unittest.TestCase):
         scripts_to_test = [
             'spotify_follow_artists.py',
             'spotify_like_songs.py',
-            'spotify_similar_artists.py',
             'spotify_playlist_converter.py',
             'spotify_cleanup_artists.py',
             'spotify_backup.py',

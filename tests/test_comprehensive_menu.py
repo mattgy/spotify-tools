@@ -30,7 +30,6 @@ class TestMenuStructure(unittest.TestCase):
             'spotify_tools.py',           # Main menu
             'spotify_follow_artists.py',  # Menu option 6
             'spotify_like_songs.py',      # Menu option 2
-            'spotify_similar_artists.py', # Menu option 7
             'spotify_playlist_converter.py', # Menu option 1
             'spotify_cleanup_artists.py', # Menu option 6
             'spotify_backup.py',          # Menu option 7
@@ -62,7 +61,6 @@ class TestMenuStructure(unittest.TestCase):
             'spotify_tools.py',
             'spotify_follow_artists.py',
             'spotify_like_songs.py',
-            'spotify_similar_artists.py',
             'spotify_cleanup_artists.py',
             'spotify_backup.py',
             'spotify_remove_christmas.py',
@@ -177,7 +175,6 @@ class TestMenuFunctionality(unittest.TestCase):
         scripts_with_main = [
             'spotify_follow_artists.py',
             'spotify_like_songs.py',
-            'spotify_similar_artists.py',
             'spotify_cleanup_artists.py',
             'spotify_backup.py',
             'spotify_remove_christmas.py',

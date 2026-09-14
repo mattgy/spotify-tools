@@ -349,7 +349,7 @@ def main():
         print_error(f"Cache corruption detected: {e}")
         print_warning("This may be due to corrupted cache data.")
         print_info("The corrupted cache should be automatically cleaned up.")
-        print_info("Try running the script again, or use menu option 9 to manage caches.")
+        print_info("Try running the script again, or use menu option 8 to manage caches.")
         return
     
     if not christmas_songs:
